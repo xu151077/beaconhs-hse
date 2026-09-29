@@ -1,0 +1,286 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // BeaconHS HSE — OpenCode V2 project configuration.
+  // V2 native shape. Do NOT use V1 `permission` / `bash` / `task` / `plugin` keys.
+  // Reference: docs/opencode-environment-baseline.md
+  //
+  // RULE ORDER: OpenCode merges base policy -> global `permissions` -> agent
+  // `permissions`, and the LAST matching rule wins. Every deny below is
+  // therefore placed AFTER the broad allow it is meant to carve out.
+
+  "permissions": [
+    // ---------------------------------------------------------------------
+    // 1. Read-only discovery — always allowed.
+    //    grep/glob/read are non-mutating and carry no host authority.
+    // ---------------------------------------------------------------------
+    { "action": "read", "resource": "*", "effect": "allow" },
+    { "action": "glob", "resource": "*", "effect": "allow" },
+    { "action": "grep", "resource": "*", "effect": "allow" },
+
+    // ---------------------------------------------------------------------
+    // 2. Secrets — deny. These sit AFTER rule 1 so they win the match.
+    //    Never let an agent read a live secret into context or a log.
+    // ---------------------------------------------------------------------
+    { "action": "read", "resource": "*.env", "effect": "deny" },
+    { "action": "read", "resource": "*.env.*", "effect": "deny" },
+    // Re-allow the committed template AFTER the deny: it holds no live value.
+    { "action": "read", "resource": "*.env.example", "effect": "allow" },
+    { "action": "read", "resource": "secrets/**", "effect": "deny" },
+    { "action": "read", "resource": "credentials/**", "effect": "deny" },
+    { "action": "read", "resource": "*.pem", "effect": "deny" },
+    { "action": "read", "resource": "*.key", "effect": "deny" },
+    { "action": "read", "resource": "*.p12", "effect": "deny" },
+    { "action": "read", "resource": ".ssh/**", "effect": "deny" },
+    { "action": "read", "resource": "**/.aws/**", "effect": "deny" },
+    { "action": "read", "resource": "**/.npmrc", "effect": "deny" },
+    { "action": "read", "resource": "**/id_rsa*", "effect": "deny" },
+    { "action": "read", "resource": "**/id_ed25519*", "effect": "deny" },
+
+    // Editing secrets is denied outright — never rewrite a credential file.
+    { "action": "edit", "resource": "*.env", "effect": "deny" },
+    { "action": "edit", "resource": "*.env.*", "effect": "deny" },
+    { "action": "edit", "resource": "secrets/**", "effect": "deny" },
+    { "action": "edit", "resource": "credentials/**", "effect": "deny" },
+    { "action": "edit", "resource": "*.pem", "effect": "deny" },
+    { "action": "edit", "resource": "*.key", "effect": "deny" },
+    { "action": "edit", "resource": "**/.npmrc", "effect": "deny" },
+
+    // docker-compose.yml is verified byte-identical to Git HEAD and is the
+    // official deployment baseline. Protect it from accidental edits.
+    { "action": "edit", "resource": "docker-compose.yml", "effect": "ask" },
+
+    // ---------------------------------------------------------------------
+    // 3. Shell — default ASK, then a narrow read-only allowlist.
+    //    Per the V2 permissions guide we allowlist known-safe commands rather
+    //    than trying to enumerate every dangerous one: directory inference from
+    //    command text is best effort, so an allowlist is the robust shape.
+    // ---------------------------------------------------------------------
+    { "action": "shell", "resource": "*", "effect": "ask" },
+
+    // Safe git inspection.
+    { "action": "shell", "resource": "git status*", "effect": "allow" },
+    { "action": "shell", "resource": "git diff*", "effect": "allow" },
+    { "action": "shell", "resource": "git log*", "effect": "allow" },
+    { "action": "shell", "resource": "git show*", "effect": "allow" },
+    { "action": "shell", "resource": "git ls-files*", "effect": "allow" },
+    { "action": "shell", "resource": "git ls-remote*", "effect": "allow" },
+    { "action": "shell", "resource": "git rev-parse*", "effect": "allow" },
+    { "action": "shell", "resource": "git blame*", "effect": "allow" },
+    { "action": "shell", "resource": "git branch*", "effect": "allow" },
+
+    // Safe package-manager inspection (no install, no lifecycle scripts).
+    { "action": "shell", "resource": "pnpm --version*", "effect": "allow" },
+    { "action": "shell", "resource": "pnpm list*", "effect": "allow" },
+    { "action": "shell", "resource": "pnpm why*", "effect": "allow" },
+    { "action": "shell", "resource": "pnpm exec tsc --version*", "effect": "allow" },
+    { "action": "shell", "resource": "node --version*", "effect": "allow" },
+    { "action": "shell", "resource": "docker compose* ps*", "effect": "allow" },
+    { "action": "shell", "resource": "docker compose* logs*", "effect": "allow" },
+
+    // ---- Hard denials. Placed after the allowlist so they win. ----
+    // Publishing: the agent must never push. See .opencode/agents/release-manager.md
+    { "action": "shell", "resource": "git push*", "effect": "deny" },
+
+    // Destructive history/worktree rewrites. See .opencode/skills/git-safety/SKILL.md
+    { "action": "shell", "resource": "git reset*", "effect": "deny" },
+    { "action": "shell", "resource": "git clean*", "effect": "deny" },
+    { "action": "shell", "resource": "git restore*", "effect": "deny" },
+    { "action": "shell", "resource": "git rebase*", "effect": "deny" },
+    { "action": "shell", "resource": "git filter-branch*", "effect": "deny" },
+    { "action": "shell", "resource": "git reflog expire*", "effect": "deny" },
+    { "action": "shell", "resource": "git gc --prune*", "effect": "deny" },
+
+    // Branch mutation that destroys or rewrites references.
+    { "action": "shell", "resource": "git branch -D*", "effect": "deny" },
+    { "action": "shell", "resource": "git branch -d*", "effect": "deny" },
+    { "action": "shell", "resource": "git branch --delete*", "effect": "deny" },
+    { "action": "shell", "resource": "git branch -m*", "effect": "ask" },
+    { "action": "shell", "resource": "git branch -M*", "effect": "ask" },
+
+    // Deletion / truncation / force operations on any file system.
+    { "action": "shell", "resource": "rm -rf*", "effect": "deny" },
+    { "action": "shell", "resource": "rm -f*", "effect": "deny" },
+    { "action": "shell", "resource": ":(){*", "effect": "deny" },
+    { "action": "shell", "resource": "shred*", "effect": "deny" },
+
+    // Infrastructure and database destruction.
+    { "action": "shell", "resource": "docker system prune*", "effect": "deny" },
+    { "action": "shell", "resource": "docker volume prune*", "effect": "deny" },
+    { "action": "shell", "resource": "docker compose* down -v*", "effect": "deny" },
+    { "action": "shell", "resource": "docker compose* down --volumes*", "effect": "deny" },
+    { "action": "shell", "resource": "docker rmi*", "effect": "deny" },
+
+    // Schema / data destruction without explicit approval.
+    { "action": "shell", "resource": "drizzle-kit drop*", "effect": "deny" },
+    { "action": "shell", "resource": "drizzle-kit push --force*", "effect": "deny" },
+    { "action": "shell", "resource": "psql* DROP *", "effect": "deny" },
+    { "action": "shell", "resource": "psql* TRUNCATE *", "effect": "deny" },
+    { "action": "shell", "resource": "psql* DELETE FROM *", "effect": "deny" },
+    { "action": "shell", "resource": "prisma migrate reset*", "effect": "deny" },
+
+    // Gate circumvention. AGENTS.md rule 8 forbids making a red pipeline green
+    // by disabling the gate rather than fixing the cause.
+    { "action": "shell", "resource": "git commit --no-verify*", "effect": "deny" },
+    { "action": "shell", "resource": "*--no-verify*", "effect": "deny" },
+    { "action": "shell", "resource": "*eslint-disable*", "effect": "deny" },
+    { "action": "shell", "resource": "*ts-ignore*", "effect": "deny" },
+    { "action": "shell", "resource": "*ts-expect-error*", "effect": "ask" },
+
+    // Repo hygiene gates the agent must never be able to bypass.
+    { "action": "shell", "resource": "knip*--delete*", "effect": "deny" },
+    { "action": "shell", "resource": "prettier --write .*", "effect": "ask" },
+
+    // ---------------------------------------------------------------------
+    // 4. Code Mode. `execute` gates whether the Code Mode runtime is available.
+    //    Denying it removes the whole catalog, including read-only helpers, so
+    //    it stays allowed; every nested tool still enforces its own rule.
+    // ---------------------------------------------------------------------
+    { "action": "execute", "resource": "*", "effect": "allow" },
+
+    // ---------------------------------------------------------------------
+    // 5. Subagents. Deny-by-default, then allow only the roles this project
+    //    actually needs. Nesting depth is capped at 1 by OpenCode, so an agent
+    //    cannot build an unbounded subagent chain.
+    // ---------------------------------------------------------------------
+    { "action": "subagent", "resource": "*", "effect": "deny" },
+    { "action": "subagent", "resource": "explore", "effect": "allow" },
+    { "action": "subagent", "resource": "general", "effect": "allow" },
+    { "action": "subagent", "resource": "architect", "effect": "allow" },
+    { "action": "subagent", "resource": "hse-domain", "effect": "allow" },
+    { "action": "subagent", "resource": "backend", "effect": "allow" },
+    { "action": "subagent", "resource": "frontend", "effect": "allow" },
+    { "action": "subagent", "resource": "database", "effect": "allow" },
+    { "action": "subagent", "resource": "security-reviewer", "effect": "allow" },
+    { "action": "subagent", "resource": "code-reviewer", "effect": "allow" },
+    { "action": "subagent", "resource": "test-engineer", "effect": "allow" },
+    { "action": "subagent", "resource": "release-manager", "effect": "allow" },
+
+    // ---------------------------------------------------------------------
+    // 6. Skills. Allow the project set plus the two built-ins used in practice.
+    // ---------------------------------------------------------------------
+    { "action": "skill", "resource": "*", "effect": "ask" },
+    { "action": "skill", "resource": "project-architecture", "effect": "allow" },
+    { "action": "skill", "resource": "hse-domain", "effect": "allow" },
+    { "action": "skill", "resource": "database-migration", "effect": "allow" },
+    { "action": "skill", "resource": "security-review", "effect": "allow" },
+    { "action": "skill", "resource": "permission-review", "effect": "allow" },
+    { "action": "skill", "resource": "api-design", "effect": "allow" },
+    { "action": "skill", "resource": "ui-e2e", "effect": "allow" },
+    { "action": "skill", "resource": "code-review", "effect": "allow" },
+    { "action": "skill", "resource": "test-engineering", "effect": "allow" },
+    { "action": "skill", "resource": "git-safety", "effect": "allow" },
+    { "action": "skill", "resource": "documentation", "effect": "allow" },
+    { "action": "skill", "resource": "release-readiness", "effect": "allow" },
+    { "action": "skill", "resource": "report", "effect": "allow" },
+
+    // ---------------------------------------------------------------------
+    // 7. Network. Documentation and search stay open; unknown hosts ask.
+    // ---------------------------------------------------------------------
+    { "action": "websearch", "resource": "*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://opencode.ai/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://*.openai.com/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "http://localhost/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "http://127.0.0.1/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "*", "effect": "ask" },
+
+    // ---------------------------------------------------------------------
+    // 8. MCP tools. MCP tools are named `<server>_<tool>` and always carry
+    //    resource "*". Unrecognised names fall through to the default, which
+    //    is why each block below starts with a broad rule.
+    // ---------------------------------------------------------------------
+
+    // Context7 — third-party library documentation lookup. Read-only by nature.
+    { "action": "context7_*", "resource": "*", "effect": "allow" },
+
+    // GitHub — read-only verbs allowed, everything else asks.
+    // A name that matches none of these prefixes stays `ask` (fail-safe).
+    { "action": "github_*", "resource": "*", "effect": "ask" },
+    { "action": "github_get_*", "resource": "*", "effect": "allow" },
+    { "action": "github_list_*", "resource": "*", "effect": "allow" },
+    { "action": "github_search_*", "resource": "*", "effect": "allow" },
+    { "action": "github_read_*", "resource": "*", "effect": "allow" },
+
+    // Playwright — read-only browser verbs allowed; state-changing verbs ask.
+    { "action": "playwright_*", "resource": "*", "effect": "ask" },
+    { "action": "playwright_browser_snapshot*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_take_screenshot*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_console_messages*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_network_requests*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_tabs_list*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_tabs_select*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_navigate*", "resource": "*", "effect": "allow" },
+    { "action": "playwright_browser_navigate_back*", "resource": "*", "effect": "allow" },
+  ],
+
+  // -----------------------------------------------------------------------
+  // MCP servers. Verified before adding:
+  //   context7  — remote, the exact endpoint used in the V2 docs example.
+  //   github    — remote, official github/github-mcp-server (MIT, 33k stars).
+  //               The npm package `github-mcp-server` is a DIFFERENT, third-party
+  //               project (jungchihoon) and is deliberately NOT used.
+  //   playwright— local, @playwright/mcp from github.com/microsoft/playwright-mcp
+  //               (Apache-2.0, Microsoft-maintained). Pinned, not floating.
+  // Both remote servers authenticate with OAuth; run `/mcps` in the TUI to sign
+  // in. Credentials are stored outside this file by design.
+  // -----------------------------------------------------------------------
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "timeout": {
+          "startup": 45000,
+          "catalog": 30000,
+        },
+      },
+      "github": {
+        "type": "remote",
+        "url": "https://api.githubcopilot.com/mcp/",
+        "oauth": false,
+        "headers": {
+          "Authorization": "Bearer {env:GITHUB_TOKEN}"
+        },
+        "timeout": {
+          "startup": 45000,
+          "catalog": 45000,
+          "execution": 300000
+        }
+      },
+      "playwright": {
+        // Node and npx live under nvm and are on NO default PATH (not even a
+        // login shell), so the OpenCode background service cannot spawn a bare
+        // `npx`. Invoke node by absolute path, and pass the nvm bin directory
+        // down to the child shell that npx execs the package binary through.
+        "type": "local",
+        "command": [
+          "/home/test/.nvm/versions/node/v24.21.0/bin/node",
+          "/home/test/.nvm/versions/node/v24.21.0/lib/node_modules/npm/bin/npx-cli.js",
+          "-y",
+          "@playwright/mcp@0.0.83",
+        ],
+        "environment": {
+          "PATH": "/home/test/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin",
+        },
+        "timeout": {
+          "startup": 180000,
+          "catalog": 60000,
+          "execution": 180000,
+        },
+      },
+    },
+  },
+
+  // Reduce watch churn from build output and local databases.
+  "watcher": {
+    "ignore": [
+      "**/.next/**",
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.turbo/**",
+      "**/coverage/**",
+      "**/drizzle/meta/**",
+      "**/*.log",
+    ],
+  },
+}

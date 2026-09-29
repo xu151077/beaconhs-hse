@@ -251,3 +251,223 @@ Before implementing a new feature or helper:
 - If a required verification could not run, say why.
 - Keep documentation honest. If code and docs disagree, fix the stale docs or
   call out the discrepancy.
+
+---
+
+# HSE Second-Stage Development
+
+These rules govern the HSE extension work. They sit below the Non-Negotiable
+Engineering Rules above, and never relax them.
+
+## The Core Constraint
+
+**BeaconHS's native platform capabilities are the reusable asset. Do not redesign
+them because a feature is more convenient your way.**
+
+Never re-create, and never parallel:
+
+| Concept                 | Already exists                                                         | Where                                            |
+| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| User / identity         | Better-Auth + `tenant_users`                                           | `packages/auth`, `packages/db/src/schema/iam.ts` |
+| Tenant                  | `tenants` + `tenant_memberships`                                       | `packages/db/src/schema/core.ts`                 |
+| Organization / location | `org_units` (levels: customer / project / site / area)                 | `packages/db/src/schema/org.ts:24`               |
+| **Project**             | `org_units` where `level='project'` — there is **no** `projects` table | `packages/db/src/schema/org.ts`                  |
+| Role / Permission       | `roles`, `role_assignments`, `PERMISSION_CATALOGUE` (89 keys)          | `packages/db/src/schema/iam.ts`                  |
+| Object storage          | `packages/storage` + `apps/web/src/lib/uploads.ts`                     | verified E2E against MinIO                       |
+| Compliance engine       | `@beaconhs/compliance`                                                 | `packages/compliance`                            |
+| Report engine           | `@beaconhs/reports`                                                    | `packages/reports`                               |
+| Notification bus        | `@beaconhs/events` outbox                                              | `packages/events`                                |
+| Approval gates          | `flow_gates` — "the single gate store"                                 | `packages/db/src/schema/forms.ts:617-678`        |
+| Form builder            | `@beaconhs/forms-core` (46 field types)                                | `packages/forms-core`                            |
+
+Extending these is always allowed. Replacing them is not.
+
+## Builder-First
+
+If a capability can be delivered with the existing form builder, field registry,
+workflow/flow engine, gate store, notification events, or report studio, **use
+them**. Do not write a native module.
+
+A native module is justified only by one of: a complex state machine, a dedicated
+API, a dedicated permission, transactional cross-model logic, a performance
+requirement, or an authoritative queryable record. Every NEW module must state
+which of these applies. "It would be cleaner" is not a reason.
+
+## The HSE Canonical Model
+
+BeaconHS records HSE events well but does not yet manage their **resolution**.
+Verified findings (`docs/hse-development-baseline.md`):
+
+- There is **no** `findings` table and **no** `hazards` table.
+- There is **no** `risks` table; risk is four nullable integers on
+  `hazid_assessment_hazards` (`packages/db/src/schema/hazid-assessments.ts:198-204`).
+- **Eight** partial lifecycles exist. Only `corrective_actions`
+  (`packages/db/src/schema/corrective-actions.ts:56-182`) has all four of
+  owner, due date, verification and notification.
+
+### Required closed loop
+
+Every "something needs fixing" flow should be able to express:
+
+```
+discover → classify → rate risk → assign measure → assign owner
+        → correct → verify → close
+```
+
+### Vocabulary that must stay distinct
+
+Do not collapse these. Each has different lifecycle semantics, and merging them
+is how the current duplication arose.
+
+- **Finding** — something observed that needs fixing.
+- **Risk** — a rated, owned, reviewable exposure.
+- **Action** — assigned work with an owner and a due date.
+- **Verification** — an attributable sign-off by someone other than the doer.
+- **Certificate** — an externally issued credential with an expiry.
+
+### Rules
+
+- **Never** add a second owner / due-date / verification vocabulary to a module
+  that can instead link to `corrective_actions`.
+- **Never** persist a computed risk score. Scores are derived at render
+  (`apps/web/src/components/risk-matrix.tsx:120-123`); persist the inputs.
+- **Never** add a Builder form's `risk_matrix` value as if it were reportable —
+  it lives in form-response JSONB and is invisible to reports and compliance.
+- Classify every capability **PRESERVE / EXTEND / ADAPT / NEW**. Never rank
+  modules as good or bad.
+- Respect the phase plan in `docs/hse-development-baseline.md` §17. Do not add
+  `findings` / `risks` tables before their phases.
+
+## Project Scope
+
+Project-level scoping is **not expressible today**, and this is a design
+constraint, not a local bug:
+
+- `RoleScope` has six variants and **none** is project/org-unit
+  (`packages/db/src/schema/iam.ts:49-55`).
+- `resolveVisibilityTier` returns exactly `all` / `site` / `self`
+  (`apps/web/src/lib/visibility.ts:106,114-118`).
+- The scope picker hard-filters `orgUnits.level = 'site'`
+  (`apps/web/src/app/(app)/admin/users/_scope-data.ts:64`).
+
+Rules:
+
+- **Never** hand-roll an ad-hoc project filter inside one module to simulate
+  scoping. That is a shadow authorization system.
+- Any change implying "user may only see project X" must go through the scoping
+  work in `docs/hse-development-baseline.md` §12.
+- The zero-migration precedent already exists:
+  `packages/compliance/src/audience.ts:89-104` resolves "people on project X"
+  via `people_assignments` plus a validity window.
+- API keys have **no** scope column (`packages/db/src/schema/api-keys.ts:19-45`).
+  Do not imply API-key project scoping.
+
+## Storage Abstraction
+
+- All object access goes through `packages/storage` and
+  `apps/web/src/lib/uploads.ts` (`requestUpload`, `finalizeUpload`). Never a raw
+  bucket client.
+- **Never** edit `packages/storage/**`, `presignPut()`, `promoteObject()`,
+  `ensureBucket()`, or the attachment finalization path without an explicit
+  request.
+- Presigned URL issuance must re-check permission at issue time; the URL is a
+  bearer capability.
+- `x-amz-meta-*` and `x-amz-tagging` must survive the round trip. They do on
+  **MinIO** and do **not** on SeaweedFS
+  (`docs/beaconhs-seaweedfs-verification.md`). Storage baseline: MinIO built
+  from pinned archived source, `docs/beaconhs-minio-build.md`.
+- Storage must stay an **abstraction**. Do not couple a module to MinIO or to any
+  specific vendor.
+
+## Testing
+
+Run the narrowest meaningful checks while iterating, then broaden when touching
+shared packages, database schema, auth, tenant scoping, workers, or UI
+primitives. The repo uses two runners — use the one the package already has:
+`vitest run`, or `node --import tsx --test` in `ai`, `appkit-feedback`,
+`integrations` and `sync`.
+
+There is **no** Playwright in the repo and no checked-in E2E suite. Browser
+verification is done with the Playwright MCP via the `ui-e2e` skill.
+
+Never make a gate pass by disabling it, skipping a test, adding
+`eslint-disable` / `ts-ignore`, or using `--no-verify`. A gate that needs
+suppressing is a gate defect — report it.
+
+## Agent Development Workflow
+
+Large tasks follow this sequence, and **STOP at the first failure**:
+
+```
+Analyze → Plan → Implement → Test → Review → Verify → Report
+```
+
+- Do not carry on past a failing stage hoping a later stage helps.
+- Do not self-authorise a workaround. Report the failure and stop.
+- Do not begin the next phase of `docs/hse-development-baseline.md` §17 without
+  the previous phase's exit criterion met.
+
+## Definition of Done
+
+Work is done when **all** of these hold:
+
+1. All six gates pass, each with its own captured exit code.
+2. The requested behaviour is verified, not assumed.
+3. Permissions, audit, revalidation and tenant isolation are in place.
+4. Manual articles and `docs/project-development-state.md` are truthful.
+5. No dead code, duplicate implementation, parallel lifecycle, or stale route was
+   introduced.
+6. Known risks and remaining work are stated plainly.
+7. Anything that could not be verified is named **with the reason**.
+
+If an item cannot be verified, say so. Silently skipping a gate is not an option.
+
+## Known Defects — Record, Do Not Fix
+
+These are documented in `docs/hse-development-baseline.md` §21 and
+`docs/project-development-state.md`. Report them; do not fix them as a side
+effect of unrelated work, and do not silently work around them.
+
+| ID  | Defect                                                                                                                              |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `nav/registry.ts:185` and the module-admin registry reference `equipment.read.self`, which is not in `PERMISSION_CATALOGUE`         |
+| D2  | `nav/registry.ts:172` — the `people` nav entry has no permission gate; workforce master data is visible to every authenticated user |
+| D3  | Dead columns: `training_enrollments.expires_on` / `due_on`, `equipment_inspection_records.certificate`                              |
+| D4  | The PPE failed-inspection → corrective-action path omits `recordDomainEvent`, so those CAs are never notified                       |
+| D5  | Flow profile `equipment` `statusValues` omits `'repaired'` and `'verified'` (`apps/web/src/lib/flows/module-profiles.ts:577`)       |
+| D6  | Stale comment claiming four canonical form templates in `packages/db/src/seed.ts:1569-1570`                                         |
+
+Environment and tooling issues also on record:
+
+- `turbo.json` `globalEnv` omits `R2_ENDPOINT` and `ATTACHMENT_CAPABILITY_SECRET`,
+  so `pnpm dev` needs `--env-mode=loose`.
+- `packages/storage/src/index.ts:39-40` uses `??`, which does not fall back on an
+  empty string, and `.env.example` ships empty R2 credentials.
+- `POST /api/v1` returns 500: no read permission mapped for the `compliance`
+  category.
+- This host has ~3.4 GB RAM; Next.js page compiles have OOM-killed the dev
+  server under parallel load.
+
+## OpenCode Project Infrastructure
+
+This repository carries its own agent tooling under `.opencode/`:
+
+- `.opencode/opencode.jsonc` — V2 permissions, MCP servers, watcher ignores.
+- `.opencode/skills/` — 12 project skills.
+- `.opencode/agents/` — 9 project agents.
+
+Baselines and rationale live in `docs/`:
+
+- `docs/opencode-environment-baseline.md`
+- `docs/opencode-mcp-baseline.md`
+- `docs/opencode-skills-baseline.md`
+- `docs/opencode-agents-baseline.md`
+- `docs/opencode-permissions-baseline.md`
+- `docs/opencode-lsp-baseline.md`
+- `docs/opencode-plugin-baseline.md`
+- `docs/opencode-tools-evaluation.md`
+- `docs/project-development-state.md`
+
+Project configuration uses the **OpenCode V2** shape: `permissions`, `shell`,
+`subagent`, `plugins`, `agents`, `skills`, `mcp.servers`. Do not reintroduce V1
+keys (`permission`, `bash`, `task`, singular `plugin`).
