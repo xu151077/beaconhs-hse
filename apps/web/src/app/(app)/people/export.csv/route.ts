@@ -15,6 +15,8 @@ import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { withRouteErrors } from '@/lib/api/errors'
 import { parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
+import { resolveProjectScopeIn } from '@/lib/project-scope'
+import { projectScopePredicate } from '@/lib/project-scope-predicate'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,8 +49,22 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
   assertCan(ctx, 'admin.users.manage')
 
   const rows = await ctx.db(async (tx) => {
+    // Project Scope. `people` has no location column, so the binding is the
+    // person column — the same one the /people list uses (`people/page.tsx`).
+    // Resolved inside this transaction so the org tree and assignment reads run
+    // under the same RLS context as the export query.
+    //
+    // `admin.users.manage` is a MANAGEMENT capability: it says who may export the
+    // roster at all. It is NOT a licence to export the whole tenant. Holding it
+    // without a company-wide scope must still yield only the caller's scoped
+    // people, exactly as the list does. An empty scope is a hard `false`, so a
+    // caller with no assignment exports an empty file rather than the company.
+    const projectScope = await resolveProjectScopeIn(ctx, tx)
+    const scopeWhere = projectScopePredicate(projectScope, { personCol: people.id })
+
     const primaryTitleName = primaryPersonTitleName(people.id, people.tenantId)
     const filters: SQL<unknown>[] = [isNull(people.deletedAt)]
+    if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(

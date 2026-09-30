@@ -14,6 +14,7 @@ import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { withRouteErrors } from '@/lib/api/errors'
 import { parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
+import { moduleScopeWhere } from '@/lib/visibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,16 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
 
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(ppeItems.deletedAt)]
+    // Read tier AND Project Scope, via the same call the PPE list makes
+    // (`ppe/page.tsx`). `ppe_items` has no org-unit column, so the binding is
+    // `current_holder_person_id` — the column the table already carries, on the
+    // table this query already reads. No join and no new column is needed, and
+    // the CSV can never report gear the same caller cannot see on the list.
+    const scope = await moduleScopeWhere(ctx, tx, {
+      prefix: 'ppe',
+      personCol: ppeItems.currentHolderPersonId,
+    })
+    if (scope) filters.push(scope)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(ilike(ppeItems.serialNumber, term), ilike(ppeTypes.name, term))
