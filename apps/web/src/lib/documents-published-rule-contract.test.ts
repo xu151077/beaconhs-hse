@@ -40,6 +40,13 @@ const dialect = new PgDialect()
 const DOC_A = '1a000000-0000-4000-8000-0000000000a1'
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8')
+
+/** Source with comments removed, so a name mentioned in prose is not read as a call. */
+const codeOnly = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/^\s*--.*$/gm, '')
 const LIST = read('../app/(app)/documents/page.tsx')
 const READ = read('../app/(app)/documents/[id]/read/page.tsx')
 const DETAIL = read('../app/(app)/documents/[id]/page.tsx')
@@ -302,8 +309,11 @@ describe('15B-3C-3F — out-of-scope surfaces were left alone', () => {
       expect(src, `${name} should still hold its own rule until separately ruled on`).toMatch(
         /eq\(documents\.status, 'published'\)|status !== 'published'|documentBooks\.status/,
       )
-      // None may import the reader helper as a side effect of any batch.
-      expect(src, name).not.toContain('documentReadFilter')
+      // None may import the reader helper as a side effect of any batch. The check runs on
+      // comment-stripped source: 15B-3C-3I added a rationale to the compliance picker that
+      // NAMES documentReadFilter precisely to record that it is NOT used there, and a raw
+      // text search would match that explanation instead of a call.
+      expect(codeOnly(src), name).not.toContain('documentReadFilter')
     }
   })
 

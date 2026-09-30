@@ -574,6 +574,20 @@ async function loadOptions(
           )
         : undefined
       const rows = await tx
+        // Selecting the document a compliance obligation attaches to. The candidate
+        // set is intentionally the working set — `draft`, `published` and
+        // `under_review` are all attachable — so no publication filter is applied.
+        //
+        // This is NOT the document library's read rule and must not borrow
+        // `documentReadFilter`: the gate here is `compliance.assign ||
+        // compliance.manage`, a different capability from `documents.read`, and
+        // narrowing to `published` would make it impossible to attach an obligation
+        // to a document that is still being drafted. Note the contrast one branch
+        // below: the `document-book-documents` / `management-review-documents`
+        // lookups DO require `published`, because a book and a management review
+        // record what was issued, not what is being worked on.
+        //
+        // Exposure is id + title + key — reference data for a picker, no content.
         .select({ id: documents.id, title: documents.title, key: documents.key })
         .from(documents)
         .where(and(isNull(documents.deletedAt), match))

@@ -107,6 +107,14 @@ export async function loadObligationFormOptions(
         : Promise.resolve([]),
       documentId
         ? tx
+            // Resolves the title of the ONE document an obligation is bound to, so
+            // the obligation form can name it. Deliberately NOT restricted to
+            // `published`: an obligation is created against a document while it is
+            // still in `draft` or `under_review`, and refusing to name it would
+            // leave the form blank for exactly the obligations still in flight.
+            // `documentReadFilter` is not applied — this query is gated on
+            // `compliance.read`, and its exposure is two metadata fields, not
+            // document content and not `documents.read`.
             .select({ id: documents.id, title: documents.title })
             .from(documents)
             .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))

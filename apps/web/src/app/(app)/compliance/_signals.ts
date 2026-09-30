@@ -180,6 +180,24 @@ export async function listDueSignals(
           and ${formResponses.nextCheckinDueAt} <= ${horizonDate.toISOString()}::timestamptz
 
         union all
+        -- Compliance document signals: an INTENTIONALLY WIDER status set than the
+        -- document library's own read rule. documentReadFilter (which restricts
+        -- non-managers to published) is deliberately NOT applied here.
+        --
+        -- Why: a review obligation exists against a document from the moment it is
+        -- drafted, and 'under_review' is precisely the state in which a review is
+        -- pending. Narrowing this to published would silently delete the review-due
+        -- signal for every document still being worked on, which are the exact
+        -- documents most in need of surfacing. 'archived' is excluded because an
+        -- archived document is out of the compliance working set entirely.
+        --
+        -- What this exposes: the title, the review-due date and a deep link. Limited
+        -- METADATA, not document content, and NOT an alternative to documents.read.
+        -- A caller without documents.manage still cannot open the document, because
+        -- the link 404s at /documents/[id], so this is disclosure and not access.
+        -- The gate on this query is compliance.read, a different capability from
+        -- the one governing the document library. See compliance-metadata-contract
+        -- in apps/web/src/lib for the asserted bounds.
         select 'documents', 'Review due', ${documents.title}, null, null, ${documents.nextReviewOn}::date,
           case when ${documents.nextReviewOn} < ${today}::date then 'overdue' else 'due_soon' end,
           '/documents/' || ${documents.id}::text, ${documents.id}::text
