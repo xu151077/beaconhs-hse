@@ -12,6 +12,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
+import { withRouteErrors } from '@/lib/api/errors'
 import { parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -29,7 +30,7 @@ const SORTS = [
 const STATUS_FILTERS = ['active', 'inactive', 'terminated', 'all'] as const
 type StatusFilter = (typeof STATUS_FILTERS)[number]
 
-export async function GET(req: NextRequest) {
+export const GET = withRouteErrors(async (req: NextRequest) => {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -139,4 +140,4 @@ export async function GET(req: NextRequest) {
       ]),
     ),
   })
-}
+})

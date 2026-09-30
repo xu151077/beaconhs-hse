@@ -14,6 +14,7 @@ import { renderModulePdfResponse } from '@/lib/module-pdf'
 import { renderOnDemandPdfResponse } from '@/lib/pdf-route'
 import { loadVehicleLogWorkspace, type VehicleLogWorkspace } from '../_service'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
+import { withRouteErrors } from '@/lib/api/errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,7 +112,7 @@ function builtinMonthHtml(
   </div>`
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withRouteErrors(async (req: NextRequest) => {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -181,4 +182,4 @@ export async function GET(req: NextRequest) {
     })
   }
   return renderOnDemandPdfResponse(builtin)
-}
+})

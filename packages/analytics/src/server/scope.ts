@@ -266,7 +266,12 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
     personCols: PERSON_COLUMNS,
   },
   report_compliance_status: {
-    read: { key: 'compliance.read' },
+    // A PREFIX, not a flat key. `{ key }` resolves to tier `all` and returns
+    // before `pickColumn` is ever called, so the site/person/user columns
+    // declared below were unreachable and every `compliance.read` holder —
+    // including a site-scoped foreman — received this entity unfiltered.
+    // `resolveEntity` now takes the ordinary tier path for it.
+    read: { prefix: 'compliance' },
     siteCols: SITE_COLUMNS,
     personCols: PERSON_COLUMNS,
     userCols: USER_COLUMNS,

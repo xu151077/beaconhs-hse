@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
+import { ForbiddenError } from '@beaconhs/tenant'
 
 type ApiErrorCode =
   | 'unauthorized'
@@ -72,11 +73,43 @@ export function errorResponse(err: unknown): NextResponse<ApiErrorBody> {
     if (typeof err.details !== 'undefined') body.error.details = err.details
     return NextResponse.json(body, { status: err.status, headers: noStore(err.headers) })
   }
+  // `assertCan` throws ForbiddenError, which Next renders as an opaque 500. An
+  // authorization refusal is not a server fault: report it as 403 so a client
+  // can tell "you may not" from "we broke". The message is deliberately
+  // generic — the permission key itself is not echoed back, because a 403 body
+  // that names the missing capability tells an attacker which one to look for.
+  if (err instanceof ForbiddenError) {
+    return NextResponse.json(
+      { error: { code: 'forbidden', message: 'Forbidden' } },
+      { status: 403, headers: noStore() },
+    )
+  }
   // Never leak internals; the real error is logged server-side by the caller.
   return NextResponse.json(
     { error: { code: 'internal', message: 'Internal server error' } },
     { status: 500, headers: noStore() },
   )
+}
+
+/**
+ * Wrap a route handler so a thrown `ForbiddenError` becomes 403 rather than an
+ * opaque 500, without each caller repeating the same try/catch.
+ *
+ *   export const GET = withRouteErrors(async (req) => { assertCan(ctx, '…') })
+ */
+export function withRouteErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>,
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args)
+    } catch (err) {
+      // Only a refusal is remapped. Anything else keeps Next's own 500 so a real
+      // fault is never disguised as an authorization outcome.
+      if (err instanceof ForbiddenError) return errorResponse(err)
+      throw err
+    }
+  }
 }
 
 /** API responses are per-request and key-scoped — never cache them. */

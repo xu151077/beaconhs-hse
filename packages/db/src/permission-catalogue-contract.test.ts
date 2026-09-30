@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema'
 
 /**
@@ -63,6 +64,48 @@ describe('permission catalogue integrity', () => {
       return !TIERS.has(parts[parts.length - 1]!)
     })
     expect(malformed).toEqual([])
+  })
+})
+
+describe('every permission referenced by a registry exists in the catalogue', () => {
+  // D1: `nav/registry.ts` and `module-admin/registry.ts` both named
+  // `equipment.read.self`, which is not a catalogue key. It happened to work
+  // because `readTierCovers` resolves a `.read.all`/`.read.site` holder to the
+  // weaker `.read.self` key, so the gate behaved correctly by accident and no
+  // test failed. A catalogue-driven audit cannot verify such a key at all.
+  //
+  // These read the references straight out of the registries and compare them to
+  // the real catalogue. No second key list is kept here — that is the whole
+  // failure mode this file exists to prevent.
+  const readFile = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8')
+
+  const registryDir = '../../../apps/web/src/lib'
+
+  it('holds for every nav requiredPermission', () => {
+    const nav = readFile(`${registryDir}/nav/registry.ts`)
+    const referenced = [...nav.matchAll(/requiredPermission: '([^']+)'/g)].map((m) => m[1]!)
+    expect(referenced.length, 'nav requiredPermission references found').toBeGreaterThan(0)
+    const unknown = referenced.filter((key) => !catalogueSet.has(key))
+    expect(unknown, 'nav entries naming a key outside PERMISSION_CATALOGUE').toEqual([])
+  })
+
+  it('holds for every module-admin permission reference', () => {
+    const registry = readFile(`${registryDir}/module-admin/registry.ts`)
+    const referenced = [...registry.matchAll(/permission: '([^']+)'/g)].map((m) => m[1]!)
+    expect(referenced.length, 'module-admin permission references found').toBeGreaterThan(0)
+    const unknown = referenced.filter((key) => !catalogueSet.has(key))
+    expect(unknown, 'module-admin entries naming a key outside PERMISSION_CATALOGUE').toEqual([])
+  })
+
+  it('no longer names the equipment self tier that D1 recorded', () => {
+    // Kept as an explicit regression so the fix cannot be undone by re-adding the
+    // key to one registry only.
+    const nav = readFile(`${registryDir}/nav/registry.ts`)
+    const registry = readFile(`${registryDir}/module-admin/registry.ts`)
+    expect(nav).not.toContain("requiredPermission: 'equipment.read.self'")
+    expect(registry).not.toContain("permission: 'equipment.read.self'")
+    // …and the real replacement is the key that does exist.
+    expect(catalogueSet.has('equipment.read.site')).toBe(true)
   })
 })
 

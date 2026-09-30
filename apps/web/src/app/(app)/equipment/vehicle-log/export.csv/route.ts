@@ -12,6 +12,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
+import { withRouteErrors } from '@/lib/api/errors'
 import { resolveVehicleEquipmentWhere } from '../_equipment-policy'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -24,7 +25,7 @@ function ymd(y: number, m: number, d: number) {
   return `${y}-${pad2(m)}-${pad2(d)}`
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withRouteErrors(async (req: NextRequest) => {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -168,4 +169,4 @@ export async function GET(req: NextRequest) {
     headers: selection.headers,
     rows: csvRows.map((row) => selection.project(row)),
   })
-}
+})

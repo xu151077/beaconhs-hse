@@ -253,6 +253,11 @@ export default async function PersonDetailPage({
   const active: Tab = pickActiveTab(sp, TABS, 'overview')
 
   const ctx = await requireRequestContext()
+  // Same gate as the directory list, and it must run before the fetch: this page
+  // renders personal email, phone, date of birth and emergency-contact details
+  // for the target person, so a guessed person id must not resolve for a caller
+  // who cannot read the roster at all.
+  if (!can(ctx, 'people.read.all')) notFound()
   const canEdit = canManageModule(ctx, 'people')
   const data = await ctx.db(async (tx) => {
     const [row] = await tx

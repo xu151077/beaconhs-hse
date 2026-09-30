@@ -169,7 +169,14 @@ export const NAV_MODULES: NavModule[] = [
   { key: 'help', href: '/help', label: 'User Guide', iconKey: 'circle-help', group: 'Knowledge' },
 
   // Assets & people
-  { key: 'people', href: '/people', label: 'People', iconKey: 'users', group: 'Assets & people' },
+  {
+    key: 'people',
+    href: '/people',
+    label: 'People',
+    iconKey: 'users',
+    requiredPermission: 'people.read.all',
+    group: 'Assets & people',
+  },
   {
     key: 'locations',
     href: '/locations',
@@ -182,7 +189,7 @@ export const NAV_MODULES: NavModule[] = [
     href: '/equipment',
     label: 'Equipment',
     iconKey: 'wrench',
-    requiredPermission: 'equipment.read.self',
+    requiredPermission: 'equipment.read.site',
     group: 'Assets & people',
   },
   {

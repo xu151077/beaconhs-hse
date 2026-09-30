@@ -211,6 +211,12 @@ export const PERMISSION_CATALOGUE = [
   'equipment.inspect',
   'equipment.workorder.create',
   'equipment.workorder.close',
+  // People — the workforce directory. `people` carries no location or owner
+  // column of its own, so only the tenant-wide tier is declared. A site or self
+  // tier would be unenforceable from this table and must not be implied: the
+  // person↔org-unit relationship lives in `people_assignments`, which this
+  // module deliberately does not read.
+  'people.read.all',
   // PPE
   'ppe.read.all',
   'ppe.read.site',
@@ -247,6 +253,13 @@ export const PERMISSION_CATALOGUE = [
   // `read` = view the hub; `manage` = enable/disable/delete obligations + hub config;
   // `assign` = create obligations + edit audience/schedule (supersedes journals.assign).
   'compliance.read',
+  // The org-wide compliance hub keeps the flat key above. These tiers are what
+  // the analytics report scope resolves against, so a report entity that
+  // declares a location/person column is filtered by them instead of being
+  // handed unfiltered to every hub holder. Roles hold both: the flat key for the
+  // hub pages, the tier for the report engine.
+  'compliance.read.all',
+  'compliance.read.site',
   'compliance.manage',
   'compliance.assign',
   // Reports
@@ -369,6 +382,11 @@ export const BUILTIN_ROLES: Record<
       'journals.submit',
       'journals.assign',
       'compliance.read',
+      // Report-engine tier. The hub key above is deliberately NOT downgraded by
+      // this: a foreman keeps the org-wide hub, while a report entity that
+      // declares a location/person column is now filtered instead of returned
+      // tenant-wide.
+      'compliance.read.site',
       'compliance.assign',
       'reports.read',
       'dashboards.read',
@@ -412,6 +430,7 @@ export const BUILTIN_ROLES: Record<
       'equipment.inspect',
       'equipment.workorder.create',
       'equipment.workorder.close',
+      'people.read.all',
       'ppe.read.all',
       'ppe.manage',
       'ppe.issue',
@@ -431,6 +450,7 @@ export const BUILTIN_ROLES: Record<
       'journals.submit',
       'journals.assign',
       'compliance.read',
+      'compliance.read.all',
       'compliance.manage',
       'compliance.assign',
       'reports.read',

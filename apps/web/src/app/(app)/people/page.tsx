@@ -16,6 +16,7 @@ import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
 import { ListPageLayout } from '@/components/page-layout'
+import { redirect } from 'next/navigation'
 import { PeopleSubNav } from './_components/people-sub-nav'
 import { listPersonDepartmentsForBulk, listPersonGroupsForBulk } from './_actions/bulk'
 import { PeopleRecordsTable, type PeopleTableRow } from './_records-table'
@@ -54,6 +55,12 @@ export default async function PeoplePage({
     : 'active'
   const departmentFilter = pickString(sp.department) ?? null
   const ctx = await requireRequestContext()
+  // The workforce directory is master data, and `people` has no location or
+  // owner column, so there is no row scope to fall back on: every record in
+  // the tenant is either readable or none are. Without `people.read.all` the
+  // roster must not be listed at all — it carries names, employee numbers,
+  // job titles and hire dates.
+  if (!can(ctx, 'people.read.all')) redirect('/dashboard')
   const canManage = canManageModule(ctx, 'people')
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'admin.users.manage')
 

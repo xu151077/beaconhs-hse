@@ -58,8 +58,16 @@ function handlerChunks(source: string, isPage: boolean): string[] {
     return start === -1 ? [] : [source.slice(start)]
   }
 
+  // Two handler shapes are in use: a plain `export async function GET(…)`, and
+  // `export const GET = withRouteErrors(async (req) => …)` for routes that map a
+  // `ForbiddenError` to 403. Both must be scanned, or a wrapped route would slip
+  // past this guard entirely — which is why the wrapper form is matched here
+  // rather than excluded.
   const starts = [
     ...source.matchAll(/export async function (?:GET|POST|PUT|PATCH|DELETE)\s*\(/g),
+    ...source.matchAll(
+      /export const (?:GET|POST|PUT|PATCH|DELETE)\s*=\s*(?:withRouteErrors\()?\s*(?:async\s*)?\(/g,
+    ),
   ].map((match) => match.index)
   return starts.map((start, index) => source.slice(start, starts[index + 1] ?? source.length))
 }

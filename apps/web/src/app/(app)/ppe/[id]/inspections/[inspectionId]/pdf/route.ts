@@ -13,44 +13,47 @@ import { recordAudit } from '@/lib/audit'
 import { isUuid } from '@/lib/list-params'
 import { renderModulePdfResponse } from '@/lib/module-pdf'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
+import { withRouteErrors } from '@/lib/api/errors'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string; inspectionId: string }> },
-): Promise<Response> {
-  if (isRouterPrefetch(request)) return new Response(null, { status: 204 })
+export const GET = withRouteErrors(
+  async (
+    request: Request,
+    { params }: { params: Promise<{ id: string; inspectionId: string }> },
+  ) => {
+    if (isRouterPrefetch(request)) return new Response(null, { status: 204 })
 
-  const { id, inspectionId } = await params
-  if (!isUuid(id) || !isUuid(inspectionId)) {
-    return Response.json({ error: 'Not found' }, { status: 404 })
-  }
+    const { id, inspectionId } = await params
+    if (!isUuid(id) || !isUuid(inspectionId)) {
+      return Response.json({ error: 'Not found' }, { status: 404 })
+    }
 
-  const ctx = await requireRequestContext()
-  if (!ctx.tenantId) {
-    return Response.json({ error: 'No active tenant' }, { status: 400 })
-  }
-  assertCan(ctx, 'ppe.read.all')
+    const ctx = await requireRequestContext()
+    if (!ctx.tenantId) {
+      return Response.json({ error: 'No active tenant' }, { status: 400 })
+    }
+    assertCan(ctx, 'ppe.read.all')
 
-  // Re-scope before rendering: the inspection must belong to the item in the
-  // URL, so a guessed id can't pull another item's inspection.
-  const [inspection] = await ctx.db((tx) =>
-    tx
-      .select({ id: ppeInspections.id })
-      .from(ppeInspections)
-      .where(and(eq(ppeInspections.id, inspectionId), eq(ppeInspections.itemId, id)))
-      .limit(1),
-  )
-  if (!inspection) return Response.json({ error: 'Not found' }, { status: 404 })
+    // Re-scope before rendering: the inspection must belong to the item in the
+    // URL, so a guessed id can't pull another item's inspection.
+    const [inspection] = await ctx.db((tx) =>
+      tx
+        .select({ id: ppeInspections.id })
+        .from(ppeInspections)
+        .where(and(eq(ppeInspections.id, inspectionId), eq(ppeInspections.itemId, id)))
+        .limit(1),
+    )
+    if (!inspection) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  await recordAudit(ctx, {
-    entityType: 'ppe_inspection',
-    entityId: inspectionId,
-    action: 'export',
-    summary: 'Exported PDF',
-    metadata: { format: 'pdf' },
-  })
+    await recordAudit(ctx, {
+      entityType: 'ppe_inspection',
+      entityId: inspectionId,
+      action: 'export',
+      summary: 'Exported PDF',
+      metadata: { format: 'pdf' },
+    })
 
-  return renderModulePdfResponse(ctx, { moduleKey: 'ppe', recordId: inspectionId })
-}
+    return renderModulePdfResponse(ctx, { moduleKey: 'ppe', recordId: inspectionId })
+  },
+)

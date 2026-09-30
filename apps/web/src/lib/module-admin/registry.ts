@@ -248,7 +248,7 @@ export const MODULE_ADMIN: ModuleAdmin[] = [
         key: 'inspections',
         label: 'Equipment Checks',
         href: '/equipment/inspections',
-        permission: 'equipment.read.self',
+        permission: 'equipment.read.site',
       },
     ],
     sections: [

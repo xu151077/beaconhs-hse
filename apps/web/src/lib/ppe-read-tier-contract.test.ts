@@ -78,9 +78,10 @@ describe('ppe read-tier catalogue', () => {
     expect(PERMISSION_CATALOGUE).toContain('ppe.read.site')
     expect(PERMISSION_CATALOGUE).toContain('ppe.read.self')
     // The catalogue is a curated list; a count change means a key was added or
-    // dropped without anyone reading this test.
-    expect(PERMISSION_CATALOGUE.length).toBe(93)
-    expect(new Set(PERMISSION_CATALOGUE).size).toBe(93)
+    // dropped without anyone reading this test. 93 → 96 when the residual audit
+    // added `people.read.all`, `compliance.read.all` and `compliance.read.site`.
+    expect(PERMISSION_CATALOGUE.length).toBe(96)
+    expect(new Set(PERMISSION_CATALOGUE).size).toBe(96)
   })
 
   it('grants a worker own-PPE read', () => {
@@ -104,7 +105,8 @@ describe('ppe read-tier catalogue', () => {
     expect(BUILTIN_ROLES.safety_manager?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.site')
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(93)
+    // tenant_admin holds the whole catalogue, so this tracks PERMISSION_CATALOGUE.
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(96)
   })
 
   it('widens through readTierCovers so higher tiers satisfy lower ones', () => {

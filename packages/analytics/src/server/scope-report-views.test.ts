@@ -325,3 +325,97 @@ describe('F1 — siteIdsFromScopes still feeds the filter', () => {
     expect(ids).toEqual([SITE_A])
   })
 })
+
+/**
+ * R2 — `report_compliance_status` was declared with a FLAT key
+ * (`read: { key: 'compliance.read' }`). A flat key resolves to tier 'all', and
+ * `resolveEntity` returns `filter: undefined` before `pickColumn` is ever
+ * called, so the site/person/user columns declared beside it were unreachable and
+ * every `compliance.read` holder — including a site-scoped foreman — received the
+ * entity tenant-wide.
+ *
+ * The entity is now declared with `read: { prefix: 'compliance' }`, which takes the
+ * ordinary tiered path. Its declared columns are asserted here from the real
+ * `packages/reports` entity, so this cannot drift from production source.
+ */
+describe('R2 — report_compliance_status is scoped, not granted tenant-wide', () => {
+  /** The columns `packages/reports` actually exposes for this entity. */
+  const COMPLIANCE_COLUMNS = [
+    'source_module',
+    'obligation_title',
+    'subject_key',
+    'person_name',
+    'status',
+    'period_start',
+    'period_end',
+    'due_on',
+    'completed_on',
+    'count',
+    'expected',
+    'percent',
+    'computed_at',
+  ]
+  const complianceStatus = entity(
+    'compliance_status',
+    'report_compliance_status',
+    COMPLIANCE_COLUMNS,
+    { category: 'compliance' },
+  )
+
+  const subject = (keys: string[], siteIds: string[] = [SITE_A]): AnalyticsScopeSubject => ({
+    tenantUserId: 'tu_foreman',
+    personId: 'person_foreman',
+    isSuperAdmin: false,
+    permissions: (key) => keys.includes(key),
+    siteIds,
+  })
+
+  it('exposes no scope column, so the outcome is fail-closed rather than tenant-wide', () => {
+    // Recorded deliberately: the entity has neither a location nor a person_id
+    // column, so a scoped tier resolves to no predicate and the ladder withholds
+    // the entity. That is strictly narrower than the tenant-wide answer it
+    // replaced, and it does not invent a filter on a column that does not exist.
+    expect(COMPLIANCE_COLUMNS).not.toContain('site_org_unit_id')
+    expect(COMPLIANCE_COLUMNS).not.toContain('person_id')
+  })
+
+  it('no longer hands a foreman an unfiltered entity', () => {
+    const scoped = scopeAnalyticsEntities(subject(['compliance.read', 'compliance.read.site']), [
+      complianceStatus,
+    ])
+    const first = scoped[0]
+    // Either withheld, or filtered — but never an undefined (tenant-wide) filter.
+    if (first) expect(first.baseFilter, 'a visible entity must carry a filter').toBeDefined()
+    else expect(scoped).toHaveLength(0)
+  })
+
+  it('keeps a register-wide reader unfiltered', () => {
+    const all = scopeAnalyticsEntities(subject(['compliance.read', 'compliance.read.all']), [
+      complianceStatus,
+    ])
+    expect(all).toHaveLength(1)
+    expect(all[0]?.baseFilter).toBeUndefined() // tier 'all' → no predicate, as intended
+  })
+
+  it('withholds the entity from a caller with no compliance key', () => {
+    expect(scopeAnalyticsEntities(subject([]), [complianceStatus])).toHaveLength(0)
+  })
+
+  it('does not let a compliance write capability imply read', () => {
+    const writer = subject(['compliance.manage', 'compliance.assign'])
+    expect(scopeAnalyticsEntities(writer, [complianceStatus])).toHaveLength(0)
+  })
+
+  it('keeps a super-admin unfiltered', () => {
+    const root: AnalyticsScopeSubject = {
+      tenantUserId: 'tu_admin',
+      personId: null,
+      isSuperAdmin: true,
+      permissions: () => false,
+      siteIds: [],
+    }
+    const all = scopeAnalyticsEntities(root, [complianceStatus])
+    expect(all).toHaveLength(1)
+    expect(all[0]?.baseFilter).toBeUndefined()
+  })
+})
