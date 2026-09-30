@@ -31,6 +31,7 @@ import type { Database } from '@beaconhs/db'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import { templateAccessWhere } from '@/app/(app)/apps/_lib/access'
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
+import { moduleScopeWhere } from '@/lib/visibility'
 import { getAuthorPersonId, htmlToText, journalScopeWhere, snippetOf } from '../journals/_lib'
 import type { FeedEvent, FeedKind, FeedPage, FeedSummary, FeedTag } from './_types'
 
@@ -39,29 +40,47 @@ const PAGE = 20
 type ModuleScope = SQL | undefined | 'none'
 
 /**
- * Conservative per-module visibility: all → site → self → none (mirrors
- * journals), used by the feed queries below.
+ * Per-module visibility for the feed queries below.
  *
- * Module-private: the app-wide resolver for record visibility is
- * `moduleScopeWhere` in `lib/visibility`, which the module lists and every CSV
- * export use. The dashboard metrics were the last other caller of this duplicate
- * and now use the canonical one too, so there is a single tier ladder.
+ * This used to be a module-private tier ladder of its own — all → site → self →
+ * none, reading `ctx.scopes` directly. That model predates 15B-2 and was wrong
+ * in the one direction that matters: it treated a `.all` read tier as "no row
+ * filter", so a caller holding `incidents.read.all` (or `ca.read.all`,
+ * `forms.response.read.all`) saw the WHOLE TENANT in the feed while
+ * `/incidents`, `/corrective-actions` and the CSV exports — which all go through
+ * the canonical resolver — correctly showed only their Project Scope.
+ *
+ * It also read `role_assignments.scope` directly, so its `site` tier used bare
+ * scope ids with no org-tree walk and no personnel-placement expansion, and so
+ * disagreed with the canonical answer in both directions depending on tier.
+ *
+ * It now DELEGATES to `moduleScopeWhere`, the one ladder the module lists,
+ * exports, dashboard metrics, search and picker already use. `'none'` is kept as
+ * a distinct state so a source the caller cannot read at all is still skipped
+ * rather than queried with a predicate that can never match; that short-circuit
+ * is the permission test, and everything after it is the canonical resolver.
+ *
+ * SCOPE NOTE (15B-3C-4B, not fixed here): the feed's JOURNAL legs still call
+ * `journalScopeWhere`, which carries the same pre-15B-2 model. That helper is
+ * shared with the whole journals module, so narrowing it is a separate change
+ * with a much wider blast radius.
  */
-function moduleScope(
+async function moduleScope(
   ctx: RequestContext,
+  tx: Database,
   base: string,
   siteCol: AnyPgColumn,
   actorCol: AnyPgColumn,
-): ModuleScope {
-  if (can(ctx, `${base}.all`)) return undefined
-  if (can(ctx, `${base}.site`)) {
-    const siteIds = ctx.scopes.flatMap((s) => (s.type === 'sites' ? s.siteIds : []))
-    return siteIds.length ? inArray(siteCol, siteIds) : sql`false`
-  }
-  if (can(ctx, `${base}.self`)) {
-    return ctx.membership?.id ? eq(actorCol, ctx.membership.id) : sql`false`
-  }
-  return 'none'
+): Promise<ModuleScope> {
+  // `base` arrives as a full key ('incidents.read'); the canonical resolver takes
+  // the bare prefix and does its own tier resolution. `can` on the full key is the
+  // "holds some tier of this module" test, preserving the old 'none' short-circuit.
+  if (!can(ctx, base)) return 'none'
+  return await moduleScopeWhere(ctx, tx, {
+    prefix: base.replace(/\.read$/, ''),
+    siteCol,
+    ownerCols: [actorCol],
+  })
 }
 
 function whereAll(...parts: (SQL | undefined)[]): SQL | undefined {
@@ -170,8 +189,9 @@ export async function getFeed(
 
     // ---- Incidents (reported) ----
     if (want('incident')) {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'incidents.read',
         incidents.siteOrgUnitId,
         incidents.reportedByTenantUserId,
@@ -217,8 +237,9 @@ export async function getFeed(
 
     // ---- Corrective actions (raised) ----
     if (want('corrective_action')) {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'ca.read',
         correctiveActions.siteOrgUnitId,
         correctiveActions.ownerTenantUserId,
@@ -317,8 +338,9 @@ export async function getFeed(
 
     // ---- Form responses (submitted) ----
     if (want('form')) {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'forms.response.read',
         formResponses.siteOrgUnitId,
         formResponses.submittedBy,
@@ -421,8 +443,9 @@ export async function getFeedSummary(ctx: RequestContext): Promise<FeedSummary> 
 
     // ---- Incidents (reported) ----
     {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'incidents.read',
         incidents.siteOrgUnitId,
         incidents.reportedByTenantUserId,
@@ -442,8 +465,9 @@ export async function getFeedSummary(ctx: RequestContext): Promise<FeedSummary> 
 
     // ---- Corrective actions (raised) ----
     {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'ca.read',
         correctiveActions.siteOrgUnitId,
         correctiveActions.ownerTenantUserId,
@@ -482,8 +506,9 @@ export async function getFeedSummary(ctx: RequestContext): Promise<FeedSummary> 
 
     // ---- Form responses (submitted) ----
     {
-      const scope = moduleScope(
+      const scope = await moduleScope(
         ctx,
+        tx,
         'forms.response.read',
         formResponses.siteOrgUnitId,
         formResponses.submittedBy,
