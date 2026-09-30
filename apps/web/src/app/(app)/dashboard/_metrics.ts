@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } 
 import { htmlToSnippet } from '@beaconhs/forms-core'
 import type { Database } from '@beaconhs/db'
 import type { RequestContext } from '@beaconhs/tenant'
+import { can } from '@beaconhs/tenant'
 import {
   complianceObligations,
   complianceStatus,
@@ -34,8 +35,8 @@ import {
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
 import { resolveComplianceLink } from '../compliance/_resolve-link'
+import { moduleScopeWhere } from '../../../lib/visibility'
 import { templateAccessWhere } from '../apps/_lib/access'
-import { moduleScope } from '../feed/_data'
 import { resolvePpeInspectionDue, type PpeInspectionState } from '@/lib/ppe-inspection-due'
 
 /**
@@ -44,6 +45,27 @@ import { resolvePpeInspectionDue, type PpeInspectionState } from '@/lib/ppe-insp
  * counts or rates); `null` means "no data that month".
  */
 type MonthlySeries = ReadonlyArray<number | null>
+
+/**
+ *
+ * `moduleScope` narrows by site, then by actor. Neither is possible on a table
+ * like `ppe_issues` or `people`, so there is no honest predicate that could
+ * restrict a site-scoped caller — and returning the tenant-wide count would
+ * disclose cross-site volume through a number. The caller either holds the
+ * tenant-wide read, or sees nothing.
+ *
+ * This reuses `can()`, the permission primitive the module lists resolve their
+ * tier with, so there is still exactly one place that answers "may this caller
+ * read the whole module".
+ *
+ * `tenantWideKey` is the FULL permission key that grants tenant-wide read, not a
+ * read prefix. Single-tier modules have no `.all` tier — `admin.users.manage` is
+ * itself the key — so a prefix here would compile to a key that can never be
+ * held and would hide the figure from everyone, admin included.
+ */
+function tenantWideOnly(ctx: RequestContext, tenantWideKey: string) {
+  return can(ctx, tenantWideKey) ? undefined : sql`false`
+}
 
 export type DashboardMetrics = {
   // Headline tiles
@@ -56,7 +78,14 @@ export type DashboardMetrics = {
   monitoredSessionsActive: number
   ppeOpenIssues: number
   ppeInspectionsOverdue: number
-  peopleCount: number
+  /**
+   * Active headcount, or `null` when the caller cannot be scoped to it. The
+   * workforce table carries no location or owner column, so there is no way to
+   * narrow it for a site- or self-scoped caller — and a tenant-wide count shown
+   * to one would leak cross-site headcount. `null` means "not available to you",
+   * which is distinct from `0` meaning "nobody".
+   */
+  peopleCount: number | null
   inspectionsThisMonth: number
   vehicleLogStatus: {
     loggedDays: number
@@ -353,6 +382,58 @@ export async function loadDashboardMetrics(
 
   return await ctx.db(async (tx) => {
     const effectiveRoleKeys = await getEffectiveRoleKeys(ctx, tx)
+
+    // Resolve the caller's read tier ONCE, up front, with the same primitive
+    // every module list and CSV export uses (`moduleScopeWhere`). The previous
+    // code counted rows with no scope predicate at all, so a site-scoped caller
+    // saw tenant-wide totals. Each entry names a location column the table
+    // really has — no invented site column anywhere below.
+    const [
+      scopeIncidents,
+      scopeCAs,
+      scopeFormResponses,
+      scopeTraining,
+      scopeInspections,
+      scopeEquipment,
+      scopeIncidentHours,
+    ] = await Promise.all([
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'incidents',
+        siteCol: incidents.siteOrgUnitId,
+        ownerCols: [incidents.reportedByTenantUserId],
+      }),
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'ca',
+        siteCol: correctiveActions.siteOrgUnitId,
+        ownerCols: [correctiveActions.ownerTenantUserId],
+      }),
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'forms.response',
+        siteCol: formResponses.siteOrgUnitId,
+        personCol: formResponses.subjectPersonId,
+      }),
+      // `training_records` carries no location column, so it is narrowed by
+      // person only; a `training.read.all` holder still sees the tenant.
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'training',
+        personCol: trainingRecords.personId,
+      }),
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'inspections',
+        siteCol: inspectionRecords.siteOrgUnitId,
+        ownerCols: [inspectionRecords.submittedByTenantUserId],
+      }),
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'equipment',
+        siteCol: truckLogEntries.siteOrgUnitId,
+        personCol: truckLogEntries.driverPersonId,
+      }),
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'incidents',
+        siteCol: incidentHoursPeriods.siteOrgUnitId,
+        ownerCols: [incidentHoursPeriods.enteredByTenantUserId],
+      }),
+    ])
     const [
       incRow,
       incPrev,
@@ -369,13 +450,20 @@ export async function loadDashboardMetrics(
       tx
         .select({ c: count() })
         .from(incidents)
-        .where(and(isNull(incidents.deletedAt), gte(incidents.occurredAt, thirtyDaysAgo)))
+        .where(
+          and(
+            scopeIncidents,
+            isNull(incidents.deletedAt),
+            gte(incidents.occurredAt, thirtyDaysAgo),
+          ),
+        )
         .then((r) => r[0]),
       tx
         .select({ c: count() })
         .from(incidents)
         .where(
           and(
+            scopeIncidents,
             isNull(incidents.deletedAt),
             gte(incidents.occurredAt, sixtyDaysAgo),
             lte(incidents.occurredAt, thirtyDaysAgo),
@@ -385,13 +473,16 @@ export async function loadDashboardMetrics(
       tx
         .select({ c: count() })
         .from(correctiveActions)
-        .where(and(isNull(correctiveActions.deletedAt), isNull(correctiveActions.closedAt)))
+        .where(
+          and(scopeCAs, isNull(correctiveActions.deletedAt), isNull(correctiveActions.closedAt)),
+        )
         .then((r) => r[0]),
       tx
         .select({ c: count() })
         .from(correctiveActions)
         .where(
           and(
+            scopeCAs,
             isNull(correctiveActions.deletedAt),
             isNull(correctiveActions.closedAt),
             isNotNull(correctiveActions.dueOn),
@@ -405,6 +496,7 @@ export async function loadDashboardMetrics(
         .innerJoin(formTemplates, eq(formTemplates.id, formResponses.templateId))
         .where(
           and(
+            scopeFormResponses,
             isNull(formResponses.deletedAt),
             gte(formResponses.submittedAt, todayStart),
             templateAccessWhere(ctx, effectiveRoleKeys, 'browse-records'),
@@ -417,6 +509,7 @@ export async function loadDashboardMetrics(
         .innerJoin(people, eq(people.id, trainingRecords.personId))
         .where(
           and(
+            scopeTraining,
             isNull(trainingRecords.deletedAt),
             isNotNull(trainingRecords.expiresOn),
             gte(trainingRecords.expiresOn, todayIso),
@@ -433,6 +526,7 @@ export async function loadDashboardMetrics(
         .innerJoin(formTemplates, eq(formTemplates.id, formResponses.templateId))
         .where(
           and(
+            scopeFormResponses,
             isNull(formResponses.deletedAt),
             eq(formResponses.monitorStatus, 'active'),
             templateAccessWhere(ctx, effectiveRoleKeys, 'browse-records'),
@@ -442,29 +536,34 @@ export async function loadDashboardMetrics(
       tx
         .select({ c: count() })
         .from(ppeIssueReports)
-        .where(eq(ppeIssueReports.status, 'open'))
+        .where(and(tenantWideOnly(ctx, 'ppe.read.all'), eq(ppeIssueReports.status, 'open')))
         .then((r) => r[0]),
       tx
         .select({ c: count() })
         .from(ppeItems)
         .where(
           and(
+            tenantWideOnly(ctx, 'ppe.read.all'),
             isNull(ppeItems.deletedAt),
             isNotNull(ppeItems.nextAnnualInspectionDue),
             lte(ppeItems.nextAnnualInspectionDue, todayIso),
           ),
         )
         .then((r) => r[0]),
+      // Headcount: `people` carries no location or owner column at all, so it
+      // cannot be narrowed for a site-scoped caller. Return null rather than a
+      // tenant-wide number dressed up as a scoped one.
       tx
         .select({ c: count() })
         .from(people)
         .where(eq(people.status, 'active'))
-        .then((r) => r[0]),
+        .then((r) => (tenantWideOnly(ctx, 'admin.users.manage') === undefined ? r[0] : null)),
       tx
         .select({ c: count() })
         .from(inspectionRecords)
         .where(
           and(
+            scopeInspections,
             isNull(inspectionRecords.deletedAt),
             gte(inspectionRecords.occurredAt, startOfMonth),
             inArray(inspectionRecords.status, ['submitted', 'closed']),
@@ -477,7 +576,9 @@ export async function loadDashboardMetrics(
     // Hours come from the recorded incident_hours_periods. We DO NOT estimate
     // hours — when a tenant hasn't recorded any, the rate is null (shown as "—"),
     // never a fabricated number. OSHA: rate = events × 200,000 ÷ hours.
-    const headcount = Number(peopleCount?.c ?? 0)
+    // `null` when the caller is not entitled to a tenant-wide headcount; the
+    // greeting omits the clause rather than printing a scope they cannot see.
+    const headcount = peopleCount ? Number(peopleCount.c) : null
 
     // --- Vehicle log status ---------------------------------------------
     const [vehicleLogRow] = await tx
@@ -499,6 +600,7 @@ export async function loadDashboardMetrics(
       .from(truckLogEntries)
       .where(
         and(
+          scopeEquipment,
           gte(truckLogEntries.entryDate, startOfMonthIso),
           lte(truckLogEntries.entryDate, todayIso),
         ),
@@ -524,6 +626,7 @@ export async function loadDashboardMetrics(
       .from(incidents)
       .where(
         and(
+          scopeIncidents,
           isNull(incidents.deletedAt),
           gte(incidents.occurredAt, twentyFourMonthsAgo),
           inArray(incidents.severity, ['medical_aid', 'lost_time', 'fatality']),
@@ -539,6 +642,7 @@ export async function loadDashboardMetrics(
       .from(incidents)
       .where(
         and(
+          scopeIncidents,
           isNull(incidents.deletedAt),
           gte(incidents.occurredAt, twentyFourMonthsAgo),
           eq(incidents.lostTime, true),
@@ -553,7 +657,12 @@ export async function loadDashboardMetrics(
         h: sql<number>`COALESCE(SUM(${incidentHoursPeriods.totalHours}), 0)::float`,
       })
       .from(incidentHoursPeriods)
-      .where(gte(incidentHoursPeriods.periodStart, twentyFourMonthsAgo.toISOString().slice(0, 10)))
+      .where(
+        and(
+          scopeIncidentHours,
+          gte(incidentHoursPeriods.periodStart, twentyFourMonthsAgo.toISOString().slice(0, 10)),
+        ),
+      )
       .groupBy(sql`to_char(${incidentHoursPeriods.periodStart}, 'YYYY-MM')`)
 
     // Build month-key list for the last 24 months, oldest -> newest. `YYYY-MM`.
@@ -764,40 +873,27 @@ export async function loadDashboardMetrics(
     // The incident / CA lists surface record-level detail, so they enforce the
     // same conservative visibility tiers as the feed (all → site → self → none)
     // — a site-scoped foreman never sees another site's incident titles.
-    const incidentScope = moduleScope(
-      ctx,
-      'incidents.read',
-      incidents.siteOrgUnitId,
-      incidents.reportedByTenantUserId,
-    )
-    const caScope = moduleScope(
-      ctx,
-      'ca.read',
-      correctiveActions.siteOrgUnitId,
-      correctiveActions.ownerTenantUserId,
-    )
+    // Reuse the predicates resolved above instead of a second tier resolver:
+    // same ladder, one mechanism, and no way for the lists and the counts to
+    // disagree about what this caller may see. `moduleScopeWhere` returns a
+    // never-matching predicate rather than a 'none' sentinel, so a caller with
+    // no read permission gets an empty list either way.
+    const incidentScope = scopeIncidents
+    const caScope = scopeCAs
 
-    const recentIncidents =
-      incidentScope === 'none'
-        ? []
-        : await tx
-            .select()
-            .from(incidents)
-            .where(and(isNull(incidents.deletedAt), incidentScope))
-            .orderBy(desc(incidents.occurredAt))
-            .limit(5)
+    const recentIncidents = await tx
+      .select()
+      .from(incidents)
+      .where(and(isNull(incidents.deletedAt), incidentScope))
+      .orderBy(desc(incidents.occurredAt))
+      .limit(5)
 
-    const dueCAs =
-      caScope === 'none'
-        ? []
-        : await tx
-            .select()
-            .from(correctiveActions)
-            .where(
-              and(isNull(correctiveActions.deletedAt), isNull(correctiveActions.closedAt), caScope),
-            )
-            .orderBy(asc(correctiveActions.dueOn))
-            .limit(5)
+    const dueCAs = await tx
+      .select()
+      .from(correctiveActions)
+      .where(and(isNull(correctiveActions.deletedAt), isNull(correctiveActions.closedAt), caScope))
+      .orderBy(asc(correctiveActions.dueOn))
+      .limit(5)
 
     const myInbox = await tx
       .select()
@@ -826,28 +922,25 @@ export async function loadDashboardMetrics(
     }))
 
     // Top 5 most-overdue CAs — same visibility tiers as the due-CAs list.
-    const topOverdueRaw =
-      caScope === 'none'
-        ? []
-        : await tx
-            .select({
-              id: correctiveActions.id,
-              reference: correctiveActions.reference,
-              title: correctiveActions.title,
-              dueOn: correctiveActions.dueOn,
-            })
-            .from(correctiveActions)
-            .where(
-              and(
-                isNull(correctiveActions.deletedAt),
-                isNull(correctiveActions.closedAt),
-                isNotNull(correctiveActions.dueOn),
-                lte(correctiveActions.dueOn, todayIso),
-                caScope,
-              ),
-            )
-            .orderBy(asc(correctiveActions.dueOn))
-            .limit(5)
+    const topOverdueRaw = await tx
+      .select({
+        id: correctiveActions.id,
+        reference: correctiveActions.reference,
+        title: correctiveActions.title,
+        dueOn: correctiveActions.dueOn,
+      })
+      .from(correctiveActions)
+      .where(
+        and(
+          isNull(correctiveActions.deletedAt),
+          isNull(correctiveActions.closedAt),
+          isNotNull(correctiveActions.dueOn),
+          lte(correctiveActions.dueOn, todayIso),
+          caScope,
+        ),
+      )
+      .orderBy(asc(correctiveActions.dueOn))
+      .limit(5)
     const topOverdueCAs = topOverdueRaw.map((r) => {
       const dayMs = 86_400_000
       const days = r.dueOn ? Math.round((today.getTime() - new Date(r.dueOn).getTime()) / dayMs) : 0

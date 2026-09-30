@@ -235,7 +235,8 @@
     "goodMorning": "Good morning",
     "goodAfternoon": "Good afternoon",
     "goodEvening": "Good evening",
-    "tenantSummary": "{people, number} active people · {incidents, plural, one {# incident} other {# incidents}} in the last 30 days"
+    "tenantSummary": "{people, number} active people · {incidents, plural, one {# incident} other {# incidents}} in the last 30 days",
+    "tenantSummaryScoped": "{incidents, plural, one {# incident} other {# incidents}} in the last 30 days at your sites"
   },
   "Kiosk": {
     "enterPinError": "Enter the kiosk PIN to continue",

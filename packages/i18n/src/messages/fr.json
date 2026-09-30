@@ -235,7 +235,8 @@
     "goodMorning": "Bonjour",
     "goodAfternoon": "Bon après-midi",
     "goodEvening": "Bonsoir",
-    "tenantSummary": "{people, number} personnes actives · {incidents, plural, one {# incident} other {# incidents}} au cours des 30 derniers jours"
+    "tenantSummary": "{people, number} personnes actives · {incidents, plural, one {# incident} other {# incidents}} au cours des 30 derniers jours",
+    "tenantSummaryScoped": "{incidents, plural, one {# incident} other {# incidents}} au cours des 30 derniers jours sur vos sites"
   },
   "Kiosk": {
     "enterPinError": "Entrez le NIP de la borne pour continuer",

@@ -110,8 +110,14 @@ export default async function DashboardPage() {
   })
   // The tenant rollup is org data — omit it for self-only viewers (they'd have
   // no org cards either, so the number would be the only leak).
+  // `peopleCount` is null when the caller cannot be scoped to a tenant-wide
+  // headcount, because the workforce table carries no location column. Showing
+  // one would leak cross-site headcount, so the greeting drops that clause and
+  // keeps the part that IS scoped to the caller's own sites.
   const tenantSummary = canSeeOrgAggregates(ctx)
-    ? t('tenantSummary', { people: data.peopleCount, incidents: data.incidents30 })
+    ? data.peopleCount === null
+      ? t('tenantSummaryScoped', { incidents: data.incidents30 })
+      : t('tenantSummary', { people: data.peopleCount, incidents: data.incidents30 })
     : null
 
   return (

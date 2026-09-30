@@ -235,7 +235,8 @@
     "goodMorning": "Buenos días",
     "goodAfternoon": "Buenas tardes",
     "goodEvening": "Buenas noches",
-    "tenantSummary": "{people, number} personas activas · {incidents, plural, one {# incidente} other {# incidentes}} en los últimos 30 días"
+    "tenantSummary": "{people, number} personas activas · {incidents, plural, one {# incidente} other {# incidentes}} en los últimos 30 días",
+    "tenantSummaryScoped": "{incidents, plural, one {# incidente} other {# incidentes}} en los últimos 30 días en sus sitios"
   },
   "Kiosk": {
     "enterPinError": "Introduce el PIN del quiosco para continuar",

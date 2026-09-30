@@ -40,10 +40,14 @@ type ModuleScope = SQL | undefined | 'none'
 
 /**
  * Conservative per-module visibility: all → site → self → none (mirrors
- * journals). Shared with the dashboard list widgets (dashboard/_metrics.ts) so
- * both surfaces enforce the same record-visibility tiers.
+ * journals), used by the feed queries below.
+ *
+ * Module-private: the app-wide resolver for record visibility is
+ * `moduleScopeWhere` in `lib/visibility`, which the module lists and every CSV
+ * export use. The dashboard metrics were the last other caller of this duplicate
+ * and now use the canonical one too, so there is a single tier ladder.
  */
-export function moduleScope(
+function moduleScope(
   ctx: RequestContext,
   base: string,
   siteCol: AnyPgColumn,
