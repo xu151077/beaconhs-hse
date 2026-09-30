@@ -81,6 +81,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm deadcode:check
+      - name: Guard migration metadata integrity
+        run: pnpm --filter @beaconhs/db check:migration-drift
       - name: Test deployment host safeguards
         run: |
           scripts/cluster/dokploy-curl.test.sh
