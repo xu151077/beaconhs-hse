@@ -7,7 +7,7 @@
 // documents.
 
 import { revalidatePath } from 'next/cache'
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm'
 import {
   attachments,
   documentCategories,
@@ -18,6 +18,7 @@ import {
 import { presignExistingGet } from '@beaconhs/storage'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { recordAuditInTransaction } from '@/lib/audit'
 import { isDocumentKeyConflict, parseDocumentKey } from '@/lib/document-key-policy'
 import { DOCUMENT_METADATA_LIMITS } from '@/lib/document-metadata-limits'
@@ -73,19 +74,28 @@ export async function getDocumentPdfUrl(
     return { ok: true, url: `/documents/${documentId}/pdf?render=${Date.now()}` }
   }
 
-  // Readers may only view published documents — the same rule the list and
-  // detail pages apply. Managers can preview any live document.
+  // Readers may only view published documents — the same rule the list, detail
+  // and reader surfaces apply, taken from the shared helper rather than restated
+  // here. The predicate is applied IN the statement, so an unpublished document
+  // never reaches this process: the check below is now a plain liveness test.
+  //
+  // ONE USER-VISIBLE DELTA, in the safe direction. A reader asking for a draft
+  // previously received "This document is not published." and now receives
+  // "Document not found." — the same answer the reader, list and detail surfaces
+  // give, and one that no longer distinguishes "exists but unpublished" from
+  // "does not exist".
+  const visibility = documentReadFilter(ctx)
+  const docConds: SQL[] = [eq(documents.id, documentId), isNull(documents.deletedAt)]
+  if (visibility) docConds.push(visibility)
+
   const [doc] = await ctx.db((tx) =>
     tx
-      .select({ status: documents.status })
+      .select({ id: documents.id })
       .from(documents)
-      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+      .where(and(...docConds))
       .limit(1),
   )
   if (!doc) return { ok: false, error: 'Document not found.' }
-  if (doc.status !== 'published' && !canManage) {
-    return { ok: false, error: 'This document is not published.' }
-  }
 
   // Resolve one version first. Managers may preview a replacement; readers
   // stay on the last published version until the manager presses Publish.

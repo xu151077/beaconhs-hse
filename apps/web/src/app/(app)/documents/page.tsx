@@ -9,6 +9,7 @@ import { can } from '@beaconhs/tenant'
 import { documentCategories, documentTypes, documents } from '@beaconhs/db/schema'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
@@ -70,7 +71,14 @@ export default async function DocumentsPage({
   const { rows, total, statusCounts, categoryCounts, typeCounts, categories, types } = await ctx.db(
     async (tx) => {
       const filters: SQL<unknown>[] = [isNull(documents.deletedAt)]
-      if (!canManage) filters.push(eq(documents.status, 'published'))
+      // The published-visibility rule is delegated to the shared helper rather
+      // than restated here, so this list, the detail page, the reader, the
+      // assistant, the search route and the public API cannot drift apart. For a
+      // manager the helper yields `undefined` and no constraint is added; for
+      // everyone else it yields `documents.status = 'published'`. The resulting
+      // SQL is unchanged by this delegation — see documents-published-rule test.
+      const visibility = documentReadFilter(ctx)
+      if (visibility) filters.push(visibility)
       if (params.q) {
         const term = `%${params.q}%`
         const cond = or(ilike(documents.title, term), ilike(documents.description, term))
@@ -100,20 +108,33 @@ export default async function DocumentsPage({
         .limit(params.perPage)
         .offset((params.page - 1) * params.perPage)
       const live = isNull(documents.deletedAt)
+      // The status facet is only rendered for a manager, so it needs no visibility
+      // constraint of its own — a manager is not constrained anyway.
       const ss = await tx
         .select({ s: documents.status, c: count() })
         .from(documents)
         .where(live)
         .groupBy(documents.status)
+      // The category and type facets ARE rendered for every caller, so their
+      // counts must be bounded by the same visibility as the rows they label.
+      // Without this a reader's chip would read "Site Method Statements: 14" for a
+      // category holding 3 published and 11 draft documents — the withheld rows
+      // disclosed by count even though the table behind the chip is correct.
+      // Facet semantics deliberately exclude the facet's OWN filter, so the
+      // caller's `category`/`type` selection is not added here; the visibility
+      // rule is not optional and is.
+      const facetConds: SQL<unknown>[] = [live]
+      if (visibility) facetConds.push(visibility)
+      const facetWhere = and(...facetConds)
       const cc = await tx
         .select({ id: documents.categoryId, c: count() })
         .from(documents)
-        .where(live)
+        .where(facetWhere)
         .groupBy(documents.categoryId)
       const tc = await tx
         .select({ id: documents.typeId, c: count() })
         .from(documents)
-        .where(live)
+        .where(facetWhere)
         .groupBy(documents.typeId)
       const categories = await tx
         .select({ id: documentCategories.id, name: documentCategories.name })

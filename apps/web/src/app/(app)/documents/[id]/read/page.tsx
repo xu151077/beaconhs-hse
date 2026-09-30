@@ -1,9 +1,10 @@
 import { getGeneratedTranslations } from '@/i18n/generated.server'
 import { notFound } from 'next/navigation'
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm'
 import { documentAcknowledgments, documentVersions, documents } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { isUuid } from '@/lib/list-params'
 import { DocumentReader } from './_reader'
 
@@ -25,6 +26,18 @@ export default async function DocumentReadPage({ params }: { params: Promise<{ i
   const canAcknowledge = ctx.isSuperAdmin || can(ctx, 'documents.acknowledge')
 
   const data = await ctx.db(async (tx) => {
+    // The published rule is applied IN the statement rather than as a JavaScript
+    // comparison on a row we have already fetched. Same verdict, one less row
+    // crossing the boundary: an unpublished document now fails to match at all,
+    // so `!doc` below produces the same 404 the explicit `status` check used to.
+    //
+    // `documentReadFilter` yields `undefined` for a manager, and a manager is
+    // NOT thereby allowed to see unpublished versions — the version query below
+    // still requires `publishedAt`, unchanged.
+    const visibility = documentReadFilter(ctx)
+    const docConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
+    if (visibility) docConds.push(visibility)
+
     const [doc] = await tx
       .select({
         id: documents.id,
@@ -33,10 +46,9 @@ export default async function DocumentReadPage({ params }: { params: Promise<{ i
         status: documents.status,
       })
       .from(documents)
-      .where(and(eq(documents.id, id), isNull(documents.deletedAt)))
+      .where(and(...docConds))
       .limit(1)
     if (!doc) return null
-    if (!canManage && doc.status !== 'published') return null
 
     const [publishedVersion] = await tx
       .select({

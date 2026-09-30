@@ -1,9 +1,20 @@
-// Single source of truth for "which controlled documents may this user read",
-// shared by the assistant's read tools (tools.ts) AND the in-chat document
-// reader (_document-reader-actions.ts). Mirrors the /documents list page:
-// managers (documents.manage / super-admin) see everything; everyone else sees
-// PUBLISHED documents only. Keeping this in one place means the security rule
-// can't drift between the search results and what the reader will open.
+// The single source of truth for "which controlled documents may this user read".
+//
+// Every document read surface composes this rule: the /documents list, the
+// detail page, the reader, the assistant's read tools and the in-chat reader,
+// global search, and the public REST API. Managers (documents.manage, or a
+// super-admin) are unconstrained; everyone else sees PUBLISHED documents only.
+// A manager's exemption is deliberately narrow — it waives the publication rule
+// only, never the deleted-row rule.
+//
+// Callers remain responsible for their own `deleted_at IS NULL`. This helper
+// answers exactly one question — may an unpublished document be seen — and
+// folding soft-delete in here would silently change the meaning for every
+// caller that already applies it separately.
+//
+// When adding a document read surface, compose this rather than restating the
+// rule: a second copy is how the search results and the thing the reader opens
+// drift apart.
 
 import { eq, type SQL } from 'drizzle-orm'
 import { documents } from '@beaconhs/db/schema'

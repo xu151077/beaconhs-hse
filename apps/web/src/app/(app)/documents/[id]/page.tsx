@@ -6,7 +6,7 @@ import { DownloadLink } from '@/components/download-link'
 import { SmartBackLink } from '@/components/smart-back-link'
 import { notFound, redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import {
   Activity,
   BadgeCheck,
@@ -48,6 +48,7 @@ import {
 import { attachmentUrl } from '@/lib/attachment-url'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { formatDate } from '@/lib/datetime'
 import { activityPageForEntity, recordAuditInTransaction } from '@/lib/audit'
 import { assertUploadedDocumentPdf } from '@/lib/document-version-policy'
@@ -429,16 +430,25 @@ export default async function DocumentDetailPage({
   if (!canRead) notFound()
   // Readers use the dedicated /read surface — this page is the authoring
   // workspace. Unpublished documents stay hidden from anyone who cannot manage.
+  //
+  // The visibility rule comes from the shared helper and is applied IN the probe
+  // statement, so an unpublished document no longer has to be fetched and then
+  // rejected in JavaScript. `documentReadFilter` yields `undefined` for a
+  // manager, so the probe stays a plain liveness check for them. The redirect
+  // below is navigation, not authorization, and is unchanged.
   if (!canManage) {
+    const visibility = documentReadFilter(ctx)
+    const probeConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
+    if (visibility) probeConds.push(visibility)
     const readable = await ctx.db(async (tx) => {
       const [doc] = await tx
         .select({ status: documents.status })
         .from(documents)
-        .where(and(eq(documents.id, id), isNull(documents.deletedAt)))
+        .where(and(...probeConds))
         .limit(1)
       return doc ?? null
     })
-    if (!readable || readable.status !== 'published') notFound()
+    if (!readable) notFound()
     redirect(`/documents/${id}/read`)
   }
 
