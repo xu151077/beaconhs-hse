@@ -20,6 +20,7 @@ const config: KnipConfig = {
         // Phase A: proves people_assignments semantics against the live database, then
         // rolls the transaction back. A verification tool, not an app entry point.
         'scripts/phase-a-assignment-verification.mjs',
+        'scripts/project-scope-verification.ts',
         'scripts/restore-equipment-preuse-links.ts',
         'scripts/restore-ppe-custody-from-legacy.ts',
         'scripts/restore-ppe-serial-numbers.ts',
