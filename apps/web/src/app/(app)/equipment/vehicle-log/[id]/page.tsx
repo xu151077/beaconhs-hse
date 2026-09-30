@@ -9,6 +9,7 @@ import { Button, Card, CardContent, DetailHeader, Input, Label, Textarea } from 
 import { equipmentItems, orgUnits, people, truckLogEntries } from '@beaconhs/db/schema'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { canSeeRecord } from '@/lib/visibility'
 import { activityPageForEntity, recordAudit } from '@/lib/audit'
 import { DetailGrid } from '@/components/detail-grid'
 import { isUuid, parsePrefixedListParams, pickString } from '@/lib/list-params'
@@ -116,6 +117,17 @@ export default async function TruckLogDetailPage({
   const activityAction = pickString(sp.activityAction)?.slice(0, 100) || undefined
 
   const ctx = await requireRequestContext()
+  // Same read-tier gate as the vehicle-log list (/equipment/vehicle-log): with
+  // none of these keys the register is not visible at all, so a guessed entry
+  // id must not render the detail page either. The narrower `?tab=edit` gate
+  // below stays — it is a separate capability (equipment.manage).
+  if (
+    !can(ctx, 'equipment.read.all') &&
+    !can(ctx, 'equipment.read.site') &&
+    !can(ctx, 'equipment.manage')
+  ) {
+    redirect('/dashboard')
+  }
   const canManage = can(ctx, 'equipment.manage')
   if (active === 'edit' && !canManage) redirect(`/equipment/vehicle-log/${id}`)
   const data = await ctx.db(async (tx) => {
@@ -133,6 +145,17 @@ export default async function TruckLogDetailPage({
       .where(eq(truckLogEntries.id, id))
       .limit(1)
     if (!row) return null
+    // Scope against the PARENT VEHICLE, not `entry.siteOrgUnitId`: the list
+    // page scopes vehicle-log visibility through the vehicle's current site /
+    // holder (see _equipment-policy.ts), so scoping this page on the entry's
+    // own site column would show or hide entries inconsistently with the
+    // register the user actually sees.
+    const visible = await canSeeRecord(ctx, tx, {
+      prefix: 'equipment',
+      siteId: row.truck?.currentSiteOrgUnitId ?? null,
+      personId: row.truck?.currentHolderPersonId ?? null,
+    })
+    if (!visible) return null
     return row
   })
 
