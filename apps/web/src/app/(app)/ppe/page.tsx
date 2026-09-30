@@ -2,6 +2,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { HardHat } from 'lucide-react'
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { Button, EmptyState, PageHeader } from '@beaconhs/ui'
@@ -14,6 +15,7 @@ import {
 } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { moduleScopeWhere } from '@/lib/visibility'
 import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
 import { resolvePpeInspectionDue } from '@/lib/ppe-inspection-due'
 import { DownloadLink } from '@/components/download-link'
@@ -104,6 +106,16 @@ export default async function PpePage({
   const holderRaw = pickString(sp.holder)
   const holderFilter = holderRaw && isUuid(holderRaw) ? holderRaw : undefined
   const ctx = await requireRequestContext()
+  // The register is inventory of record: without any PPE read tier a user must
+  // not see the list at all (mirrors the equipment register gate).
+  if (
+    !ctx.isSuperAdmin &&
+    !can(ctx, 'ppe.read.all') &&
+    !can(ctx, 'ppe.read.site') &&
+    !can(ctx, 'ppe.read.self')
+  ) {
+    redirect('/dashboard')
+  }
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'ppe.read.all')
   const canIssue = can(ctx, 'ppe.issue') || can(ctx, 'ppe.manage')
 
@@ -114,6 +126,14 @@ export default async function PpePage({
 
   const { rows, total, statusCounts, types, selectedHolder } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(ppeItems.deletedAt)]
+    // Read-tier scope. ppe_items has no org-unit column, so a `ppe.read.site`
+    // holder degrades to their own issued gear — the safe fallback, not a
+    // silent widen.
+    const scope = await moduleScopeWhere(ctx, tx, {
+      prefix: 'ppe',
+      personCol: ppeItems.currentHolderPersonId,
+    })
+    if (scope) filters.push(scope)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(

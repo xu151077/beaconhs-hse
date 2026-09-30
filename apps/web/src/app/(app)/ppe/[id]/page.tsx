@@ -73,6 +73,7 @@ import { canManageModule } from '@/lib/module-admin/guard'
 import { recordModuleFlowEvent } from '@beaconhs/events'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
+import { canSeeRecord } from '@/lib/visibility'
 import { formatDate } from '@/lib/datetime'
 import { LiveField, LiveRemoteSelect, LiveSelect } from '@/components/live-field'
 import { RemoteSelectField } from '@/components/remote-search-select'
@@ -865,6 +866,17 @@ export default async function PpeDetailPage({
 
   const sp = await searchParams
   const ctx = await requireRequestContext()
+  // Same read-tier gate as the /ppe register: without any PPE read tier a
+  // guessed item id must not render. The per-tab `canManage` / `canIssue` gates
+  // below are separate, narrower capabilities.
+  if (
+    !ctx.isSuperAdmin &&
+    !can(ctx, 'ppe.read.all') &&
+    !can(ctx, 'ppe.read.site') &&
+    !can(ctx, 'ppe.read.self')
+  ) {
+    redirect('/dashboard')
+  }
   const canManage = can(ctx, 'ppe.manage')
   const canIssue = can(ctx, 'ppe.issue')
   const canChangeStatus = can(ctx, 'ppe.return') || canManage
@@ -885,6 +897,15 @@ export default async function PpeDetailPage({
       .where(eq(ppeItems.id, id))
       .limit(1)
     if (!row) return null
+
+    // Read-tier scope (mirrors /ppe): read.all → any item; otherwise only the
+    // gear the caller holds. ppe_items has no org-unit column, so read.site
+    // degrades to own-only rather than widening. Closes the view-by-URL gap.
+    const visible = await canSeeRecord(ctx, tx, {
+      prefix: 'ppe',
+      personId: row.item.currentHolderPersonId ?? null,
+    })
+    if (!visible) return null
 
     return row
   })

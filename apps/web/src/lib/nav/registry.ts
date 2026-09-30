@@ -185,7 +185,14 @@ export const NAV_MODULES: NavModule[] = [
     requiredPermission: 'equipment.read.self',
     group: 'Assets & people',
   },
-  { key: 'ppe', href: '/ppe', label: 'PPE', iconKey: 'hard-hat', group: 'Assets & people' },
+  {
+    key: 'ppe',
+    href: '/ppe',
+    label: 'PPE',
+    iconKey: 'hard-hat',
+    requiredPermission: 'ppe.read.self',
+    group: 'Assets & people',
+  },
 
   // Compliance — the unified obligations hub (viewing + management). Visible to
   // EVERYONE: a person without `compliance.read` still has their own obligations,
