@@ -22,6 +22,8 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { canUseSafeDistance } from '@/lib/safe-distance-access'
+import { resolveProjectScopeIn } from '@/lib/project-scope'
+import { projectScopePredicate } from '@/lib/project-scope-predicate'
 import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -84,7 +86,23 @@ export default async function SafeDistanceListPage({
   const canExport = can(ctx, 'admin.data.export')
 
   const { rows, total, methodCounts } = await ctx.db(async (tx) => {
+    // Project Scope, resolved AFTER the capability gate above and inside this
+    // transaction, so the org tree and assignment reads run under the same RLS
+    // context as the three queries below.
+    //
+    // This list, the CSV export and the analytics `safe_distance` spec now share
+    // one rule: the records of the sites the caller stands at, plus the ones
+    // they personally operated. Both columns already exist on the table.
+    // `unrestricted` adds no restriction; an empty or unresolved scope is a hard
+    // `false`, so the list is empty rather than the whole tenant.
+    const projectScope = await resolveProjectScopeIn(ctx, tx)
+    const scopeWhere = projectScopePredicate(projectScope, {
+      orgUnitCol: safeDistanceRecords.siteOrgUnitId,
+      personCol: safeDistanceRecords.operatorPersonId,
+    })
+
     const filters: SQL<unknown>[] = [isNull(safeDistanceRecords.deletedAt)]
+    if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(
@@ -131,10 +149,23 @@ export default async function SafeDistanceListPage({
       .limit(params.perPage)
       .offset((params.page - 1) * params.perPage)
 
+    // The method counts are FACET counts — they are rendered as the `count` on
+    // each method `FilterChip` (see the TableToolbar below) to tell the caller how
+    // many rows picking that method would yield. They must therefore be bounded by
+    // the same Project Scope as `rows` and `total`, or a restricted caller reads
+    // the tenant-wide totals straight off the chip labels even though the rows
+    // behind them are withheld. That is an information leak, not a cosmetic one.
+    //
+    // SCOPE NOTE: this query still ignores the search term and the method filter
+    // itself, while `rows` and `total` apply both. That divergence predates 15B-3C
+    // and is the usual "facet excludes its own filter" convention applied
+    // inconsistently — the search term is the part that looks unintended. It is
+    // reported rather than changed here, because altering it is a separate
+    // decision about list behaviour, not about Project Scope.
     const mc = await tx
       .select({ m: safeDistanceRecords.method, c: count() })
       .from(safeDistanceRecords)
-      .where(isNull(safeDistanceRecords.deletedAt))
+      .where(and(isNull(safeDistanceRecords.deletedAt), scopeWhere))
       .groupBy(safeDistanceRecords.method)
 
     return {

@@ -509,3 +509,141 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
     expect(all[0]?.baseFilter).toBeUndefined()
   })
 })
+
+/**
+ * 15B-3C-2A — `safe_distance_records.operator_person_id` as a person binding.
+ *
+ * Before this change the `safe_distance` spec declared `personCols: PERSON_COLUMNS`
+ * but `operator_person_id` was not in that list, so the analytics layer could bind
+ * ONLY the site leg while the list and the CSV export bound site OR operator. The
+ * three surfaces answered different questions about the same table.
+ *
+ * The column is APPENDED to the candidate list, never inserted. `pickColumn`
+ * returns the first candidate the entity actually has, so appending can only
+ * affect an entity that has none of the earlier names — verified against the live
+ * schema to be `safe_distance_records` and nothing else. These tests pin that
+ * property so a future edit cannot quietly re-order the list and steal a binding
+ * from another module.
+ */
+describe('15B-3C-2A — safe_distance binds the operator leg', () => {
+  const OPERATOR_A = '9a000000-0000-4000-8000-0000000000a1'
+  const OPERATOR_B = '9a000000-0000-4000-8000-0000000000b1'
+
+  /** The declared columns of `safe_distance_records`, per the live schema. */
+  const safeDistance = entity('safe_distance', 'safe_distance_records', [
+    'reference',
+    'name',
+    'method',
+    'occurred_at',
+    'site_org_unit_id',
+    'operator_person_id',
+    'supervisor_tenant_user_id',
+  ])
+
+  /** Holds only the flat `tools.safe-distance.use` key, with a chosen scope. */
+  const safeDistanceUser = (scope: Partial<AnalyticsScopeSubject> = {}): AnalyticsScopeSubject => ({
+    tenantUserId: 'tu_operator',
+    personId: OPERATOR_A,
+    isSuperAdmin: false,
+    permissions: (key) => key === 'tools.safe-distance.use',
+    siteIds: [],
+    projectScopeKind: 'restricted',
+    orgUnitIds: [],
+    projectPersonIds: [OPERATOR_A],
+    ...scope,
+  })
+
+  it('picks operator_person_id for the person leg when there is no site id', () => {
+    const visible = scopeAnalyticsEntities(safeDistanceUser(), [safeDistance])
+    expect(visible).toHaveLength(1)
+    expect(filterFor(visible[0]?.baseFilter, 'operator_person_id')?.value).toEqual([OPERATOR_A])
+  })
+
+  it('binds the matching operator, and never the nonmatching one', () => {
+    const visible = scopeAnalyticsEntities(safeDistanceUser({ projectPersonIds: [OPERATOR_B] }), [
+      safeDistance,
+    ])
+    const values = filterFor(visible[0]?.baseFilter, 'operator_person_id')?.value as string[]
+    expect(values).toEqual([OPERATOR_B])
+    expect(values).not.toContain(OPERATOR_A)
+  })
+
+  it('unions the site leg and the operator leg', () => {
+    // The existing OR design: a record is in scope if its place is in the scope OR
+    // its operator is. This is the same `or(...)` the web SQL adapter builds, and
+    // the reason the list, the CSV and analytics can agree.
+    const visible = scopeAnalyticsEntities(
+      safeDistanceUser({ orgUnitIds: [SITE_A], projectPersonIds: [OPERATOR_A] }),
+      [safeDistance],
+    )
+    const filter = visible[0]?.baseFilter
+    expect(filter?.combinator).toBe('or')
+    expect(filterFor(filter, 'site_org_unit_id')?.value).toEqual([SITE_A])
+    expect(filterFor(filter, 'operator_person_id')?.value).toEqual([OPERATOR_A])
+  })
+
+  it('keeps the two legs independent when only one carries ids', () => {
+    // Site only: no operator value is invented, so a record whose operator is
+    // someone else but whose site matches is still reachable, and vice versa.
+    const siteOnly = scopeAnalyticsEntities(
+      safeDistanceUser({ orgUnitIds: [SITE_A], projectPersonIds: [] }),
+      [safeDistance],
+    )[0]
+    expect(filterFor(siteOnly?.baseFilter, 'site_org_unit_id')?.value).toEqual([SITE_A])
+    expect(filterFor(siteOnly?.baseFilter, 'operator_person_id')).toBeUndefined()
+  })
+
+  it('withholds for an empty or unresolved scope rather than going tenant-wide', () => {
+    for (const kind of ['empty', 'unknown'] as const) {
+      const visible = scopeAnalyticsEntities(safeDistanceUser({ projectScopeKind: kind }), [
+        safeDistance,
+      ])
+      expect(visible, kind).toEqual([])
+    }
+    // A restricted scope with neither leg carries ids cannot be expressed, so the
+    // table is withheld by omission — the fail-closed path.
+    expect(
+      scopeAnalyticsEntities(safeDistanceUser({ orgUnitIds: [], projectPersonIds: [] }), [
+        safeDistance,
+      ]),
+    ).toEqual([])
+  })
+
+  it('leaves every earlier person candidate in priority, so no other module is stolen', () => {
+    // An entity that has BOTH `person_id` and `operator_person_id` must keep
+    // binding `person_id`. If `operator_person_id` were ever inserted before an
+    // existing name, this would fail — which is the regression worth preventing.
+    for (const [earlier, later] of [
+      ['person_id', 'operator_person_id'],
+      ['subject_person_id', 'operator_person_id'],
+      ['driver_person_id', 'operator_person_id'],
+      ['inspector_person_id', 'operator_person_id'],
+      ['current_holder_person_id', 'operator_person_id'],
+    ] as const) {
+      const both = entity('safe_distance', 'safe_distance_records', [
+        earlier,
+        later,
+        'site_org_unit_id',
+      ])
+      const visible = scopeAnalyticsEntities(
+        safeDistanceUser({ orgUnitIds: [], projectPersonIds: [OPERATOR_A] }),
+        [both],
+      )
+      expect(filterFor(visible[0]?.baseFilter, earlier)?.value, earlier).toEqual([OPERATOR_A])
+      expect(filterFor(visible[0]?.baseFilter, later), earlier).toBeUndefined()
+    }
+  })
+
+  it('leaves a company-wide caller unrestricted', () => {
+    const companyWide = scopeAnalyticsEntities(
+      safeDistanceUser({
+        projectScopeKind: 'unrestricted',
+        orgUnitIds: [SITE_A, SITE_B],
+        projectPersonIds: [OPERATOR_A, OPERATOR_B],
+      }),
+      [safeDistance],
+    )
+    expect(companyWide).toHaveLength(1)
+    expect(companyWide[0]?.baseFilter).toBeUndefined()
+  })
+})

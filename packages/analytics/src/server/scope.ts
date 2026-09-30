@@ -167,13 +167,27 @@ type Tier = 'all' | 'site' | 'self' | 'none'
 const SITE_COLUMNS = ['site_org_unit_id', 'current_site_org_unit_id'] as const
 /** Tables that reference an org unit generically rather than naming a site. */
 const ORG_UNIT_COLUMNS = ['org_unit_id'] as const
-/** Person-owning columns, most-specific first. */
+/**
+ * Person-owning columns, most-specific first.
+ *
+ * `pickColumn` returns the FIRST candidate the entity actually has, so this list
+ * is a priority order and appending a name can only affect an entity that has
+ * none of the earlier ones. `operator_person_id` was added in 15B-3C-2A for
+ * `safe_distance_records`, whose operator is the person who performed the check.
+ *
+ * Its blast radius was verified against the live schema rather than assumed:
+ * `operator_person_id` exists on exactly ONE table in the schema, so the 20 specs
+ * that reference this list are unchanged for every other entity. No existing
+ * entity's `pickColumn` result moves, no tenant-wide fallback is introduced (a
+ * person column is a binding, which can only narrow), and no tier rule is touched.
+ */
 const PERSON_COLUMNS = [
   'person_id',
   'subject_person_id',
   'driver_person_id',
   'inspector_person_id',
   'current_holder_person_id',
+  'operator_person_id',
 ] as const
 /** Tenant-user-owning columns, most-specific first. */
 const USER_COLUMNS = ['owner_tenant_user_id', 'assigned_to_tenant_user_id'] as const
