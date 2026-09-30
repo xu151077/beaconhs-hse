@@ -14,7 +14,12 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runBhql } from '@beaconhs/analytics/server'
 import type { Database } from '@beaconhs/db'
-import type { ReportCustomQuery, RoleScope } from '@beaconhs/db/schema'
+import {
+  orgUnits,
+  peopleAssignments,
+  type ReportCustomQuery,
+  type RoleScope,
+} from '@beaconhs/db/schema'
 import { runBeaconReport } from '@beaconhs/reports/server'
 import type { RequestContext } from '@beaconhs/tenant'
 import { resolveAnalyticsAccess } from './analytics-access'
@@ -71,6 +76,76 @@ const SITE_B = '018f47ba-86c4-7ee2-8d7a-5e7602f2a002'
  * records the statements BHQL sends, which takes the `tx.execute` path rather
  * than `executeParameterizedRows`.
  */
+/**
+ * A transaction stand-in that answers the Project Scope resolver's queries.
+ *
+ * Since 15B-3B `resolveAnalyticsAccess` calls the resolver, so this transaction
+ * has to answer for `org_units`, `people` and `people_assignments` as well as the
+ * empty sets the catalogue lookups want. It stays table-aware rather than
+ * returning rows for everything: an unknown table still yields `[]`, which is
+ * what `getEffectiveRoleKeys` and the catalogue reads expect.
+ *
+ * The foreman is placed at SITE_A, so the resolver answers `orgUnits` / `empty`,
+ * and the compiled statement must be narrowed to that site. A test that wanted a
+ * different placement changes `ASSIGNMENTS` below.
+ */
+const PROJECT_ID = '00000000-0000-4000-8000-00000000a000'
+const ORG_ROWS = [
+  { id: PROJECT_ID, parentId: null, level: 'project', deletedAt: null },
+  { id: SITE_A, parentId: PROJECT_ID, level: 'site', deletedAt: null },
+  { id: SITE_B, parentId: PROJECT_ID, level: 'site', deletedAt: null },
+]
+const ASSIGNMENTS = [
+  {
+    id: 'assignment-1',
+    personId: 'person-1',
+    orgUnitId: SITE_A,
+    validFrom: '2020-01-01',
+    validTo: null,
+  },
+]
+
+/** The rows the resolver should get back, keyed by the table it selected from. */
+/**
+ * A Drizzle table's SQL name — the identity `resolveScopeSpec` matches on and
+ * `.from()` is called with.
+ */
+function tableName(table: object): string {
+  return (table as Record<PropertyKey, unknown>)[getTableName(table)] as string
+}
+
+/** Drizzle tags every table with its SQL name under this symbol. */
+function getTableName(table: object): symbol {
+  return Object.getOwnPropertySymbols(table).find((s) => s.description === 'drizzle:Name') as symbol
+}
+
+const RESOLVER_ROWS: Record<string, unknown[]> = {
+  [tableName(orgUnits)]: ORG_ROWS,
+  [tableName(peopleAssignments)]: ASSIGNMENTS,
+}
+
+function tableAwareTx(table: object | null, distinct: boolean) {
+  const rows = table ? (RESOLVER_ROWS[tableName(table)] ?? []) : []
+  const self = {
+    then: (resolve: (value: unknown) => void) => resolve(distinct ? rows : rows),
+    execute: async (statement: unknown) => {
+      const params: unknown[] = []
+      executed.statements.push({ text: renderSql(statement, params), params })
+      return []
+    },
+  }
+  return new Proxy(self, {
+    get(target, property) {
+      if (property === 'then' || property === 'execute') {
+        return (target as unknown as Record<string, unknown>)[property as string]
+      }
+      if (property === 'from') return (t: object) => tableAwareTx(t, distinct)
+      if (property === 'selectDistinct') return () => tableAwareTx(table, true)
+      return () => tableAwareTx(table, distinct)
+    },
+  })
+}
+
 const tx = new Proxy(() => undefined, {
   get(_target, property) {
     if (property === 'then') return (resolve: (value: unknown) => void) => resolve([])
@@ -80,6 +155,11 @@ const tx = new Proxy(() => undefined, {
         executed.statements.push({ text: renderSql(statement, params), params })
         return []
       }
+    }
+    // `.select(...)` returns a builder that remembers its table; every other
+    // chain method is a pass-through back onto that builder.
+    if (property === 'select' || property === 'selectDistinct') {
+      return () => tableAwareTx(null, property === 'selectDistinct')
     }
     return () => tx
   },

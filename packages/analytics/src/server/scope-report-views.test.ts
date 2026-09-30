@@ -95,22 +95,44 @@ const REPORT_VIEWS: Record<string, AnalyticsEntity> = {
   ]),
 }
 
-/** A subject with exactly the built-in role's permissions and a given site scope. */
+/**
+ * A subject with exactly the built-in role's permissions and a given site scope.
+ *
+ * Since 15B-3B a subject also carries Project Scope, and an absent
+ * `projectScopeKind` is `unknown`, which FAILS CLOSED. These cases are about the
+ * read TIER ladder, so each subject is given the Project Scope its scenario
+ * implies: a foreman standing on a site is `restricted` to that site, and a
+ * tenant administrator is `unrestricted`. The assertions are unchanged — the same
+ * rows are expected, reached through the now-correct path.
+ */
 function subject(
   roleKey: keyof typeof BUILTIN_ROLES,
   opts: { siteIds?: string[]; personId?: string; tenantUserId?: string } = {},
 ): AnalyticsScopeSubject {
   const declared = BUILTIN_ROLES[roleKey]?.permissions as unknown as string[]
   const permissions = new Set(declared)
+  const siteIds = opts.siteIds ?? []
+  // `tenant_admin` is granted a company-wide scope, so it is unrestricted.
+  const companyWide = roleKey === 'tenant_admin'
+  // Otherwise the subject stands where it is placed: at its sites, or — for a
+  // person with no site of their own — at its own personnel record. A worker
+  // holding only `ppe.read.self` is scoped by person, not by place.
+  const kind: NonNullable<AnalyticsScopeSubject['projectScopeKind']> = companyWide
+    ? 'unrestricted'
+    : siteIds.length > 0 || opts.personId
+      ? 'restricted'
+      : 'empty'
   return {
     tenantUserId: opts.tenantUserId ?? 'verif-foreman-a',
     personId: opts.personId ?? null,
     isSuperAdmin: false,
     permissions: (key: string) => permissions.has(key),
-    siteIds: opts.siteIds ?? [],
+    siteIds,
+    projectScopeKind: kind,
+    orgUnitIds: companyWide ? undefined : siteIds,
+    projectPersonIds: companyWide ? undefined : opts.personId ? [opts.personId] : [],
   }
 }
-
 const foremanA = (siteIds = [SITE_A], personId?: string) =>
   subject('foreman', { siteIds, personId })
 const foremanB = (personId?: string) => subject('foreman', { siteIds: [SITE_B], personId })
@@ -230,21 +252,45 @@ describe('F1 — report_* views inherit their module scope, not the studio grant
       isSuperAdmin: false,
       permissions: (k: string) => k === 'reports.read',
       siteIds: [] as string[],
+      projectScopeKind: 'unrestricted' as const,
     } satisfies AnalyticsScopeSubject
-    const safety = {
+    const safetyWide = {
       ...viewer,
       permissions: (k: string) =>
         (BUILTIN_ROLES.safety_manager?.permissions as string[]).includes(k),
     } satisfies AnalyticsScopeSubject
+    const safetyScoped = {
+      ...safetyWide,
+      projectScopeKind: 'restricted' as const,
+      orgUnitIds: [SITE_A],
+      projectPersonIds: [],
+    } satisfies AnalyticsScopeSubject
     expect(scopeAnalyticsEntities(viewer, [REPORT_VIEWS.incident_rates!])).toEqual([])
-    const wide = scopeAnalyticsEntities(safety, [REPORT_VIEWS.incident_rates!])
+    const wide = scopeAnalyticsEntities(safetyWide, [REPORT_VIEWS.incident_rates!])
     expect(wide).toHaveLength(1)
-    expect(wide[0]?.baseFilter).toBeUndefined() // tenant-wide by permission, not by accident
+    expect(wide[0]?.baseFilter).toBeUndefined() // company-wide BY SCOPE, not by permission
+    // The same permission, inside a Project Scope, is withheld — the aggregate has
+    // no column to narrow on, so it is not shown at all.
+    expect(scopeAnalyticsEntities(safetyScoped, [REPORT_VIEWS.incident_rates!])).toEqual([])
   })
 
-  it('leaves safety_manager and tenant_admin with unfiltered access', () => {
+  it('withholds the scope-less views from a SCOPED safety_manager', () => {
+    // The counterpart to the case above: identical permissions, a real Project
+    // Scope. Views with a bindable column are narrowed; views without one (the
+    // aggregates) are withheld. Before 15B-3B every one of them was unfiltered.
+    const s = subject('safety_manager', { siteIds: [SITE_A] })
+    const visibleKeys = scopeAnalyticsEntities(s, Object.values(REPORT_VIEWS)).map((e) => e.key)
+    expect(visibleKeys).toContain('equipment_fleet')
+    // `incident_rates` has no column the scope can bind to.
+    expect(visibleKeys).not.toContain('incident_rates')
+  })
+
+  it('leaves an UNRESTRICTED safety_manager and tenant_admin with unfiltered access', () => {
+    // CHANGED IN 15B-3B: "unfiltered" now requires an unrestricted Project Scope,
+    // not merely a read.all permission. Both roles are given one so this case
+    // stays about the TIER ladder; the scoped case is the test above.
     for (const role of ['safety_manager', 'tenant_admin'] as const) {
-      const s = subject(role)
+      const s = { ...subject(role), projectScopeKind: 'unrestricted' as const }
       for (const view of Object.values(REPORT_VIEWS)) {
         const visible = scopeAnalyticsEntities(s, [view])
         expect(visible, `${role} lost ${view.key}`).toHaveLength(1)
@@ -259,6 +305,8 @@ describe('F1 — report_* views inherit their module scope, not the studio grant
       isSuperAdmin: true,
       permissions: () => true,
       siteIds: [SITE_A, SITE_B],
+      // A super-admin resolves `unrestricted`.
+      projectScopeKind: 'unrestricted',
     }
     for (const view of Object.values(REPORT_VIEWS)) {
       const visible = scopeAnalyticsEntities(admin, [view])
@@ -303,6 +351,9 @@ describe('F1 — report_* views inherit their module scope, not the studio grant
       tenantUserId: 'u',
       personId: null,
       isSuperAdmin: false,
+      // Company-wide, so this case isolates the missing-spec default rather than
+      // the Project Scope rule.
+      projectScopeKind: 'unrestricted',
       permissions: (key) => {
         const all = PERMISSION_CATALOGUE as unknown as string[]
         return all.includes(key) && !key.startsWith('reports.read.')
@@ -362,12 +413,26 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
     { category: 'compliance' },
   )
 
-  const subject = (keys: string[], siteIds: string[] = [SITE_A]): AnalyticsScopeSubject => ({
+  /**
+   * A foreman-shaped subject. By default it is `restricted` to `siteIds`, which is
+   * the realistic case: an employee with a personnel placement, not a company-wide
+   * administrator. `scope` overrides the Project Scope so a case can be made
+   * unrestricted or unresolved.
+   */
+  const subject = (
+    keys: string[],
+    siteIds: string[] = [SITE_A],
+    scope: Partial<AnalyticsScopeSubject> = {},
+  ): AnalyticsScopeSubject => ({
     tenantUserId: 'tu_foreman',
     personId: 'person_foreman',
     isSuperAdmin: false,
     permissions: (key) => keys.includes(key),
     siteIds,
+    projectScopeKind: 'restricted',
+    orgUnitIds: siteIds,
+    projectPersonIds: ['person_foreman'],
+    ...scope,
   })
 
   it('exposes no scope column, so the outcome is fail-closed rather than tenant-wide', () => {
@@ -389,12 +454,35 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
     else expect(scoped).toHaveLength(0)
   })
 
-  it('keeps a register-wide reader unfiltered', () => {
-    const all = scopeAnalyticsEntities(subject(['compliance.read', 'compliance.read.all']), [
+  it('withholds a register-wide reader who is inside a Project Scope', () => {
+    // CHANGED IN 15B-3B, and this is the case the change exists for.
+    //
+    // `compliance.read.all` still resolves tier 'all', but tier 'all' no longer
+    // means tenant-wide. This entity exposes NO scope column — the underlying
+    // view joins `compliance_status.person_id` only to render a name and never
+    // selects it (packages/reports/src/entities.ts:393-428) — so a Project Scope
+    // cannot be expressed against it. The correct answer for a restricted caller
+    // is therefore WITHHOLD, not an unfiltered read.
+    //
+    // Before this, the assertion was `baseFilter` undefined, which handed every
+    // `compliance.read.all` holder the whole tenant.
+    const scoped = scopeAnalyticsEntities(subject(['compliance.read', 'compliance.read.all']), [
       complianceStatus,
     ])
-    expect(all).toHaveLength(1)
-    expect(all[0]?.baseFilter).toBeUndefined() // tier 'all' → no predicate, as intended
+    expect(scoped).toHaveLength(0)
+  })
+
+  it('leaves a register-wide reader unfiltered ONLY when the caller is unrestricted', () => {
+    const companyWide = scopeAnalyticsEntities(
+      subject(['compliance.read', 'compliance.read.all'], [SITE_A], {
+        projectScopeKind: 'unrestricted',
+        orgUnitIds: undefined,
+        projectPersonIds: undefined,
+      }),
+      [complianceStatus],
+    )
+    expect(companyWide).toHaveLength(1)
+    expect(companyWide[0]?.baseFilter).toBeUndefined()
   })
 
   it('withholds the entity from a caller with no compliance key', () => {
@@ -413,6 +501,8 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
       isSuperAdmin: true,
       permissions: () => false,
       siteIds: [],
+      // A super-admin resolves `unrestricted`.
+      projectScopeKind: 'unrestricted',
     }
     const all = scopeAnalyticsEntities(root, [complianceStatus])
     expect(all).toHaveLength(1)

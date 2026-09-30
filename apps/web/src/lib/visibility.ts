@@ -75,7 +75,7 @@ export async function recordVisibilityWhere(
   // Project Scope, ANDed in. Deliberately placed AFTER the two unrestricted
   // returns above: those are the only paths that may yield `undefined`, and the
   // only two that may skip the scope entirely.
-  const projectScope = await resolveProjectScopeIn(tx, ctx)
+  const projectScope = await resolveProjectScopeIn(ctx, tx)
   const scopeCond = projectScopePredicate(projectScope, {
     orgUnitCol: cols.siteCol,
     personCol: cols.personCol,
@@ -191,7 +191,7 @@ export async function moduleScopeWhere(
   // Project Scope is resolved ONCE per call and ANDed with the visibility
   // predicate below. It is not an input to the tier decision, and it never
   // replaces the tier decision.
-  const projectScope = await resolveProjectScopeIn(tx, ctx)
+  const projectScope = await resolveProjectScopeIn(ctx, tx)
   const scopeCond = projectScopePredicate(projectScope, {
     orgUnitCol: cols.siteCol,
     personCol: cols.personCol,
@@ -250,7 +250,7 @@ export async function canSeeRecord(
   // list filter and this detail guard cannot disagree. A record the SQL filters
   // out is not readable by id, and a record this refuses cannot come back from a
   // list query.
-  const projectScope = await resolveProjectScopeIn(tx, ctx)
+  const projectScope = await resolveProjectScopeIn(ctx, tx)
   if (!recordInProjectScope(projectScope, { siteId: rec.siteId, personId: rec.personId })) {
     return false
   }

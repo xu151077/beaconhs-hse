@@ -21,6 +21,17 @@ describe('scheduled report source authorization contract', () => {
     // `canAccessTemplate` only gates which Builder apps are visible. Without
     // this call the run would compile against a tenant-wide source inventory
     // and report rows the impersonated member cannot read by hand.
-    expect(workerSource).toContain('scopeReportSourcesForRunAs(requestCtx, discovered)')
+    expect(workerSource).toContain('scopeReportSourcesForRunAs(')
+  })
+
+  it('resolves and passes the run-as member Project Scope', () => {
+    // 15B-3B. Two restrictions now apply to a scheduled run, not one: the read
+    // tier AND the personnel placement. The scope must be resolved from the same
+    // resolver the web app uses, inside the run's own tenant transaction, and
+    // passed in — omitting it fails closed and would silently return no rows.
+    expect(workerSource).toContain('resolveProjectScopeIn')
+    expect(workerSource).toContain('await resolveProjectScopeIn(requestCtx, tx)')
+    // The worker must not reach into the web app for it.
+    expect(workerSource).not.toMatch(/from '@\/lib\/|from ['"]\.\.\/\.\.\/apps\/web/)
   })
 })

@@ -26,6 +26,64 @@
 import type { RoleScope } from '@beaconhs/db/schema'
 import type { ReportRuleGroup } from '@beaconhs/reports'
 import type { AnalyticsEntity } from '../semantic'
+import type { ProjectScope } from './project-scope'
+
+/** Everything the scope rules need EXCEPT Project Scope, resolved by the caller. */
+export type AnalyticsScopeIdentity = {
+  isSuperAdmin: boolean
+  /** Mirrors `can()` from `@beaconhs/tenant`, including tier widening. */
+  permissions: (key: string) => boolean
+  /** Site org-unit ids from `{ type: 'sites' }` scopes. */
+  siteIds: readonly string[]
+  personId: string | null
+  /** `ctx.membership.id` — the tenant_users row id. */
+  tenantUserId: string | null
+}
+
+/**
+ * THE shared constructor. `apps/web` and `apps/worker` both build their subject
+ * here, so the two cannot drift into answering "what may this identity see?"
+ * differently — which is the specific failure 15B-3D exists to prevent, where a
+ * scheduled report would have resolved to a wider scope than the same member
+ * gets by hand in the UI.
+ *
+ * The three restricted kinds collapse to one state: any non-empty scope is
+ * `'restricted'`. `unrestricted` and `empty` stay distinct, because a caller who
+ * can see nothing must never be served a company-wide result. `undefined` (no
+ * scope was resolved at all) becomes `'unknown'`, which the rules below treat as
+ * DENY — an absent scope is not evidence of a wide one.
+ */
+export function analyticsScopeSubject(
+  identity: AnalyticsScopeIdentity,
+  projectScope?: ProjectScope,
+): AnalyticsScopeSubject {
+  return {
+    isSuperAdmin: identity.isSuperAdmin,
+    permissions: identity.permissions,
+    siteIds: identity.siteIds,
+    personId: identity.personId,
+    tenantUserId: identity.tenantUserId,
+    projectScopeKind: !projectScope
+      ? 'unknown'
+      : projectScope.kind === 'unrestricted'
+        ? 'unrestricted'
+        : projectScope.kind === 'empty'
+          ? 'empty'
+          : 'restricted',
+    // Only the kinds that actually carry ids expose them. An `orgUnits` scope can
+    // legitimately have an empty `personIds`, so a consumer must not infer
+    // emptiness from one list and widen on it.
+    orgUnitIds:
+      projectScope &&
+      (projectScope.kind === 'orgUnits' || projectScope.kind === 'peopleAndOrgUnits')
+        ? projectScope.orgUnitIds
+        : undefined,
+    projectPersonIds:
+      projectScope && projectScope.kind !== 'unrestricted' && projectScope.kind !== 'empty'
+        ? projectScope.personIds
+        : undefined,
+  }
+}
 
 /** Everything the scope rules need, resolved by the caller. */
 export type AnalyticsScopeSubject = {
@@ -75,16 +133,40 @@ type ScopeSpec = {
   read: ReadSpec
   /** Candidate org-unit columns, first one the entity actually has wins. */
   siteCols?: readonly string[]
+  /**
+   * The same idea for tables that name the org unit `org_unit_id` rather than
+   * `site_org_unit_id`. `customer_contacts` is the one: a customer's address is
+   * an org unit, not a site.
+   */
+  orgUnitCols?: readonly string[]
   /** Candidate person columns, first one the entity actually has wins. */
   personCols?: readonly string[]
   /** Candidate tenant-user columns, first one the entity actually has wins. */
   userCols?: readonly string[]
+  /**
+   * An EXPLICIT, named exemption from the Project Scope row predicate.
+   *
+   * Only set on a spec that declares NO scope columns at all, and only for a
+   * table whose entire content is per-tenant configuration — never for one that
+   * holds per-person or per-project business records. `validateScopeSpecs`
+   * rejects any spec that both exempts itself and declares columns, so an
+   * exemption can never quietly become a licence to skip a boundable entity.
+   *
+   * This is the ONLY way an entity may skip the Project Scope. Falling through
+   * the `tier === 'all'` branch is not an exemption; it is the bug.
+   */
+  projectScopeExempt?: ProjectScopeExemption
 }
+
+/** The recognised exemption reasons. See `vehicle_log_settings` for the only one. */
+export type ProjectScopeExemption = 'tenant-level-setting'
 
 type Tier = 'all' | 'site' | 'self' | 'none'
 
 /** The platform's dominant location column names, most-specific first. */
 const SITE_COLUMNS = ['site_org_unit_id', 'current_site_org_unit_id'] as const
+/** Tables that reference an org unit generically rather than naming a site. */
+const ORG_UNIT_COLUMNS = ['org_unit_id'] as const
 /** Person-owning columns, most-specific first. */
 const PERSON_COLUMNS = [
   'person_id',
@@ -159,16 +241,35 @@ const PREFIX_SCOPE: [string, ScopeSpec][] = [
 
   // --- workforce & org -------------------------------------------------
   // Master data with no tiered read keys: tenant administration is the gate.
+  //
+  // `person_` / `people_` / `job_title` declare NO scope column, so since
+  // 15B-3B they are WITHHELD for a caller inside a Project Scope rather than
+  // returned unfiltered. They carry no location column at all — a person's
+  // reporting line (`manager_person_id`) is not a placement and is deliberately
+  // NOT used as a Project Scope binding, because "reports to" and "works at" are
+  // different facts and binding on the former would leak across projects.
   ['person_', { read: { key: 'admin.users.manage' } }],
   ['people_', { read: { key: 'admin.users.manage' } }],
-  ['customer_', { read: { key: 'admin.users.manage' } }],
+  // `customer_contacts` is the exception in this group: it carries a real
+  // `org_unit_id`, so a scoped caller is narrowed to the contacts at the places
+  // they are placed.
+  ['customer_', { read: { key: 'admin.users.manage' }, orgUnitCols: ORG_UNIT_COLUMNS }],
   ['job_title', { read: { key: 'admin.users.manage' } }],
   // `role_` before `role`: a per-user dashboard layout is not workforce master
   // data and is withheld rather than following the `roles` tables.
   ['role_', { read: null }],
+  // NOTE: `roles` is in `discover.ts`'s EXCLUDE_TABLES, so this spec is
+  // UNREACHABLE — no discovered entity can match it. It is kept, with a
+  // permission, rather than `read: null`, so that re-admitting the table later
+  // does not silently grant every role row to an `admin.users.manage` holder
+  // with no Project Scope bound. `scope.test.ts` pins that unreachability.
   ['role', { read: { key: 'admin.users.manage' } }],
 
   // --- insights / reports ---------------------------------------------
+  // NOTE: `insight_cards` is in `discover.ts`'s EXCLUDE_TABLES, so this spec is
+  // UNREACHABLE — cards are read through the cards module, never as an analytics
+  // source. Kept for the same reason as `role` above, and pinned as unreachable by
+  // `scope.test.ts` so nobody reads it as an active grant.
   ['insight_', { read: { key: 'insights.read' } }],
   // `report_` is the DEFAULT for the `report_*` projection views, and it is
   // deliberately fail-closed. `reports.read` grants access to the reporting
@@ -189,7 +290,18 @@ const PREFIX_SCOPE: [string, ScopeSpec][] = [
   ],
 
   // --- tools -----------------------------------------------------------
-  ['safe_distance', { read: { key: 'tools.safe-distance.use' } }],
+  // `safe_distance_records` really does carry `site_org_unit_id` and
+  // `operator_person_id`, so this spec was unbindable by omission rather than by
+  // data model. 15B-3B declares both so a restricted caller is narrowed rather
+  // than withheld.
+  [
+    'safe_distance',
+    {
+      read: { key: 'tools.safe-distance.use' },
+      siteCols: SITE_COLUMNS,
+      personCols: PERSON_COLUMNS,
+    },
+  ],
 
   // --- platform infrastructure: withheld -------------------------------
   // Notification/audit/admin/AI/log tables are not tenant analytical data. No
@@ -228,11 +340,39 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
     userCols: USER_COLUMNS,
   },
 
-  // Vehicle log settings is a single per-tenant equipment row: a flat equipment
-  // read, and no row scope to apply.
-  vehicle_log_settings: { read: { key: 'equipment.read.all' } },
+  // Vehicle log settings is a single per-tenant configuration row: `enabled_modes`
+  // and `default_mode`, and nothing else. It holds no per-person, per-site or
+  // per-project record, so a Project Scope has nothing to select on and narrowing
+  // it could not hide anything.
+  //
+  // This is the ONLY spec permitted to use `projectScopeExempt`, and the exemption
+  // is named rather than inferred from "has no columns" — `validateScopeSpecs`
+  // rejects a spec that both exempts itself and declares a column, so an exemption
+  // can never become a licence to skip a bindable entity. `validateScopeSpecs`
+  // also asserts this table's shape.
+  vehicle_log_settings: {
+    read: { key: 'equipment.read.all' },
+    projectScopeExempt: 'tenant-level-setting',
+  },
 
   // Organisation structure is tenant master data, not workforce records.
+  //
+  // These four ARE the Project Scope definition domain: `org_units` defines the
+  // tree every scope is expressed in, and `departments` / `crews` / `trades` are
+  // grouping sets drawn from that tree. There is no reliable existing
+  // domain-specific restriction to reuse, and 15B-3B deliberately does NOT invent
+  // one — narrowing the org tree by the org tree is circular.
+  //
+  // They therefore FAIL CLOSED for a caller inside a Project Scope. That is
+  // stricter than before and is the honest answer, but it means a scoped
+  // administrator loses the ability to group a report by location or crew.
+  //
+  // TODO(15B-3E): a product decision is required. The options are (a) keep
+  // failing closed, (b) restrict to the org units inside the caller's own scope
+  // (a real rule, needing its own predicate and tests), or (c) exempt them as
+  // definition-domain data. Whichever is chosen must be written down here with the
+  // leakage argument, exactly as `vehicle_log_settings` above does. It must NOT be
+  // resolved by restoring tenant-wide access, which is the defect 15B-3B fixes.
   org_units: { read: { key: 'admin.org.manage' } },
   departments: { read: { key: 'admin.org.manage' } },
   crews: { read: { key: 'admin.org.manage' } },
@@ -346,6 +486,87 @@ function resolveScopeSpec(table: string): ScopeSpec | null {
   return null
 }
 
+/** Every spec, paired with the table/prefix it applies to. */
+function allScopeSpecs(): { match: string; spec: ScopeSpec }[] {
+  return [
+    ...PREFIX_SCOPE.map(([prefix, spec]) => ({ match: prefix, spec })),
+    ...Object.entries(TABLE_SCOPE).map(([table, spec]) => ({ match: table, spec })),
+  ]
+}
+
+/**
+ * Structural invariants on a set of specs.
+ *
+ * Split from {@link runScopeSpecValidation} so the guard itself can be tested
+ * against a synthetic spec — otherwise "an exemption cannot be attached to a
+ * table that has columns" would be an untested claim, which is exactly the shape
+ * of bug this exists to prevent.
+ */
+export function validateScopeSpecs(specs: readonly { match: string; spec: ScopeSpec }[]): string[] {
+  const errors: string[] = []
+  for (const { match, spec } of specs) {
+    const declaresColumns = Boolean(
+      spec.siteCols || spec.personCols || spec.userCols || spec.orgUnitCols,
+    )
+    if (spec.projectScopeExempt && declaresColumns) {
+      errors.push(
+        `${match}: declares projectScopeExempt ('${spec.projectScopeExempt}') AND scope columns. ` +
+          `An exemption must only apply to a table with nothing to narrow on; otherwise it is a ` +
+          `licence to skip a bindable entity.`,
+      )
+    }
+    if (spec.projectScopeExempt && spec.projectScopeExempt !== 'tenant-level-setting') {
+      errors.push(`${match}: unrecognised projectScopeExempt '${spec.projectScopeExempt}'.`)
+    }
+  }
+  return errors
+}
+
+/**
+ * Structural invariants on the real spec table.
+ *
+ * Called from `scope.test.ts` rather than at import time, so a mistake surfaces in
+ * a test with a readable failure instead of at module load in production.
+ */
+export function runScopeSpecValidation(): { errors: string[] } {
+  const errors = validateScopeSpecs(allScopeSpecs())
+  // The one exemption in use must be justified by the table's actual shape.
+  const vehicle = TABLE_SCOPE.vehicle_log_settings
+  if (vehicle?.projectScopeExempt) {
+    const allowed = new Set([
+      'id',
+      'tenant_id',
+      'enabled_modes',
+      'default_mode',
+      'created_at',
+      'updated_at',
+    ])
+    const unexpected = VEHICLE_LOG_SETTINGS_COLUMNS.filter((c) => !allowed.has(c))
+    if (unexpected.length > 0) {
+      errors.push(
+        `vehicle_log_settings: exempts itself as tenant-level configuration, but the entity ` +
+          `exposes ${unexpected.join(', ')}. A person-, site- or project-keyed column would make ` +
+          `this a business-data table and the exemption a leak.`,
+      )
+    }
+  }
+  return { errors }
+}
+
+/**
+ * The columns the vehicle-log settings entity is known to expose. Asserted
+ * statically rather than introspected so the check runs without a database; the
+ * live shape is `vehicle_log_settings` in `packages/db/src/schema`.
+ */
+const VEHICLE_LOG_SETTINGS_COLUMNS = [
+  'id',
+  'tenant_id',
+  'enabled_modes',
+  'default_mode',
+  'created_at',
+  'updated_at',
+] as const
+
 function tierFor(subject: AnalyticsScopeSubject, read: NonNullable<ReadSpec>): Tier {
   if (subject.isSuperAdmin) return 'all'
   if ('key' in read) return subject.permissions(read.key) ? 'all' : 'none'
@@ -381,13 +602,105 @@ function andFilters(
 type Resolution = { visible: false } | { visible: true; filter: ReportRuleGroup | undefined }
 
 /**
+ * What the caller's Project Scope contributes to one entity, before the read
+ * tier is considered.
+ *
+ *   `deny`     — the caller is inside no scope, or the scope was never resolved.
+ *                The entity is withheld. `unknown` is grouped with `empty` on
+ *                purpose: an absent scope is not evidence of a wide one, and a
+ *                caller whose scope could not be resolved must never fall
+ *                through to a company-wide read.
+ *   `none`     — the caller is company-wide (`unrestricted`), OR the spec carries
+ *                an explicit `projectScopeExempt`. Nothing to add.
+ *   `restrict` — a real scope, plus the entity columns it can bind to.
+ */
+type ScopeContribution =
+  | { kind: 'deny' }
+  | { kind: 'none' }
+  | {
+      kind: 'restrict'
+      orgUnitIds: readonly string[]
+      personIds: readonly string[]
+      orgUnitCol: string | null
+      personCol: string | null
+    }
+
+/**
+ * The Project Scope half of the decision, kept separate from `tierFor`.
+ *
+ * `tierFor` is a pure permission→tier mapper and must stay one: putting scope in
+ * it would mean a permission could decide visibility, which is the exact
+ * confusion 15B-2 removed from the web ladder.
+ */
+function scopeContribution(
+  subject: AnalyticsScopeSubject,
+  spec: ScopeSpec,
+  entity: AnalyticsEntity,
+): ScopeContribution {
+  const kind = subject.projectScopeKind ?? 'unknown'
+  if (kind === 'empty' || kind === 'unknown') return { kind: 'deny' }
+  if (kind === 'unrestricted') return { kind: 'none' }
+  if (spec.projectScopeExempt) return { kind: 'none' }
+
+  const orgUnitCol = pickColumn(entity, spec.siteCols) ?? pickColumn(entity, spec.orgUnitCols)
+  return {
+    kind: 'restrict',
+    orgUnitIds: subject.orgUnitIds ?? [],
+    personIds: subject.projectPersonIds ?? [],
+    orgUnitCol,
+    personCol: pickColumn(entity, spec.personCols),
+  }
+}
+
+/**
+ * Bind a resolved scope to the entity's columns, as report filters.
+ *
+ * Each leg is considered on its own and a non-empty id list is required, so a
+ * scope that carries only org units does not silently fall back to an empty
+ * person list. `null` means "this scope cannot be expressed here" and the caller
+ * MUST withhold — it must never be read as "no restriction".
+ */
+function scopeFilter(
+  contribution: Extract<ScopeContribution, { kind: 'restrict' }>,
+): ReportRuleGroup | null {
+  const legs: ReportRuleGroup[] = []
+  if (contribution.orgUnitCol && contribution.orgUnitIds.length > 0) {
+    legs.push(rule(contribution.orgUnitCol, contribution.orgUnitIds))
+  }
+  if (contribution.personCol && contribution.personIds.length > 0) {
+    legs.push(rule(contribution.personCol, contribution.personIds))
+  }
+  if (legs.length === 0) return null
+  // A single leg needs no wrapper; two legs are a genuine union, because a row is
+  // in scope if EITHER its place or its person is — the same `or(...)` the SQL
+  // adapter in `apps/web/src/lib/project-scope-predicate.ts` builds.
+  if (legs.length === 1) return legs[0]!
+  return { combinator: 'or', rules: legs }
+}
+
+/**
  * Resolve one entity's read permission and row predicate.
  *
- * `visible: false` withholds the entity from the catalogue entirely. That is
- * the fail-closed path and it is used in two cases: the caller holds no read
- * permission, and the caller's scope cannot be expressed against this entity
- * (no location or owner column). Withholding by omission means a mis-specified
- * table can never fall back to an unscoped, tenant-wide read.
+ * `visible: false` withholds the entity from the catalogue entirely. That is the
+ * fail-closed path and it covers four cases: the caller holds no read
+ * permission, the caller is inside no Project Scope, the caller's scope could not
+ * be resolved, or the scope cannot be expressed against this entity. Withholding
+ * by omission means a mis-specified table can never fall back to an unscoped,
+ * tenant-wide read.
+ *
+ * The order is deliberate and load-bearing:
+ *
+ *   1. no read permission            → withhold
+ *   2. no usable Project Scope       → withhold   (deny, including `unknown`)
+ *   3. tier `all` + bindable scope   → the scope predicate  ← the 15B-3B fix
+ *   4. tier `all` + unbindable scope → withhold
+ *   5. tier `site` / `self`          → existing ladder, AND the scope
+ *
+ * Step 3 is what 15B-2 already did in `apps/web/src/lib/visibility.ts:205-209`,
+ * where `tier === 'all'` returns the scope predicate rather than `undefined`.
+ * Before this change the analytics ladder returned `{filter: undefined}` here, so
+ * a `read.all` holder received every row in the tenant regardless of their
+ * Project Scope — the identical defect, in the other ladder.
  */
 function resolveEntity(subject: AnalyticsScopeSubject, entity: AnalyticsEntity): Resolution {
   const spec = resolveScopeSpec(entity.table)
@@ -395,7 +708,23 @@ function resolveEntity(subject: AnalyticsScopeSubject, entity: AnalyticsEntity):
 
   const tier = tierFor(subject, spec.read)
   if (tier === 'none') return { visible: false }
-  if (tier === 'all') return { visible: true, filter: undefined }
+
+  const contribution = scopeContribution(subject, spec, entity)
+  if (contribution.kind === 'deny') return { visible: false }
+  // `orgUnitCol` is read from the entity only for the `restrict` case, so the
+  // remaining tiers need their own picks.
+  const orgUnitFilter = contribution.kind === 'restrict' ? scopeFilter(contribution) : undefined
+
+  if (tier === 'all') {
+    if (contribution.kind === 'restrict') {
+      // Restricted caller, entity exposes no column the scope can bind to →
+      // withhold. Never tenant-wide.
+      if (orgUnitFilter === null || orgUnitFilter === undefined) return { visible: false }
+      return { visible: true, filter: orgUnitFilter }
+    }
+    // Company-wide, or an explicit exemption: no Project Scope constraint.
+    return { visible: true, filter: undefined }
+  }
 
   const siteCol = pickColumn(entity, spec.siteCols)
   const personCol = pickColumn(entity, spec.personCols)
@@ -403,7 +732,7 @@ function resolveEntity(subject: AnalyticsScopeSubject, entity: AnalyticsEntity):
 
   if (tier === 'site' && siteCol) {
     if (subject.siteIds.length === 0) return { visible: false }
-    return { visible: true, filter: rule(siteCol, subject.siteIds) }
+    return { visible: true, filter: andFilters(rule(siteCol, subject.siteIds), orgUnitFilter) }
   }
 
   // Fall back to the ownership column. Own rows are strictly narrower than a
@@ -413,7 +742,9 @@ function resolveEntity(subject: AnalyticsScopeSubject, entity: AnalyticsEntity):
   const ownerCol = userCol && subject.tenantUserId ? userCol : personCol
   if (ownerCol) {
     const owner = userCol === ownerCol ? subject.tenantUserId : subject.personId
-    if (owner) return { visible: true, filter: rule(ownerCol, [owner]) }
+    if (owner) {
+      return { visible: true, filter: andFilters(rule(ownerCol, [owner]), orgUnitFilter) }
+    }
   }
   return { visible: false }
 }

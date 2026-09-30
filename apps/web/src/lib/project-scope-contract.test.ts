@@ -73,8 +73,21 @@ function context(overrides: Partial<RequestContext> = {}): RequestContext {
 }
 
 /** Source with comments removed, so prose about a forbidden API is not a hit. */
+/**
+ * The resolver's own source, comment-stripped.
+ *
+ * Since 15B-3B the implementation lives in
+ * `packages/analytics/src/server/project-scope.ts` and `./project-scope.ts` is a
+ * re-export of it, so these assertions must read the REAL file. Pointing them at
+ * the re-export would let every one of them pass vacuously against a file that
+ * contains no logic at all.
+ */
+const RESOLVER_SOURCE_URL = new URL(
+  '../../../../packages/analytics/src/server/project-scope.ts',
+  import.meta.url,
+)
 const code = (): string =>
-  readFileSync(new URL('./project-scope.ts', import.meta.url), 'utf8')
+  readFileSync(RESOLVER_SOURCE_URL, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
@@ -117,7 +130,7 @@ describe('output contract', () => {
   it('never represents unrestricted as undefined, null, or an empty array', () => {
     // `kind: 'unrestricted'` is the only unrestricted representation. A consumer
     // reading `undefined` or `[]` as "no restriction" is the bug this prevents.
-    const source = readFileSync(new URL('./project-scope.ts', import.meta.url), 'utf8')
+    const source = readFileSync(RESOLVER_SOURCE_URL, 'utf8')
     expect(source).toContain("kind: 'unrestricted'")
     // No function may return undefined.
     expect(source).not.toMatch(/return undefined\s*\n/)
@@ -154,12 +167,12 @@ describe('output contract', () => {
 
 describe('unrestricted comes from exactly two sources', () => {
   it('super-admin is unrestricted', async () => {
-    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }))
+    const scope = await resolveProjectScopeIn(context({ isSuperAdmin: true }), NO_DB)
     expect(scope).toEqual({ kind: 'unrestricted' })
   })
 
   it('an explicit {type:"tenant"} scope is unrestricted', async () => {
-    const scope = await resolveProjectScopeIn(NO_DB, context({ scopes: [{ type: 'tenant' }] }))
+    const scope = await resolveProjectScopeIn(context({ scopes: [{ type: 'tenant' }] }), NO_DB)
     expect(scope).toEqual({ kind: 'unrestricted' })
   })
 
@@ -168,6 +181,7 @@ describe('unrestricted comes from exactly two sources', () => {
     // fixture is literally named tenant_admin, and that must change nothing.
     const reachedDb = await resolveProjectScope(
       context({ activeRoleId: 'role_tenant_admin', scopes: [] }),
+      NO_DB,
     ).then(
       () => false,
       (e: unknown) => e instanceof Error && e.message.includes('before touching the database'),
@@ -183,6 +197,7 @@ describe('unrestricted comes from exactly two sources', () => {
       context({
         permissions: new Set(['incidents.read.all', 'people.read.all', 'ppe.read.all']),
       }),
+      NO_DB,
     ).catch((e: unknown) => {
       reachedDb = e instanceof Error && e.message.includes('before touching the database')
       return null
@@ -206,7 +221,7 @@ describe('unrestricted comes from exactly two sources', () => {
 
 describe('tenant isolation', () => {
   it('a caller-supplied tenant that disagrees resolves empty, never unrestricted', async () => {
-    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }), {
+    const scope = await resolveProjectScopeIn(context({ isSuperAdmin: true }), NO_DB, {
       tenantId: '99999999-0000-4000-8000-0000000000ff',
     })
     // Even a super-admin cannot assert a foreign tenant.
@@ -214,7 +229,7 @@ describe('tenant isolation', () => {
   })
 
   it('a matching caller-supplied tenant does not change the outcome', async () => {
-    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }), {
+    const scope = await resolveProjectScopeIn(context({ isSuperAdmin: true }), NO_DB, {
       tenantId: TENANT,
     })
     expect(scope).toEqual({ kind: 'unrestricted' })
@@ -236,7 +251,7 @@ describe('effective-date rule matches @beaconhs/compliance', () => {
 
   it('the resolver and compliance read the same columns', () => {
     // If either side ever adds a third window bound, the two drift silently.
-    const source = readFileSync(new URL('./project-scope.ts', import.meta.url), 'utf8')
+    const source = readFileSync(RESOLVER_SOURCE_URL, 'utf8')
     expect(source).toContain('isAssignmentEffectiveOn(r, onDate)')
     expect(source).toContain('effectiveOn(peopleAssignments.validFrom, peopleAssignments.validTo')
   })
@@ -342,7 +357,7 @@ describe('org tree traversal', () => {
 })
 
 describe('the resolver is read-only and uncached', () => {
-  const source = readFileSync(new URL('./project-scope.ts', import.meta.url), 'utf8')
+  const source = readFileSync(RESOLVER_SOURCE_URL, 'utf8')
 
   it('performs no writes and creates no audit record', () => {
     // Table-targeted writes only: `Set.prototype.delete` on an in-memory
@@ -360,13 +375,22 @@ describe('the resolver is read-only and uncached', () => {
     }
   })
 
-  it('reads through ctx.db so the tenant RLS policy applies', () => {
-    // The public entry point opens the tenant-scoped transaction; the
-    // transaction-taking variant is what the visibility bridge reuses.
-    expect(source).toContain('return ctx.db((tx) => resolveProjectScopeIn(tx, ctx, options))')
-    // No raw client, no root db import.
+  it("reads through the caller's tenant transaction so the tenant RLS policy applies", () => {
+    // Since 15B-3B the resolver takes the transaction as an argument rather than
+    // opening one: it lives in `@beaconhs/analytics` so the worker can share it,
+    // and a package cannot reach `ctx.db`. Every call site therefore passes the
+    // transaction it already holds, inside `ctx.db(...)` — which is what makes
+    // the tenant RLS policy apply. What must NOT appear is a raw client.
+    const callers = ['visibility.ts', 'analytics-access.ts'].map((rel) =>
+      readFileSync(new URL(`./${rel}`, import.meta.url), 'utf8'),
+    )
+    for (const caller of callers) {
+      expect(caller).toMatch(/resolveProjectScopeIn\(ctx, tx/)
+    }
+    // No raw client, no root db import, no second transaction opener.
     expect(source).not.toContain('withTenant(')
     expect(source).not.toMatch(/postgres\(|sqlClient/)
+    expect(source).not.toContain('.transaction(')
   })
 
   it('introduces no cache', () => {
@@ -389,7 +413,7 @@ describe('requested scope can only narrow', () => {
   it('a requested org unit does not widen a tenant-wide caller', async () => {
     // `unrestricted` plus a filter must not stay `unrestricted`, or the caller
     // would receive more than they asked for.
-    const reachedDb = await resolveProjectScope(context({ isSuperAdmin: true }), {
+    const reachedDb = await resolveProjectScope(context({ isSuperAdmin: true }), NO_DB, {
       requestedOrgUnitIds: ['org_x'],
     }).then(
       () => false,

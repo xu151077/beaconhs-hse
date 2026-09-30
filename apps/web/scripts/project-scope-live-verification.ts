@@ -123,8 +123,8 @@ async function main() {
   })
 
   console.log('--- A/B: each foreman resolves to exactly its own site ---')
-  const scopeA = await resolveProjectScope(ctxA)
-  const scopeB = await resolveProjectScope(ctxB)
+  const scopeA = await resolveProjectScope(ctxA, db)
+  const scopeB = await resolveProjectScope(ctxB, db)
   const orgsA =
     scopeA.kind === 'unrestricted' ? [] : 'orgUnitIds' in scopeA ? scopeA.orgUnitIds : []
   const orgsB =
@@ -201,7 +201,7 @@ async function main() {
     userId: 'unplaced-probe',
     personId: unplaced?.personId ?? null,
   })
-  const unplacedScope = await resolveProjectScope(unplacedCtx)
+  const unplacedScope = await resolveProjectScope(unplacedCtx, db)
   check(
     'F',
     'unplaced person -> empty',
@@ -233,7 +233,7 @@ async function main() {
             validFrom: window.validFrom,
             validTo: window.validTo,
           })
-          const s = await resolveProjectScopeIn(txDb, ctxA)
+          const s = await resolveProjectScopeIn(ctxA, txDb)
           check(
             name,
             `-> ${expected}`,
@@ -259,7 +259,7 @@ async function main() {
           validFrom: LAST_YEAR,
           validTo: null,
         })
-        const s = await resolveProjectScopeIn(txDb, ctxA)
+        const s = await resolveProjectScopeIn(ctxA, txDb)
         check(
           'G3 soft-deleted org unit',
           '-> missing_org_unit',
@@ -282,7 +282,7 @@ async function main() {
   check(
     'H',
     'explicit {type:"tenant"} -> unrestricted',
-    (await resolveProjectScope(tenantWide)).kind === 'unrestricted',
+    (await resolveProjectScope(tenantWide, db)).kind === 'unrestricted',
   )
 
   const siteOnly = ctx({
@@ -294,7 +294,7 @@ async function main() {
   check(
     'I',
     '{type:"sites"} is not upgraded to unrestricted',
-    (await resolveProjectScope(siteOnly)).kind !== 'unrestricted',
+    (await resolveProjectScope(siteOnly, db)).kind !== 'unrestricted',
   )
   check(
     'I+',
@@ -303,7 +303,7 @@ async function main() {
   )
 
   const named = { ...ctxA, activeRoleId: 'tenant_admin' } as RequestContext
-  const namedScope = await resolveProjectScope(named)
+  const namedScope = await resolveProjectScope(named, db)
   check(
     'J',
     'a role NAMED tenant_admin with no tenant scope is NOT unrestricted',
@@ -317,7 +317,7 @@ async function main() {
     permissions: ['*'],
   })
   const noPlaceNamed = { ...noPlace, activeRoleId: 'tenant_admin' } as RequestContext
-  const namedEmpty = await resolveProjectScope(noPlaceNamed)
+  const namedEmpty = await resolveProjectScope(noPlaceNamed, db)
   check(
     'J+',
     'role name + full catalogue, no placement -> still empty',

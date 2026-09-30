@@ -9,7 +9,7 @@ import { primaryPersonTitleName } from '@beaconhs/db'
 import { departments, people, trades } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { resolveProjectScope } from '@/lib/project-scope'
+import { resolveProjectScopeIn } from '@/lib/project-scope'
 import { projectScopePredicate } from '@/lib/project-scope-predicate'
 import { canManageModule } from '@/lib/module-admin/guard'
 import { DownloadLink } from '@/components/download-link'
@@ -68,7 +68,9 @@ export default async function PeoplePage({
   // scope. `undefined` (no predicate) is returned for exactly one reason — the
   // caller is company-wide — and an empty scope is a hard `false`, so a caller
   // with no assignment sees an empty roster rather than the whole tenant.
-  const projectScope = await resolveProjectScope(ctx)
+  // Resolved inside the caller's tenant transaction, so the org tree and
+  // assignment reads run under the same RLS context as the roster query below.
+  const projectScope = await ctx.db((tx) => resolveProjectScopeIn(ctx, tx))
   const canManage = canManageModule(ctx, 'people')
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'admin.users.manage')
 

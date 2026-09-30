@@ -21,7 +21,7 @@
 //   I  tenant scope                T  tenant mismatch
 //   J  super-admin                 K  (see the read.all case)
 
-import { db } from '@beaconhs/db'
+import { db, type Database } from '@beaconhs/db'
 import { orgUnits, people, peopleAssignments } from '@beaconhs/db/schema'
 import { count, eq, sql } from 'drizzle-orm'
 import { resolveProjectScope, type ProjectScope } from '../src/lib/project-scope'
@@ -43,8 +43,13 @@ function check(name: string, ok: boolean, detail: string) {
 const TENANT = '85df8265-e62d-43ac-9455-e80a2a81efc9'
 const OTHER_TENANT = '00000000-0000-4000-8000-0000000000ff'
 
-/** The transaction handle `db.transaction` hands the callback. */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+/**
+ * The transaction handle. `Database` is the project's own transaction type —
+ * `withTenant` / `withSuperAdmin` cast their `PgTransaction` handle to it
+ * (`packages/db/src/rls.ts:20,33`) — so the script uses it rather than
+ * re-deriving a bespoke type.
+ */
+type Tx = Database
 
 function ctxFor(
   tx: Tx,
@@ -121,7 +126,12 @@ const peopleOf = (s: ProjectScope) =>
 const reason = (s: ProjectScope) => (s.kind === 'empty' ? s.reason : s.kind)
 
 async function main() {
-  await db.transaction(async (tx) => {
+  await db.transaction(async (rawTx) => {
+    // `Database` is the project's transaction type: `withTenant` /`withSuperAdmin`
+    // cast their `PgTransaction` handle to it themselves
+    // (`packages/db/src/rls.ts:20,33`). Following that convention here keeps the
+    // script free of a bespoke transaction type.
+    const tx = rawTx as unknown as Database
     await tx.execute(sql`SELECT set_config('app.tenant_id', ${TENANT}, true)`)
 
     // ---- fixture org tree: customer > project P (site S1 > area A1), project Q > S2
@@ -147,7 +157,7 @@ async function main() {
 
     // ---- B: no assignment at all
     const noAssign = await mkPerson(tx, 'NoAssign')
-    const rB = await resolveProjectScope(ctxFor(tx, { personId: noAssign }))
+    const rB = await resolveProjectScope(ctxFor(tx, { personId: noAssign }), tx)
     check(
       'B  no assignment -> empty, never unrestricted',
       rB.kind === 'empty',
@@ -157,7 +167,7 @@ async function main() {
     // ---- C: one assignment
     const one = await mkPerson(tx, 'One')
     await mkAssignment(tx, one, siteS1, LAST_YEAR)
-    const rC = await resolveProjectScope(ctxFor(tx, { personId: one }))
+    const rC = await resolveProjectScope(ctxFor(tx, { personId: one }), tx)
     check(
       'C  one assignment -> its org unit + descendants + ancestors',
       rC.kind === 'peopleAndOrgUnits' &&
@@ -171,7 +181,7 @@ async function main() {
     // ---- P: parent assignment includes descendants
     const onProject = await mkPerson(tx, 'OnProject')
     await mkAssignment(tx, onProject, projectP, LAST_YEAR)
-    const rP = await resolveProjectScope(ctxFor(tx, { personId: onProject }))
+    const rP = await resolveProjectScope(ctxFor(tx, { personId: onProject }), tx)
     check(
       'P  assignment to a project includes its descendant sites',
       orgs(rP).includes(siteS1) && orgs(rP).includes(areaA1) && !orgs(rP).includes(siteS2),
@@ -182,7 +192,7 @@ async function main() {
     const two = await mkPerson(tx, 'Two')
     await mkAssignment(tx, two, siteS1, LAST_YEAR)
     await mkAssignment(tx, two, siteS2, LAST_YEAR)
-    const rD = await resolveProjectScope(ctxFor(tx, { personId: two }))
+    const rD = await resolveProjectScope(ctxFor(tx, { personId: two }), tx)
     check(
       'D  two concurrent assignments -> union of both projects',
       orgs(rD).includes(siteS1) &&
@@ -195,7 +205,7 @@ async function main() {
     // ---- E/F: historical vs the inclusive boundary
     const ended = await mkPerson(tx, 'Ended')
     await mkAssignment(tx, ended, siteS1, LAST_YEAR, YESTERDAY)
-    const rE = await resolveProjectScope(ctxFor(tx, { personId: ended }))
+    const rE = await resolveProjectScope(ctxFor(tx, { personId: ended }), tx)
     check(
       'E  assignment ended yesterday -> empty/expired',
       rE.kind === 'empty',
@@ -204,7 +214,7 @@ async function main() {
 
     const boundary = await mkPerson(tx, 'Boundary')
     await mkAssignment(tx, boundary, siteS1, LAST_YEAR, TODAY)
-    const rF = await resolveProjectScope(ctxFor(tx, { personId: boundary }), { onDate: TODAY })
+    const rF = await resolveProjectScope(ctxFor(tx, { personId: boundary }), tx, { onDate: TODAY })
     check(
       'F  valid_to == onDate -> still effective (inclusive)',
       rF.kind !== 'empty',
@@ -214,7 +224,7 @@ async function main() {
     // ---- G: future assignment
     const future = await mkPerson(tx, 'Future')
     await mkAssignment(tx, future, siteS1, TOMORROW)
-    const rG = await resolveProjectScope(ctxFor(tx, { personId: future }))
+    const rG = await resolveProjectScope(ctxFor(tx, { personId: future }), tx)
     check('G  assignment starting tomorrow -> empty', rG.kind === 'empty', `kind=${reason(rG)}`)
 
     // ---- H: a missing org unit is impossible at the database level
@@ -243,7 +253,7 @@ async function main() {
     // ---- S: soft-deleted org unit
     const delAssignee = await mkPerson(tx, 'DeletedTarget')
     await mkAssignment(tx, delAssignee, deletedSite, LAST_YEAR)
-    const rS = await resolveProjectScope(ctxFor(tx, { personId: delAssignee }))
+    const rS = await resolveProjectScope(ctxFor(tx, { personId: delAssignee }), tx)
     check(
       'S  assignment to a soft-deleted org unit -> fail closed',
       rS.kind === 'empty',
@@ -263,19 +273,22 @@ async function main() {
       cross === 0,
       `other-tenant org units=${cross}`,
     )
-    const rT = await resolveProjectScope(ctxFor(tx, { personId: one }), { tenantId: OTHER_TENANT })
+    const rT = await resolveProjectScope(ctxFor(tx, { personId: one }), tx, {
+      tenantId: OTHER_TENANT,
+    })
     check('T  caller-supplied tenant mismatch -> empty', rT.kind === 'empty', `kind=${reason(rT)}`)
 
     // ---- I/J: unrestricted
     const rI = await resolveProjectScope(
       ctxFor(tx, { personId: noAssign, scopes: [{ type: 'tenant' }] }),
+      tx,
     )
     check(
       'I  an explicit tenant scope -> unrestricted',
       rI.kind === 'unrestricted',
       `kind=${rI.kind}`,
     )
-    const rJ = await resolveProjectScope(ctxFor(tx, { personId: noAssign, isSuperAdmin: true }))
+    const rJ = await resolveProjectScope(ctxFor(tx, { personId: noAssign, isSuperAdmin: true }), tx)
     check('J  super-admin -> unrestricted', rJ.kind === 'unrestricted', `kind=${rJ.kind}`)
 
     // ---- K/L: read.all and role names must not widen
@@ -284,6 +297,7 @@ async function main() {
         personId: noAssign,
         permissions: new Set(['incidents.read.all', 'people.read.all']),
       }),
+      tx,
     )
     check(
       'K  holding every read key is still not unrestricted',
@@ -292,6 +306,7 @@ async function main() {
     )
     const rRole = await resolveProjectScope(
       ctxFor(tx, { personId: noAssign, activeRoleId: 'tenant_admin' } as Partial<RequestContext>),
+      tx,
     )
     check(
       'L  a role NAMED tenant_admin is still not unrestricted',
@@ -300,7 +315,7 @@ async function main() {
     )
 
     // ---- M: requested org units
-    const rMin = await resolveProjectScope(ctxFor(tx, { personId: two }), {
+    const rMin = await resolveProjectScope(ctxFor(tx, { personId: two }), tx, {
       requestedOrgUnitIds: [siteS1],
     })
     check(
@@ -312,7 +327,7 @@ async function main() {
         .map((i) => i.slice(0, 8))
         .join(',')}`,
     )
-    const rMout = await resolveProjectScope(ctxFor(tx, { personId: one }), {
+    const rMout = await resolveProjectScope(ctxFor(tx, { personId: one }), tx, {
       requestedOrgUnitIds: [siteS2],
     })
     check(
@@ -324,14 +339,14 @@ async function main() {
     // ---- N: personIds intersection
     const peer = await mkPerson(tx, 'Peer')
     await mkAssignment(tx, peer, siteS1, LAST_YEAR)
-    const rAll = await resolveProjectScope(ctxFor(tx, { personId: one }))
-    const rN = await resolveProjectScope(ctxFor(tx, { personId: one }), { personIds: [peer] })
+    const rAll = await resolveProjectScope(ctxFor(tx, { personId: one }), tx)
+    const rN = await resolveProjectScope(ctxFor(tx, { personId: one }), tx, { personIds: [peer] })
     check(
       'N  personIds filter intersects (peer kept, self dropped)',
       peopleOf(rN).length === 1 && peopleOf(rN)[0] === peer,
       `all=${peopleOf(rAll).length} filtered=${peopleOf(rN).length}`,
     )
-    const rNempty = await resolveProjectScope(ctxFor(tx, { personId: one }), {
+    const rNempty = await resolveProjectScope(ctxFor(tx, { personId: one }), tx, {
       personIds: ['00000000-0000-4000-8000-00000000dead'],
     })
     check(
@@ -344,7 +359,7 @@ async function main() {
     const dup = await mkPerson(tx, 'Dup')
     await mkAssignment(tx, dup, siteS1, LAST_YEAR)
     await mkAssignment(tx, dup, siteS1, LAST_YEAR)
-    const rO = await resolveProjectScope(ctxFor(tx, { personId: dup }))
+    const rO = await resolveProjectScope(ctxFor(tx, { personId: dup }), tx)
     check(
       'O  duplicate assignments deduplicate',
       new Set(orgs(rO)).size === orgs(rO).length &&
@@ -355,7 +370,7 @@ async function main() {
     // ---- Q: deep tree
     const deepP = await mkPerson(tx, 'Deep')
     await mkAssignment(tx, deepP, siteS1, LAST_YEAR)
-    const rQ = await resolveProjectScope(ctxFor(tx, { personId: deepP }))
+    const rQ = await resolveProjectScope(ctxFor(tx, { personId: deepP }), tx)
     check(
       'Q  deep descendants are included',
       orgs(rQ).includes(deepA) && orgs(rQ).includes(deepB) && orgs(rQ).includes(deepC),
@@ -369,7 +384,7 @@ async function main() {
     const cycP = await mkPerson(tx, 'Cyclic')
     await mkAssignment(tx, cycP, cycB, LAST_YEAR)
     const started = Date.now()
-    const rR = await resolveProjectScope(ctxFor(tx, { personId: cycP }))
+    const rR = await resolveProjectScope(ctxFor(tx, { personId: cycP }), tx)
     check(
       'R  a parent_id cycle terminates instead of hanging',
       rR.kind !== 'empty' && Date.now() - started < 3000,

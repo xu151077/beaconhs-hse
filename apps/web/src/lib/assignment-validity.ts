@@ -1,28 +1,27 @@
-// Effective-dated window semantics for person↔org-unit assignments
-// (`people_assignments`).
+// Assignment validity — web-side form parsing, plus a re-export of the shared
+// effective-date rule.
 //
-// `valid_from` / `valid_to` are pg `date` columns in Drizzle's STRING mode, so
-// every value crossing this boundary is a `YYYY-MM-DD` string and compares
-// correctly as a string. This module is the ONLY place that decides what
-// "currently effective" means, so the server actions, the UI and the tests
-// cannot drift into three different definitions.
+// The RULE (`todayIso`, `isAssignmentEffectiveOn`, `effectiveOn`, `IsoDate`)
+// moved to `packages/analytics/src/server/project-scope.ts` in 15B-3B, so the
+// web app, the worker and the resolver cannot drift into three definitions of
+// "currently effective". It is re-exported below unchanged, so every existing
+// `from '@/lib/assignment-validity'` import keeps working.
 //
-// An assignment is effective on date D when:
-//
-//     valid_from <= D  AND  (valid_to IS NULL OR valid_to >= D)
-//
-// `valid_to` is INCLUSIVE. A person whose assignment ends today is still on the
-// assignment today; that matches how `packages/compliance/src/audience.ts:99-104`
-// and `packages/compliance/src/identity.ts:104-105` already read the same table.
-//
-// NOTE on the duplicate SQL: `packages/compliance` inlines this same predicate
-// in its own queries. That duplication is a package-boundary consequence — this
-// module is app-side and `@beaconhs/compliance` cannot import from `apps/web` —
-// not a second design. If the two ever need to converge, this file and
-// `audience.ts` are the two places to change. Do NOT add a third copy.
+// What stays HERE is the form-input half: `parseIsoDate` and
+// `parseValidityWindow` exist to validate what an administrator typed into a
+// date field, and they are only ever called from React server components and the
+// people-assignment server actions. They are not part of the authorization
+// surface and moving them would drag the message translator into a package that
+// has no business owning user-facing copy.
 
-import { and, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm'
-import type { AnyColumn } from 'drizzle-orm'
+import type { IsoDate } from '@beaconhs/analytics/server'
+
+export {
+  effectiveOn,
+  isAssignmentEffectiveOn,
+  todayIso,
+  type IsoDate,
+} from '@beaconhs/analytics/server'
 
 /**
  * Message translator: takes the ENGLISH SOURCE LITERAL and returns the string to
@@ -41,9 +40,6 @@ const passthrough: Translate = (source, values) =>
         key in values ? String(values[key]) : match,
       )
     : source
-
-/** A `YYYY-MM-DD` calendar date, matching the pg `date` column type. */
-export type IsoDate = string
 
 /** Strict `YYYY-MM-DD`. Rejects `2026-2-1`, ISO timestamps, and `2026-02-30`. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -96,36 +92,4 @@ export function parseValidityWindow(
     return { ok: false, error: t('End date cannot be before the start date.') }
   }
   return { ok: true, validFrom: from.date, validTo: to.date }
-}
-
-/** Today as a `YYYY-MM-DD` string in UTC, matching how the DB compares dates. */
-export function todayIso(now: Date = new Date()): IsoDate {
-  return now.toISOString().slice(0, 10)
-}
-
-/**
- * The pure form of the window rule, for rendering and for tests. `today`
- * defaults to the current UTC date.
- */
-export function isAssignmentEffectiveOn(
-  row: { validFrom: string; validTo: string | null },
-  today: IsoDate = todayIso(),
-): boolean {
-  if (row.validFrom > today) return false
-  return row.validTo === null || row.validTo >= today
-}
-
-/**
- * The SQL form of the same rule, for queries. `sql`current_date`` is used
- * rather than a bound parameter so the predicate is sargable against the
- * existing `(tenant_id, person_id)` and `(tenant_id, org_unit_id)` indexes and
- * evaluates in the database's own timezone — identical to what
- * `@beaconhs/compliance` already does.
- */
-export function effectiveOn(
-  validFrom: AnyColumn,
-  validTo: AnyColumn,
-  onDate: SQL = sql`current_date`,
-): SQL | undefined {
-  return and(lte(validFrom, onDate), or(isNull(validTo), gte(validTo, onDate)))
 }
