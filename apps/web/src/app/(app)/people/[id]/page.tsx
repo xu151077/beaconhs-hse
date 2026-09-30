@@ -46,7 +46,9 @@ import {
   incidentInjuries,
   incidentPeople,
   incidents,
+  orgUnits,
   people,
+  peopleAssignments,
   personFiles,
   personGroupMemberships,
   personGroups,
@@ -100,6 +102,9 @@ import { setPersonGroups } from '../_actions/groups'
 import { setPersonTitles, setPrimaryPersonTitle } from '../_actions/titles'
 import { deletePersonFile } from '../_actions/files'
 import { PersonFilesDrawers } from './_files-drawers'
+import { PersonAssignmentDrawers } from './_assignments-drawers'
+import { AssignmentTab } from './_assignments-tab'
+import { todayIso } from '@/lib/assignment-validity'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,6 +116,7 @@ const TABS = [
   'ppe',
   'documents',
   'incidents',
+  'assignments',
   'activity',
 ] as const
 type Tab = (typeof TABS)[number]
@@ -619,6 +625,49 @@ export default async function PersonDetailPage({
   )
 
   const activity = active === 'activity' ? await recentActivityForEntity(ctx, 'person', id, 50) : []
+
+  // Location assignments (`people_assignments`). Loaded only for this tab, and
+  // only for a caller who can already read the person — the page gate above
+  // already refuses everyone else. The org-unit list feeds the picker and is
+  // gated on `admin.org.manage` via `canEdit`.
+  const assignments =
+    active === 'assignments'
+      ? await ctx.db(async (tx) =>
+          tx
+            .select({
+              id: peopleAssignments.id,
+              orgUnitId: peopleAssignments.orgUnitId,
+              orgUnitName: orgUnits.name,
+              orgUnitLevel: orgUnits.level,
+              validFrom: peopleAssignments.validFrom,
+              validTo: peopleAssignments.validTo,
+            })
+            .from(peopleAssignments)
+            .innerJoin(orgUnits, eq(orgUnits.id, peopleAssignments.orgUnitId))
+            .where(
+              and(eq(peopleAssignments.tenantId, ctx.tenantId), eq(peopleAssignments.personId, id)),
+            )
+            .orderBy(desc(peopleAssignments.validFrom), asc(orgUnits.name)),
+        )
+      : []
+
+  // Projects and sites a person can be assigned to. Excludes the customer root
+  // and soft-deleted units: an assignment should name a place of work.
+  const orgUnitOptions = canEdit
+    ? await ctx.db(async (tx) =>
+        tx
+          .select({ value: orgUnits.id, label: orgUnits.name, level: orgUnits.level })
+          .from(orgUnits)
+          .where(
+            and(
+              eq(orgUnits.tenantId, ctx.tenantId),
+              isNull(orgUnits.deletedAt),
+              ne(orgUnits.level, 'customer'),
+            ),
+          )
+          .orderBy(asc(orgUnits.level), asc(orgUnits.name)),
+      )
+    : []
   const badgePreview = canEdit ? await renderPersonBadgePreview(ctx, id) : null
 
   const basePath = `/people/${id}`
@@ -850,6 +899,11 @@ export default async function PersonDetailPage({
                   key: 'incidents',
                   label: 'Incidents',
                   count: allIncidents.length,
+                },
+                {
+                  key: 'assignments',
+                  label: 'Location assignments',
+                  count: assignments.length,
                 },
                 { key: 'activity', label: 'Activity' },
               ]}
@@ -1846,6 +1900,22 @@ export default async function PersonDetailPage({
 
             <GeneratedValue
               value={
+                active === 'assignments' ? (
+                  <AssignmentTab
+                    assignments={assignments}
+                    today={todayIso()}
+                    canManage={canEdit}
+                    addHref={`${basePathForDrawer}?drawer=assignment-new`}
+                    editHref={(assignmentId) =>
+                      `${basePathForDrawer}?drawer=assignment-edit-${assignmentId}`
+                    }
+                  />
+                ) : null
+              }
+            />
+
+            <GeneratedValue
+              value={
                 active === 'activity' ? (
                   <Card>
                     <CardHeader>
@@ -1874,6 +1944,20 @@ export default async function PersonDetailPage({
               personId={person.id}
               openDrawer={openDrawer === 'upload-person-file' ? openDrawer : null}
               closeHref={basePathForDrawer}
+            />
+          ) : null
+        }
+      />
+      <GeneratedValue
+        value={
+          canEditFiles ? (
+            <PersonAssignmentDrawers
+              personId={person.id}
+              orgUnits={orgUnitOptions}
+              assignments={assignments}
+              openDrawer={openDrawer}
+              closeHref={basePathForDrawer}
+              canManage={canEdit}
             />
           ) : null
         }

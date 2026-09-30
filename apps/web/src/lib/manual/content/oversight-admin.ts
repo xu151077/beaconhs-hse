@@ -28,6 +28,13 @@ export const OVERSIGHT_ADMIN_ARTICLES: ManualArticle[] = [
       'badge',
       'transcript qr',
       'custom fields',
+      'location assignment',
+      'org unit assignment',
+      'project assignment',
+      'site assignment',
+      'assign to site',
+      'assignment dates',
+      'assignment history',
     ],
     body: `The People directory lists everyone in your company — workers, contractors, and supervisors.
 
@@ -45,6 +52,31 @@ Open [People](/people) from the sidebar.
 2. Type a name, employee number, or job title in the **Search by name, employee #, or job title** box.
 3. Use the **Status** filter to switch between **Active**, **Inactive**, **Terminated**, or **All**. The list shows active people by default.
 4. Click a person to open their page. Tabs like **Overview**, **Compliance**, **Transcript**, and **PPE** show everything about them in one place.
+
+## Record where someone works
+
+Location assignments record that a person works at a project or a site. A person can hold more than
+one assignment at the same time — for example, they might split their week across two sites. This
+is also what decides who gets compliance reminders for a site.
+
+1. Open [People](/people) and click the person.
+2. Open the **Location assignments** tab.
+3. Click **Add assignment**.
+4. Choose the **Project or site**, then set the **Start date**. Leave **End date** empty while the
+   assignment is ongoing.
+5. Click **Add assignment** again to record a second location for the same person.
+
+Assignments are never deleted, so the history stays accurate:
+
+1. Open the **Location assignments** tab.
+2. Click **Edit dates** to change when an assignment starts or ends.
+3. Click **End current assignment** to finish one. The end date is filled in for you and the
+   assignment moves down into **Assignment history**.
+
+An assignment is active from its start date up to and including its end date. If you pick a start
+date in the future, the assignment waits in the history list until that day arrives.
+
+Only a company admin can add, change or end assignments. Everyone else can see the list.
 
 ## Add a person
 
