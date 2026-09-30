@@ -211,6 +211,22 @@ export async function resolveProjectScope(
   ctx: RequestContext,
   options: ProjectScopeOptions = {},
 ): Promise<ProjectScope> {
+  return ctx.db((tx) => resolveProjectScopeIn(tx, ctx, options))
+}
+
+/**
+ * The same resolution against a transaction the caller already holds.
+ *
+ * The visibility ladder is always called from inside `ctx.db(...)`, and its
+ * predicates are part of that same query. Opening a second transaction would both
+ * cost a round trip and re-run `set_config` for no benefit, so the bridge passes
+ * its transaction in. Behaviour is identical to {@link resolveProjectScope}.
+ */
+export async function resolveProjectScopeIn(
+  tx: Database,
+  ctx: RequestContext,
+  options: ProjectScopeOptions = {},
+): Promise<ProjectScope> {
   const onDate = options.onDate ?? todayIso()
   const excludeDeleted = options.excludeDeleted ?? true
   const requested = options.requestedOrgUnitIds
@@ -234,7 +250,7 @@ export async function resolveProjectScope(
   // caller asked for.
   if (tenantWide && !requested && !options.personIds) return { kind: 'unrestricted' }
 
-  return ctx.db(async (tx) => {
+  return (async () => {
     // The org tree is read once for the tenant and walked in memory.
     const nodes = await tx
       .select({
@@ -352,5 +368,5 @@ export async function resolveProjectScope(
     }
 
     return assemble([...orgUnitIds].sort(), [...personIds].sort())
-  })
+  })()
 }

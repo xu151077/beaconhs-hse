@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { orgUnits, peopleAssignments } from '@beaconhs/db/schema'
+
+/** The tenant user this suite reads as; also their `people` row id. */
+const READER_PERSON = '018f47ba-86c4-7ee2-8d7a-5e7602f2afff'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { Database } from '@beaconhs/db'
 import type { RequestContext } from '@beaconhs/tenant'
@@ -18,7 +22,7 @@ function context(siteId: string): RequestContext {
     enabledLocales: ['en'],
     localeOverride: null,
     membership: { id: 'membership-1', displayName: 'Site reader' },
-    personId: '018f47ba-86c4-7ee2-8d7a-5e7602f2afff',
+    personId: READER_PERSON,
     permissions: new Set(['equipment.read.site']),
     scopes: [{ type: 'sites', siteIds: [siteId] }],
     db: async () => {
@@ -27,13 +31,39 @@ function context(siteId: string): RequestContext {
   }
 }
 
-function countOnlyTx(classifiedCount: number): Database {
-  const query = {
-    from: () => query,
-    leftJoin: () => query,
-    where: async () => [{ c: classifiedCount }],
+/**
+ * The count query plus the Project Scope queries.
+ *
+ * Since 15B-2 the visibility ladder resolves a Project Scope first, so this
+ * stand-in must also answer the resolver's assignment and org-unit lookups. The
+ * reader is modelled as assigned to the site they are scoped to, so the suite's
+ * own site-visibility assertions are unchanged and stay meaningful.
+ */
+function countOnlyTx(classifiedCount: number, siteId: string): Database {
+  const otherSite = siteId === SITE_A ? SITE_B : SITE_A
+  const orgs = [
+    { id: siteId, parentId: null, level: 'site', deletedAt: null },
+    { id: otherSite, parentId: null, level: 'site', deletedAt: null },
+  ]
+  const assignments = [
+    { personId: READER_PERSON, orgUnitId: siteId, validFrom: '2020-01-01', validTo: null },
+  ]
+  const query: Record<string, unknown> = {}
+  let table: unknown = null
+  query.from = (t: unknown) => {
+    table = t
+    return query
   }
-  return { select: () => query } as unknown as Database
+  query.leftJoin = () => query
+  query.orderBy = () => query
+  query.limit = () => query
+  query.where = async () => {
+    if (table === orgUnits) return orgs
+    if (table === peopleAssignments) return assignments
+    return [{ c: classifiedCount }]
+  }
+  query.selectDistinct = () => query
+  return { select: () => query, selectDistinct: () => query } as unknown as Database
 }
 
 function compiled(where: Awaited<ReturnType<typeof resolveVehicleEquipmentWhere>>['where']) {
@@ -42,7 +72,7 @@ function compiled(where: Awaited<ReturnType<typeof resolveVehicleEquipmentWhere>
 
 describe('vehicle-log equipment visibility', () => {
   it('builds a site-A-only predicate and never includes a different site', async () => {
-    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(12))
+    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(12, SITE_A))
     const query = compiled(result.where)
 
     expect(result.usesVehicleTaxonomy).toBe(true)
@@ -53,7 +83,7 @@ describe('vehicle-log equipment visibility', () => {
 
   it('resolves the same policy independently for site B', async () => {
     const query = compiled(
-      (await resolveVehicleEquipmentWhere(context(SITE_B), countOnlyTx(8))).where,
+      (await resolveVehicleEquipmentWhere(context(SITE_B), countOnlyTx(8, SITE_B))).where,
     )
 
     expect(query.params).toContain(SITE_B)
@@ -61,7 +91,7 @@ describe('vehicle-log equipment visibility', () => {
   })
 
   it('keeps the vehicle taxonomy for more than 500 mixed accessible rows without a cap', async () => {
-    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(620))
+    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(620, SITE_A))
     const query = compiled(result.where)
 
     expect(result.usesVehicleTaxonomy).toBe(true)
@@ -70,7 +100,7 @@ describe('vehicle-log equipment visibility', () => {
   })
 
   it('falls back to all scope-safe equipment only when no accessible item has vehicle taxonomy', async () => {
-    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(0))
+    const result = await resolveVehicleEquipmentWhere(context(SITE_A), countOnlyTx(0, SITE_A))
     const query = compiled(result.where)
 
     expect(result.usesVehicleTaxonomy).toBe(false)

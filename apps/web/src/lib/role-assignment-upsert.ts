@@ -1,12 +1,37 @@
-import { sql } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 import type { Database } from '@beaconhs/db'
-import { roleAssignments, type RoleScope } from '@beaconhs/db/schema'
+import { roleAssignments, roles, type RoleScope } from '@beaconhs/db/schema'
 
 type RoleAssignmentUpsert = {
   tenantId: string
   tenantUserId: string
   roleId: string
-  scope: RoleScope
+  /**
+   * The scope to store. Omit it to take the ROLE's default (see
+   * {@link defaultRoleScope}) — that is the right choice when the caller has no
+   * scope to apply because the form did not supply one. Pass a value, including
+   * `{type:'self'}`, whenever an administrator chose it: a deliberate choice is
+   * never overwritten here.
+   */
+  scope?: RoleScope
+}
+
+/**
+ * The scope a role gets when an administrator assigns it without choosing one.
+ *
+ * `tenant_admin` is the tenant's own administrator: it administers the org
+ * structure, users and roles, so its default breadth is the whole company. Every
+ * other role defaults to `{type:'self'}`.
+ *
+ * This is deliberately a DEFAULT AT ASSIGNMENT TIME, stored in
+ * `role_assignments.scope`, rather than a rule in the authorisation path. The
+ * resolver never reads a role name, so:
+ *   • the decision is visible as data and can be narrowed per user;
+ *   • granting `tenant_admin` with `{type:'sites'}` genuinely narrows it, and
+ *     nothing silently re-widens it on the next save.
+ */
+function defaultRoleScope(roleKey: string): RoleScope {
+  return roleKey === 'tenant_admin' ? { type: 'tenant' } : { type: 'self' }
 }
 
 /**
@@ -23,9 +48,26 @@ export async function upsertRoleAssignments(
 ): Promise<string[]> {
   if (assignments.length === 0) return []
 
+  // Resolve the role defaults in ONE query for every unset assignment, so the
+  // rule lives here rather than being restated at each of the six call sites.
+  const unset = assignments.filter((a) => a.scope === undefined)
+  let defaults = new Map<string, RoleScope>()
+  if (unset.length > 0) {
+    const keys = await tx
+      .select({ id: roles.id, key: roles.key })
+      .from(roles)
+      .where(inArray(roles.id, [...new Set(unset.map((a) => a.roleId))]))
+    defaults = new Map(keys.map((r) => [r.id, defaultRoleScope(r.key)]))
+  }
+
   const rows = await tx
     .insert(roleAssignments)
-    .values([...assignments])
+    .values(
+      assignments.map((a) => ({
+        ...a,
+        scope: a.scope ?? defaults.get(a.roleId) ?? { type: 'self' },
+      })),
+    )
     .onConflictDoUpdate({
       target: [roleAssignments.tenantId, roleAssignments.tenantUserId, roleAssignments.roleId],
       set: {

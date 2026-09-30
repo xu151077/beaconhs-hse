@@ -20,7 +20,14 @@ const config: KnipConfig = {
         // Phase A: proves people_assignments semantics against the live database, then
         // rolls the transaction back. A verification tool, not an app entry point.
         'scripts/phase-a-assignment-verification.mjs',
+        // Personnel placement convergence. Idempotent and additive: inserts the
+        // employee records, user links and people_assignments rows that 15B-2's
+        // fail-closed Project Scope depends on. A data-repair tool, not an entry point.
+        'scripts/personnel-placement-repair.ts',
         'scripts/project-scope-verification.ts',
+        // Resolves the REAL foreman contexts against the repaired database, rolling
+        // back the synthetic validity windows. Read-only. A verification tool.
+        'scripts/project-scope-live-verification.ts',
         'scripts/restore-equipment-preuse-links.ts',
         'scripts/restore-ppe-custody-from-legacy.ts',
         'scripts/restore-ppe-serial-numbers.ts',

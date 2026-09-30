@@ -229,7 +229,8 @@ export async function addMembership(formData: FormData): Promise<void> {
             tenantId,
             tenantUserId: m.id,
             roleId: role.id,
-            scope: { type: 'self' },
+            // No scope submitted -> the ROLE's default, resolved in the upsert.
+            scope: undefined,
           },
         ])
       }

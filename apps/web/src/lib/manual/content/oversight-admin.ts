@@ -10,7 +10,8 @@ export const OVERSIGHT_ADMIN_ARTICLES: ManualArticle[] = [
     title: 'People directory',
     group: 'Oversight & reports',
     iconKey: 'users',
-    summary: 'Find anyone in your company, manage departments, and view the org chart.',
+    summary:
+      'Find the people you are allowed to see, manage departments and locations, and view the org chart.',
     keywords: [
       'people',
       'directory',
@@ -35,8 +36,17 @@ export const OVERSIGHT_ADMIN_ARTICLES: ManualArticle[] = [
       'assign to site',
       'assignment dates',
       'assignment history',
+      'who can see',
+      'visibility',
+      'read all',
+      'not found',
+      'empty directory',
+      'see only my site',
+      'cannot see a colleague',
     ],
-    body: `The People directory lists everyone in your company — workers, contractors, and supervisors.
+    body: `The People directory lists the people you are allowed to see — workers, contractors, and
+supervisors. How much of the company you see depends on where you are assigned to work. The
+**Who you can see** section below explains exactly what that means.
 
 ## What this is for
 
@@ -57,7 +67,8 @@ Open [People](/people) from the sidebar.
 
 Location assignments record that a person works at a project or a site. A person can hold more than
 one assignment at the same time — for example, they might split their week across two sites. This
-is also what decides who gets compliance reminders for a site.
+is also what decides who gets compliance reminders for a site, and it decides what each person can
+see in the directory.
 
 1. Open [People](/people) and click the person.
 2. Open the **Location assignments** tab.
@@ -76,7 +87,30 @@ Assignments are never deleted, so the history stays accurate:
 An assignment is active from its start date up to and including its end date. If you pick a start
 date in the future, the assignment waits in the history list until that day arrives.
 
-Only a company admin can add, change or end assignments. Everyone else can see the list.
+Only a company admin can add, change or end assignments. Everyone else can see the list, as long as
+the person is within their own assigned locations.
+
+## Who you can see
+
+The directory shows the people who work where **you** are assigned to work. If you are assigned to
+one site, you see the people at that site. You do not see people at a different site, even when
+your role is allowed to read everything in the company.
+
+This matters most for anyone who works on one project at a time.
+
+- **Someone with no active assignment sees an empty directory.** Every person's page, including their
+  own, is not found.
+- **An assignment that has ended does not count.** So does one whose start date has not arrived yet.
+- **Nobody sees the whole company by accident.** Only a member with a company-wide scope, or a
+  platform super-admin, sees every person.
+
+If a colleague seems to be missing, check their **Location assignments** tab first. A missing or
+finished assignment is the usual reason.
+
+### "Read all" does not mean "everyone"
+
+A permission like **People: read all** means "read every person you are allowed to reach". It does
+not remove the location rule. Both always apply, and the tighter one wins.
 
 ## Add a person
 
@@ -146,6 +180,7 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
 ## Tips
 
 - Some companies sync people from another system. Synced fields show as read-only and cannot be edited here. If a locked field is wrong, fix it in the source system and it will update on the next sync.
+- A sync brings in the person, but it does not set their **Location assignments**. Until an admin adds one, that person is placed nowhere, and neither they nor anyone else can find them in the directory. After each sync, check the new people and add their location.
 - Overdue training and other requirements for one person live on their **Compliance** tab. For the whole company, see [Managing compliance](/help/compliance-management).`,
   },
   {
@@ -602,6 +637,11 @@ Reviewers can open [Form transcripts](/apps/transcripts) to find a person and se
       'suspend',
       'access',
       'login',
+      'scope and location are different',
+      'company-wide scope',
+      'role scope',
+      'read all',
+      'tenant admin',
     ],
     requiredPermission: 'admin.users.manage',
     body: `The Users area controls access to this workspace. It does not let tenant administrators take over a person's global account.
@@ -645,6 +685,30 @@ Open the member to manage only this workspace's settings:
 
 Pending invitations cannot be marked active by an administrator. The person must prove control of the invited email by using the one-time link.
 
+## Role scope and location are different things
+
+A member has two separate records, and they are not linked:
+
+- **Role scope** is the access boundary. It says how far this account's permissions reach.
+- **Location assignment** is where the person works. It is set on the person, not the account, under
+  **Location assignments** on their page. See [People directory](/help/people).
+
+Both apply at the same time, and the tighter one wins. Giving someone a wider role scope does not
+give them more locations, and adding a location does not widen their role.
+
+Three things follow from that:
+
+1. **A read-all permission is not the whole company.** **Read all** means "every record you are
+   allowed to reach". The location rule is still applied on top of it. A role with read-all rights
+   still only sees the people at the locations its members are assigned to.
+2. **Only two things give a company-wide view.** A company-wide role scope, or platform super-admin.
+   Nothing else does. Narrowing a role scope to specific sites does not narrow where somebody stands,
+   and widening it does not widen that either — for that, change the location assignments. Give
+   tenant admins a company-wide scope and a location assignment covering the whole company, or they
+   cannot administer the workspace.
+3. **Nobody is widened automatically.** An account with no location assignment reaches nothing. That
+   is deliberate: it is better to show too little than to show another site's records.
+
 A platform-level workspace suspension blocks normal member access, pending invitations, API keys, public kiosks, live badge pages, and in-browser Word or PowerPoint editing and playback. Printed individual certificate links remain available so issued credentials can still be verified.
 
 ## Account security
@@ -655,8 +719,10 @@ Platform super-admins manage global identity from **Platform → Users**. Search
 
 ## Tips
 
-- Link the correct **Person record** before assigning self-scoped work.
-- Give the smallest role and scope the person needs.
+- Link the correct **Person record** before assigning self-scoped work. A person record with no
+  location assignment reaches nothing, so add the assignment too.
+- Give the smallest role and scope the person needs. Role scope and location assignment are separate
+  — set both, and neither one widens the other.
 - Suspend access when someone is temporarily away. Remove the membership only when its tenant-specific role history is no longer needed.`,
   },
   {

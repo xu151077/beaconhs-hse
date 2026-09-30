@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { createSuperClient } from './client'
+import { convergePersonnelAssignments } from './converge-personnel-assignments'
 import {
   BUILTIN_ROLES,
   correctiveActions,
@@ -62,6 +63,7 @@ import {
   safeDistanceRecords,
   safeDistanceSegments,
   trades,
+  users,
   trainingCourses,
   trainingRecords,
   trainingSkillAssignments,
@@ -350,6 +352,76 @@ async function main() {
       }),
     )
     const [john, sarah, marcus, priya, tom] = insertedPeople
+
+    // --- Personnel placement ---------------------------------------------
+    // Project Scope resolves from `people_assignments`, and until this step
+    // nothing seeded one, so every non-tenant-wide caller resolved to `empty`.
+    // The placement is derived from data the fixture already has rather than
+    // invented: Crew Alpha works Site A (Tank Farm) and Crew Bravo works Site B
+    // (Cracker Unit). E001's own note — "Lead supervisor for Tank Farm
+    // operations" — agrees, so the mapping is corroborated, not arbitrary.
+    //
+    // Office staff (E009, E010) are deliberately left unplaced. They have no
+    // crew, and leaving them out keeps the fail-closed `empty` path exercised
+    // by real seeded rows instead of only by test fixtures.
+    const siteForCrew = new Map<string, string>([
+      [crewAlpha!.id, siteA.id],
+      [crewBravo!.id, siteB.id],
+    ])
+    const placements = insertedPeople
+      .map((row) => {
+        const orgUnitId = row.crewId ? siteForCrew.get(row.crewId) : undefined
+        return orgUnitId && row.employeeNo ? { employeeNo: row.employeeNo, orgUnitId } : null
+      })
+      .filter((x): x is { employeeNo: string; orgUnitId: string } => x !== null)
+
+    // The two verification foreman accounts. They are created outside this seed
+    // (they carry hand-picked stable UUIDs), so their employee records are
+    // only added when the accounts are actually present — `people.user_id` is a
+    // foreign key, and inventing a row for a missing user would fail the seed.
+    // Their role scope already names Site A / Site B; that access scope is NOT
+    // what places them, it is what the placement is checked against.
+    const verificationForemen = [
+      { userId: 'verif-foreman-a', employeeNo: 'E011', firstName: 'Frank', lastName: 'Ortiz' },
+      { userId: 'verif-foreman-b', employeeNo: 'E012', firstName: 'Grace', lastName: 'Oyelaran' },
+    ]
+    const existingUsers = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        inArray(
+          users.id,
+          verificationForemen.map((f) => f.userId),
+        ),
+      )
+    const presentUserIds = new Set(existingUsers.map((u) => u.id))
+    const foremanRecords = verificationForemen
+      .filter((f) => presentUserIds.has(f.userId))
+      .map((f) => ({
+        employeeNo: f.employeeNo,
+        firstName: f.firstName,
+        lastName: f.lastName,
+        userId: f.userId,
+        crewId: f.userId === 'verif-foreman-a' ? crewAlpha!.id : crewBravo!.id,
+        tradeId: supervisorTrade!.id,
+        dept: fieldOps!.id,
+      }))
+
+    const convergence = await convergePersonnelAssignments(tx, tenant.id, {
+      records: foremanRecords,
+      placements: [
+        ...placements,
+        { employeeNo: 'E011', orgUnitId: siteA.id },
+        { employeeNo: 'E012', orgUnitId: siteB.id },
+      ],
+    })
+    console.log(
+      `  · personnel placement: ${placements.length + 2} desired, ` +
+        `${convergence.assignmentsCreated.length} inserted, ` +
+        `${convergence.skipped.existingAssignments} already present, ` +
+        `${convergence.peopleCreated.length} people created, ` +
+        `${convergence.linksCreated.length} user links filled`,
+    )
 
     // --- Training courses + records -------------------------------------
     const courseDefs = [

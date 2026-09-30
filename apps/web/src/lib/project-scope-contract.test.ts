@@ -21,6 +21,7 @@ import type { RequestContext } from '@beaconhs/tenant'
 import { effectiveOn, isAssignmentEffectiveOn } from './assignment-validity'
 import {
   MAX_ORG_UNIT_DEPTH,
+  resolveProjectScopeIn,
   ancestorOrgUnitIds,
   buildOrgTreeIndex,
   descendantOrgUnitIds,
@@ -32,6 +33,21 @@ import {
 
 const TENANT = '10000000-0000-4000-8000-0000000000aa'
 const PERSON = '20000000-0000-4000-8000-0000000000bb'
+
+/**
+ * A transaction sentinel that throws if touched. Proves a case resolved BEFORE any
+ * query. The public `resolveProjectScope` always opens a transaction (it must,
+ * to get one), so the pre-DB assertions target `resolveProjectScopeIn` — which is
+ * the form the visibility bridge calls with the transaction it already holds.
+ */
+const NO_DB = new Proxy(
+  {},
+  {
+    get(_t, prop) {
+      throw new Error('this case must resolve before touching the database: ' + String(prop))
+    },
+  },
+) as never
 
 /** A context whose `ctx.db` throws — proves a case resolved before any query. */
 function context(overrides: Partial<RequestContext> = {}): RequestContext {
@@ -138,12 +154,12 @@ describe('output contract', () => {
 
 describe('unrestricted comes from exactly two sources', () => {
   it('super-admin is unrestricted', async () => {
-    const scope = await resolveProjectScope(context({ isSuperAdmin: true }))
+    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }))
     expect(scope).toEqual({ kind: 'unrestricted' })
   })
 
   it('an explicit {type:"tenant"} scope is unrestricted', async () => {
-    const scope = await resolveProjectScope(context({ scopes: [{ type: 'tenant' }] }))
+    const scope = await resolveProjectScopeIn(NO_DB, context({ scopes: [{ type: 'tenant' }] }))
     expect(scope).toEqual({ kind: 'unrestricted' })
   })
 
@@ -190,7 +206,7 @@ describe('unrestricted comes from exactly two sources', () => {
 
 describe('tenant isolation', () => {
   it('a caller-supplied tenant that disagrees resolves empty, never unrestricted', async () => {
-    const scope = await resolveProjectScope(context({ isSuperAdmin: true, tenantId: TENANT }), {
+    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }), {
       tenantId: '99999999-0000-4000-8000-0000000000ff',
     })
     // Even a super-admin cannot assert a foreign tenant.
@@ -198,7 +214,9 @@ describe('tenant isolation', () => {
   })
 
   it('a matching caller-supplied tenant does not change the outcome', async () => {
-    const scope = await resolveProjectScope(context({ isSuperAdmin: true }), { tenantId: TENANT })
+    const scope = await resolveProjectScopeIn(NO_DB, context({ isSuperAdmin: true }), {
+      tenantId: TENANT,
+    })
     expect(scope).toEqual({ kind: 'unrestricted' })
   })
 })
@@ -343,7 +361,9 @@ describe('the resolver is read-only and uncached', () => {
   })
 
   it('reads through ctx.db so the tenant RLS policy applies', () => {
-    expect(source).toContain('return ctx.db(async (tx) => {')
+    // The public entry point opens the tenant-scoped transaction; the
+    // transaction-taking variant is what the visibility bridge reuses.
+    expect(source).toContain('return ctx.db((tx) => resolveProjectScopeIn(tx, ctx, options))')
     // No raw client, no root db import.
     expect(source).not.toContain('withTenant(')
     expect(source).not.toMatch(/postgres\(|sqlClient/)

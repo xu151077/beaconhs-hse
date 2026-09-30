@@ -11,8 +11,9 @@ import type { Database } from '@beaconhs/db'
 import { BUILTIN_ROLES, PERMISSION_CATALOGUE, ppeItems, type RoleScope } from '@beaconhs/db/schema'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import { canSeeRecord, moduleScopeWhere } from './visibility'
+import { projectScopeTx } from './testing/project-scope-fixture'
 
-const tx = {} as Database
+const tx = projectScopeTx()
 
 /** The literal chunks of a drizzle SQL predicate (drizzle-orm 0.45: a property). */
 function chunksOf(predicate: unknown): unknown[] {
@@ -43,7 +44,7 @@ function isAlwaysFalse(predicate: unknown): boolean {
 
 function context(
   permissions: string[],
-  scopes: RoleScope[] = [{ type: 'self' }],
+  scopes: RoleScope[] = [{ type: 'tenant' }],
   // `null` models a tenant user with no `people` row, so `resolvePersonId`
   // returns null — the shape a foreman actually has in the runtime fixture.
   personId: string | null = 'person_1',
@@ -214,6 +215,12 @@ describe('ppe read tiers reach the shared visibility resolver', () => {
 })
 
 describe('ppe.read.site must not fail open when there is no person link', () => {
+  // This block's premise is an account with NO `people` row. Since 15B-2 the
+  // Project Scope is resolved from assignments, so the stand-in transaction must
+  // model that missing employee record or the caller would resolve to a scope and
+  // the assertion would be vacuous.
+  const txNoEmployee = projectScopeTx({ employeeRecord: 'none' })
+
   // The runtime case this pins: a foreman holds `ppe.read.site` but has no
   // `people` row, so `ctx.personId` is null. ppe_items has no org-unit column,
   // so the `site` branch of the ladder cannot fire, and there is no holder to
@@ -228,7 +235,7 @@ describe('ppe.read.site must not fail open when there is no person link', () => 
 
   it('yields an always-false list predicate, never an unfiltered one', async () => {
     const ctx = context(['ppe.read.site'], sites, null)
-    const scope = await moduleScopeWhere(ctx, tx, {
+    const scope = await moduleScopeWhere(ctx, txNoEmployee, {
       prefix: 'ppe',
       personCol: ppeItems.currentHolderPersonId,
     })
@@ -291,7 +298,7 @@ describe('ppe.read.site must not fail open when there is no person link', () => 
     // foreman with no person link — fail-closed until ppe_items gains a
     // location column, at which point this expectation is what must change.
     const foreman = context([...BUILTIN_ROLES.foreman!.permissions], sites, null)
-    const scope = await moduleScopeWhere(foreman, tx, {
+    const scope = await moduleScopeWhere(foreman, txNoEmployee, {
       prefix: 'ppe',
       personCol: ppeItems.currentHolderPersonId,
     })

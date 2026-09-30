@@ -14,6 +14,7 @@ import {
   type AnalyticsScopeSubject,
 } from '@beaconhs/analytics/server'
 import { can, type RequestContext } from '@beaconhs/tenant'
+import { resolveProjectScopeIn, type ProjectScope } from './project-scope'
 import { getEffectiveRoleKeys } from './effective-roles'
 import {
   accessibleAnalyticsTemplates,
@@ -57,7 +58,7 @@ export async function resolveAnalyticsAccess(
   // permission for, and pin a row predicate onto the ones they may read only
   // narrowly. Both compilers AND `entity.baseFilter` under the caller's own
   // filters, so a saved report can never widen past the caller's own access.
-  const subject = analyticsScopeSubject(ctx)
+  const subject = analyticsScopeSubject(ctx, await resolveProjectScopeIn(tx, ctx))
   const entities = scopeAnalyticsEntities(subject, discovered)
   return {
     entities,
@@ -72,13 +73,39 @@ export async function resolveAnalyticsAccess(
 }
 
 /** Resolve the identity + permission surface the analytics scope rules need. */
-function analyticsScopeSubject(ctx: RequestContext): AnalyticsScopeSubject {
+function analyticsScopeSubject(
+  ctx: RequestContext,
+  projectScope?: ProjectScope,
+): AnalyticsScopeSubject {
   return {
     isSuperAdmin: ctx.isSuperAdmin,
     permissions: (key) => can(ctx, key),
     siteIds: siteIdsFromScopes(ctx.scopes),
     personId: ctx.personId,
     tenantUserId: ctx.membership?.id ?? null,
+    // Project Scope, since 15B-2. Carried so the insights card cache key changes
+    // when the caller's project scope does — a revoked project must not keep
+    // serving its rows for the cache TTL. `resolveEntity` does not read these yet;
+    // 15B-3 wires the row predicate.
+    // The three restricted kinds collapse to one state: any non-empty scope is
+    // 'restricted'. `unrestricted` and `empty` must stay distinct, because a
+    // caller who can see nothing must never be served a company-wide result.
+    projectScopeKind: !projectScope
+      ? 'unknown'
+      : projectScope.kind === 'unrestricted'
+        ? 'unrestricted'
+        : projectScope.kind === 'empty'
+          ? 'empty'
+          : 'restricted',
+    orgUnitIds:
+      projectScope &&
+      (projectScope.kind === 'orgUnits' || projectScope.kind === 'peopleAndOrgUnits')
+        ? projectScope.orgUnitIds
+        : undefined,
+    projectPersonIds:
+      projectScope && projectScope.kind !== 'unrestricted' && projectScope.kind !== 'empty'
+        ? projectScope.personIds
+        : undefined,
   }
 }
 

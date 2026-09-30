@@ -20,6 +20,7 @@ coherent than they found it.
 
 ## Quick Start
 
+- Use the `shell` tool for all Linux command execution. There is no `bash` tool.
 - Runtime: Node 24 LTS (`.nvmrc`), pnpm 10.30.3, Docker.
 - Install: `corepack enable` then `pnpm install`.
 - Env: copy `.env.example` to `.env`.

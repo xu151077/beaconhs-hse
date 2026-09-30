@@ -37,6 +37,30 @@ export type AnalyticsScopeSubject = {
   personId: string | null
   /** `ctx.membership.id` — the tenant_users row id. */
   tenantUserId: string | null
+  /**
+   * Project Scope org-unit ids, since 15B-2.
+   *
+   * Deliberately carried on the SUBJECT rather than consumed by the resolver
+   * rules in this commit: `resolveEntity` keeps its current tier behaviour, and
+   * 15B-3 changes that. Today these two fields exist so the insights card cache
+   * key reflects the caller's Project Scope — without them a caller whose
+   * assignment was revoked keeps being served the previous project's rows for
+   * the cache TTL. Undefined means "not resolved", which cannot collide with an
+   * empty-but-resolved scope.
+   */
+  orgUnitIds?: readonly string[]
+  /** Project Scope person ids, for the same cache-key reason. */
+  projectPersonIds?: readonly string[]
+  /**
+   * Whether a Project Scope was resolved at all, and whether it was unrestricted.
+   *
+   * This discriminator exists because of a real collision the cache-key tests
+   * caught: an `unrestricted` caller and a caller whose scope resolved to `empty`
+   * both produce empty id lists, and would otherwise share one cache key — so a
+   * caller who can see nothing could be served a company-wide result. The three
+   * states must never collapse.
+   */
+  projectScopeKind?: 'unrestricted' | 'empty' | 'restricted' | 'unknown'
 }
 
 type ReadSpec =
@@ -438,5 +462,15 @@ export function analyticsScopeFingerprint(subject: AnalyticsScopeSubject): strin
     sites: [...subject.siteIds].sort(),
     person: subject.personId ?? null,
     user: subject.tenantUserId ?? null,
+    // Project Scope, since 15B-2. The insights card cache is keyed on this
+    // fingerprint, and a scope that only reflected `sites` would keep serving a
+    // revoked project's rows for the TTL. Sorted and deduped so two callers with
+    // the same scope in a different insertion order share a key, and so an
+    // `unrestricted` caller can never collide with a restricted one.
+    // The discriminator is part of the key, so `unrestricted`, `empty` and
+    // `restricted` can never share one.
+    projectScope: subject.projectScopeKind ?? 'unknown',
+    orgUnits: [...new Set(subject.orgUnitIds ?? [])].sort(),
+    projectPersons: [...new Set(subject.projectPersonIds ?? [])].sort(),
   })
 }

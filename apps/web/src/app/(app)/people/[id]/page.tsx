@@ -72,6 +72,8 @@ import { materializeIdentityAudienceObligations } from '@beaconhs/compliance'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
+import { resolveProjectScope, resolveProjectScopeIn } from '@/lib/project-scope'
+import { recordInProjectScope } from '@/lib/project-scope-predicate'
 import { formatDate } from '@/lib/datetime'
 import { recentActivityForEntity, recordAuditInTransaction } from '@/lib/audit'
 import { ActivityFeed } from '@/components/activity-feed'
@@ -264,8 +266,19 @@ export default async function PersonDetailPage({
   // for the target person, so a guessed person id must not resolve for a caller
   // who cannot read the roster at all.
   if (!can(ctx, 'people.read.all')) notFound()
+  // Project Scope, checked BEFORE the record is loaded. This page renders a
+  // person's email, phone, date of birth and emergency contact, so a guessed
+  // person id must not resolve for a caller whose scope excludes them — the list
+  // filter is not a control, this is. `recordInProjectScope` is the same rule the
+  // SQL adapter applies, so the roster and the detail page cannot disagree.
+  const projectScope = await resolveProjectScope(ctx)
   const canEdit = canManageModule(ctx, 'people')
   const data = await ctx.db(async (tx) => {
+    // Re-check inside the same transaction that reads the row, so a scope change
+    // racing the page render cannot slip between the two.
+    if (!recordInProjectScope(await resolveProjectScopeIn(tx, ctx), { personId: id })) {
+      return null
+    }
     const [row] = await tx
       .select({
         person: people,

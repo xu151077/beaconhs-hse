@@ -4,6 +4,7 @@ import type { Database } from '@beaconhs/db'
 import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from '@beaconhs/db/schema'
 import type { RequestContext } from '@beaconhs/tenant'
 import { canSeeRecord, moduleScopeWhere } from './visibility'
+import { projectScopeTx } from './testing/project-scope-fixture'
 
 function context(permissions: string[]): RequestContext {
   return {
@@ -18,14 +19,14 @@ function context(permissions: string[]): RequestContext {
     membership: { id: 'member_1', displayName: 'Worker' },
     personId: 'person_1',
     permissions: new Set(permissions),
-    scopes: [{ type: 'self' }],
+    scopes: [{ type: 'tenant' }],
     db: async () => {
       throw new Error('visibility predicates must not hit the database here')
     },
   }
 }
 
-const tx = {} as Database
+const tx = projectScopeTx()
 const other = { prefix: 'hazid', ownerIds: ['member_2'], siteId: 'site_1' }
 const mine = { prefix: 'hazid', ownerIds: ['member_1'], siteId: 'site_1' }
 

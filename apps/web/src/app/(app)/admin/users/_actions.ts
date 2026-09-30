@@ -190,7 +190,9 @@ export async function inviteUser(formData: FormData): Promise<void> {
             tenantId: ctx.tenantId,
             tenantUserId: m.id,
             roleId: role.id,
-            scope: scopeRaw ? parseRoleScope(scopeRaw) : { type: 'self' },
+            // No scope submitted -> the ROLE's default (tenant_admin is company-wide).
+            // An administrator who picks a scope always wins; nothing is overwritten.
+            ...(scopeRaw ? { scope: parseRoleScope(scopeRaw) } : {}),
           },
         ])
       }
