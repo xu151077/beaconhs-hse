@@ -32,6 +32,42 @@ export function withAuthEmailContext<T>(
   return authEmailContext.run(context, operation)
 }
 
+/**
+ * Parse BETTER_AUTH_TRUSTED_ORIGINS into the extra entries of Better Auth's
+ * CSRF trust boundary.
+ *
+ * Better Auth matches a trusted origin with `matchesOriginPattern`, which treats
+ * any pattern containing `*` or `?` as a WILDCARD that matches every host. A
+ * single `*` would therefore match any Origin and silently disable the origin
+ * check on every auth mutation, so a value that can only ever be a
+ * misconfiguration is rejected here instead of being trusted. A non-absolute
+ * entry can never match an Origin either (the comparison is against a full
+ * origin), so it is dropped with the same warning.
+ */
+function parseTrustedOrigins(raw: string | undefined): string[] {
+  if (!raw) return []
+  const rejected: string[] = []
+  const accepted = raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .filter((origin) => {
+      if (origin.includes('*') || origin.includes('?') || !/^https?:\/\/[^/?#]+$/.test(origin)) {
+        rejected.push(origin)
+        return false
+      }
+      return true
+    })
+  if (rejected.length) {
+    console.warn(
+      `[auth] Ignoring ${rejected.length} BETTER_AUTH_TRUSTED_ORIGINS entr${
+        rejected.length === 1 ? 'y' : 'ies'
+      }: ${rejected.join(', ')}. List explicit absolute origins — wildcard and host-only patterns cannot be trusted.`,
+    )
+  }
+  return accepted
+}
+
 function createAuth() {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) {
@@ -159,7 +195,19 @@ function createAuth() {
         return {}
       },
     },
-    trustedOrigins: [baseURL],
+    // CSRF trust boundary — a SECURITY control, distinct from `baseURL`, which
+    // only generates URLs (magic links, callbacks). `baseURL` is always trusted
+    // because it is this deployment's own address. Additional origins are read
+    // from BETTER_AUTH_TRUSTED_ORIGINS (comma-separated, full origins) so a
+    // deployment served from another hostname — a tunnel, an alias, a second
+    // internal address — can be trusted WITHOUT redefining baseURL, which would
+    // rewrite every generated link.
+    //
+    // Unset (the default) yields exactly `[baseURL]`, so nothing widens unless an
+    // operator opts in. Entries are full absolute origins compared with exact
+    // string equality. Wildcards are rejected by parseTrustedOrigins above,
+    // because Better Auth would otherwise interpret them as "any host".
+    trustedOrigins: [baseURL, ...parseTrustedOrigins(process.env.BETTER_AUTH_TRUSTED_ORIGINS)],
   })
 }
 

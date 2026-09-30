@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   const instance = { api: { getSession: vi.fn() }, handler: vi.fn() }
   const state: {
     options?: {
+      trustedOrigins?: string[]
       emailAndPassword?: {
         sendResetPassword?: (args: {
           user: { id: string; email: string }
@@ -215,5 +216,118 @@ describe('lazy auth runtime', () => {
     )
     expect(mocks.pool).not.toHaveBeenCalled()
     expect(mocks.betterAuth).not.toHaveBeenCalled()
+  })
+})
+
+describe('CSRF trusted origins', () => {
+  // BETTER_AUTH_TRUSTED_ORIGINS widens Better Auth's origin check so a deployment
+  // reachable from another hostname (a tunnel, an alias) can sign in. It must never
+  // widen silently: with the variable absent the boundary is exactly `[baseURL]`.
+  async function trustedOriginsFor(env: Record<string, string | undefined>) {
+    process.env.DATABASE_URL = 'postgresql://app:secret@db.example.test/beaconhs'
+    process.env.BETTER_AUTH_SECRET = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    process.env.NODE_ENV = 'production'
+    process.env.BETTER_AUTH_URL = 'http://localhost:3000'
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    const { getAuth } = await import('./server')
+    getAuth()
+    return mocks.state.options?.trustedOrigins
+  }
+
+  it('trusts only baseURL when BETTER_AUTH_TRUSTED_ORIGINS is unset', async () => {
+    expect(await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: undefined })).toEqual([
+      'http://localhost:3000',
+    ])
+  })
+
+  it('trusts only baseURL when the variable is empty', async () => {
+    expect(await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: '' })).toEqual([
+      'http://localhost:3000',
+    ])
+  })
+
+  it('accepts a single additional origin alongside baseURL', async () => {
+    expect(
+      await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: 'https://hse.example.test' }),
+    ).toEqual(['http://localhost:3000', 'https://hse.example.test'])
+  })
+
+  it('parses a comma-separated list, trimming whitespace', async () => {
+    expect(
+      await trustedOriginsFor({
+        BETTER_AUTH_TRUSTED_ORIGINS: ' https://hse.example.test , http://127.0.0.1:3000 ',
+      }),
+    ).toEqual(['http://localhost:3000', 'https://hse.example.test', 'http://127.0.0.1:3000'])
+  })
+
+  it('drops empty and whitespace-only entries instead of trusting a blank origin', async () => {
+    expect(
+      await trustedOriginsFor({
+        BETTER_AUTH_TRUSTED_ORIGINS: ' ,https://hse.example.test,,   ,http://127.0.0.1:3000,  ',
+      }),
+    ).toEqual(['http://localhost:3000', 'https://hse.example.test', 'http://127.0.0.1:3000'])
+  })
+
+  it('keeps baseURL first and never lets the list displace it', async () => {
+    const origins = await trustedOriginsFor({
+      BETTER_AUTH_TRUSTED_ORIGINS: 'https://hse.example.test',
+    })
+    // baseURL also generates magic-link and callback URLs, so losing it would
+    // break sign-in even when an extra origin is configured.
+    expect(origins?.[0]).toBe('http://localhost:3000')
+  })
+
+  it('does not widen from the link-generation URL variables', async () => {
+    // PUBLIC_APP_URL / NEXT_PUBLIC_APP_URL / APP_URL pick the hostname that links
+    // are built from. Trusting them would silently widen the CSRF boundary in
+    // every environment, so they must not reach trustedOrigins.
+    expect(
+      await trustedOriginsFor({
+        PUBLIC_APP_URL: 'https://public.example.test',
+        NEXT_PUBLIC_APP_URL: 'https://next-public.example.test',
+        APP_URL: 'https://app.example.test',
+      }),
+    ).toEqual(['http://localhost:3000'])
+  })
+
+  it('drops a wildcard entry instead of letting it match any host', async () => {
+    // Better Auth's matchesOriginPattern treats any pattern containing `*` or `?`
+    // as a wildcard, so `BETTER_AUTH_TRUSTED_ORIGINS=*` would match EVERY Origin
+    // and disable the CSRF check on all auth mutations. It must be dropped.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: '*' })).toEqual([
+      'http://localhost:3000',
+    ])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('drops a host-only wildcard such as *.example.com', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: '*.example.com' })).toEqual([
+      'http://localhost:3000',
+    ])
+    warn.mockRestore()
+  })
+
+  it('drops a non-absolute entry, which could never match an Origin anyway', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await trustedOriginsFor({ BETTER_AUTH_TRUSTED_ORIGINS: 'hse.example.test' })).toEqual([
+      'http://localhost:3000',
+    ])
+    warn.mockRestore()
+  })
+
+  it('keeps valid absolute origins while dropping invalid ones in the same list', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(
+      await trustedOriginsFor({
+        BETTER_AUTH_TRUSTED_ORIGINS: 'https://hse.example.test,*,http://127.0.0.1:3000',
+      }),
+    ).toEqual(['http://localhost:3000', 'https://hse.example.test', 'http://127.0.0.1:3000'])
+    warn.mockRestore()
   })
 })
