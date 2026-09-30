@@ -100,6 +100,52 @@ describe('authorized report source catalogue', () => {
     expect(source?.relations).toEqual(incidentSource.relations)
   })
 
+  it("keeps the caller's row scope when an authored projection replaces the source", () => {
+    // `incidents` has an authored projection, so the merge rebuilds the entity
+    // from it. Anything not copied across would silently return the source to a
+    // tenant-wide read — which is exactly what a row scope exists to prevent.
+    const scoped: ReportEntity = {
+      key: 'incidents',
+      label: 'Incidents',
+      category: 'Incidents',
+      table: 'incidents',
+      baseFilter: {
+        combinator: 'and',
+        rules: [{ field: 'site_org_unit_id', op: 'in', value: ['site-a'] }],
+      },
+      columns: [{ key: 'site_org_unit_id', label: 'Site', kind: 'uuid' }],
+    }
+
+    const [source] = mergeAuthorizedReportSources([scoped])
+
+    expect(source?.baseFilter).toEqual(scoped.baseFilter)
+  })
+
+  it('still applies the authored projection alongside the row scope', () => {
+    const scoped: ReportEntity = {
+      key: 'incidents',
+      label: 'Incidents',
+      category: 'Incidents',
+      table: 'incidents',
+      baseFilter: {
+        combinator: 'and',
+        rules: [{ field: 'site_org_unit_id', op: 'in', value: ['site-a'] }],
+      },
+      columns: [{ key: 'site_org_unit_id', label: 'Site', kind: 'uuid' }],
+    }
+
+    const [source] = mergeAuthorizedReportSources([scoped])
+    const compiled = compileCustomReport(
+      { entity: 'incidents', mode: 'rows', columns: ['title'] },
+      'tenant-1',
+      { entities: [source!] },
+      {},
+    )
+
+    expect(compiled.params).toContain('site-a')
+    expect(compiled.params).not.toContain('site-b')
+  })
+
   it('resolves relationship identifiers to names and classifies unresolved IDs as internal', () => {
     const sources: ReportEntity[] = [
       {

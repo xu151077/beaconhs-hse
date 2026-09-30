@@ -545,6 +545,13 @@ export const REPORT_ENTITY_MAP: Record<string, ReportEntity> = Object.fromEntrie
 /**
  * Keep the host-authorized Insights inventory while retaining report-specific
  * projections for entities that need flattened joins or calculated fields.
+ *
+ * The result is rebuilt from the authored projection, so every field is copied
+ * across deliberately. `baseFilter` carries the caller's row-scope predicate
+ * and MUST be carried across: dropping it here would silently return a source
+ * to a tenant-wide read for exactly the entities that have an authored
+ * projection, which is the majority of them. The caller's filter wins, because
+ * it is the one that reflects who is asking.
  */
 export function mergeAuthorizedReportSources(
   authorizedSources: readonly ReportEntity[],
@@ -558,6 +565,7 @@ export function mergeAuthorizedReportSources(
       category: source.category,
       description: source.description ?? authored.description,
       relations: source.relations,
+      baseFilter: source.baseFilter ?? authored.baseFilter,
     }
   })
 }

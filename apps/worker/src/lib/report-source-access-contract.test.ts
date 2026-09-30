@@ -16,4 +16,11 @@ describe('scheduled report source authorization contract', () => {
   it('does not fall back to the static report-only source inventory', () => {
     expect(workerSource).not.toMatch(/loadBeaconReportCatalog\(tx\)(?!,)/)
   })
+
+  it('applies the run-as member row scope to the sources, not just the app list', () => {
+    // `canAccessTemplate` only gates which Builder apps are visible. Without
+    // this call the run would compile against a tenant-wide source inventory
+    // and report rows the impersonated member cannot read by hand.
+    expect(workerSource).toContain('scopeReportSourcesForRunAs(requestCtx, discovered)')
+  })
 })

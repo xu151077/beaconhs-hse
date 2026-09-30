@@ -13,6 +13,14 @@ export { compileRuleGroup as compileAnalyticsRuleGroup } from './filter-sql'
 export { addTrustedSystemAppResponsesEntity, discoverEntities, discoverEntityMap } from './discover'
 export { discoverEntitiesWithScopedApps } from './custom-fields'
 
+/** Row-level authorization for analytics/report queries (see ./scope.ts). */
+export {
+  analyticsScopeFingerprint,
+  scopeAnalyticsEntities,
+  siteIdsFromScopes,
+  type AnalyticsScopeSubject,
+} from './scope'
+
 /** Validate untrusted BHQL against the live, schema-discovered registry. The
  *  server-side convenience over the pure `parseBhqlQuery(raw, entityMap)`. */
 export function validateBhql(raw: unknown) {

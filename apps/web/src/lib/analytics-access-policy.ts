@@ -42,10 +42,17 @@ export function analyticsAccessScopeKey(args: {
   activeRoleId?: string | null
   effectiveRoleKeys: ReadonlySet<string>
   templateIds: readonly string[]
+  /**
+   * Fingerprint of the caller's resolved ROW scope (site ids / person / user).
+   * Two members can hold the same role and different `sites` scopes, so a cache
+   * key without this would serve one member's scoped rows to another.
+   */
+  rowScope?: string
 }): string {
   return JSON.stringify({
     role: args.activeRoleId ?? 'all',
     roleKeys: [...args.effectiveRoleKeys].sort(),
     templates: [...args.templateIds].sort(),
+    rowScope: args.rowScope ?? 'none',
   })
 }

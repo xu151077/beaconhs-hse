@@ -14,18 +14,23 @@ import {
 import type { RequestContext } from '@beaconhs/tenant'
 import type { BhqlResult } from '@beaconhs/analytics'
 import { addTrustedSystemAppResponsesEntity, runBhql } from '@beaconhs/analytics/server'
-import { resolveAnalyticsAccess } from '@/lib/analytics-access'
+import { canReadAppResponses, resolveAnalyticsAccess } from '@/lib/analytics-access'
 import { applyParams } from './_params'
 import { canSeePublishedInsight, getInsightRoleKeys } from './_visibility'
 import { DEFAULT_INSIGHT_LAYOUT } from './_widgets'
 import type { CardRow } from './cards/_data'
 
 // Short-TTL in-memory cache for compiled card results. Keyed by tenant + the
-// FINAL (param-injected) query, so it's RLS-correct (a key is one tenant's view)
-// and parameter-aware. Dashboards re-render often (param tweaks, tab switches,
-// the homepage on every nav) and the same card recurs across boards — this keeps
-// a busy dashboard from recompiling identical queries. Per-process (fine for a
-// 60s window); the value is already the tenant-scoped result.
+// caller's authorization scope + the FINAL (param-injected) query, so it is
+// both parameter-aware AND scope-correct. Dashboards re-render often (param
+// tweaks, tab switches, the homepage on every nav) and the same card recurs
+// across boards — this keeps a busy dashboard from recompiling identical
+// queries. Per-process (fine for a 60s window).
+//
+// The scope in the key is load-bearing, not an optimisation: two members can
+// hold the same role with different `sites` scopes, so a tenant+query key alone
+// would serve one member's scoped rows to the other. `access.scopeKey` carries
+// the resolved site/person/user fingerprint.
 const CARD_RESULT_CACHE = new Map<string, { at: number; result: BhqlResult }>()
 const CARD_RESULT_TTL_MS = 60_000
 
@@ -35,6 +40,13 @@ async function runCardCached(
   key: string,
   trustedSystemCard: boolean,
 ): Promise<BhqlResult> {
+  // `trustedSystemCard` adds the tenant-wide `app_responses` source that
+  // `scopeAnalyticsEntities` deliberately withholds. Gate it on a real
+  // response-read permission here too, so the system-card escape hatch cannot
+  // be reached by a member who could not query that source directly.
+  if (trustedSystemCard && !canReadAppResponses(ctx)) {
+    throw new Error('Not authorized to read app responses')
+  }
   return ctx.db(async (tx) => {
     const access = await resolveAnalyticsAccess(ctx, tx)
     const trustScope = trustedSystemCard ? 'system' : 'user'

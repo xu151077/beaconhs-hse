@@ -213,6 +213,8 @@ export const PERMISSION_CATALOGUE = [
   'equipment.workorder.close',
   // PPE
   'ppe.read.all',
+  'ppe.read.site',
+  'ppe.read.self',
   'ppe.manage',
   'ppe.issue',
   'ppe.return',
@@ -318,6 +320,8 @@ export const BUILTIN_ROLES: Record<
       'hazid.create',
       'hazid.update',
       'training.read.self',
+      // A worker sees the gear issued to them in the PPE register.
+      'ppe.read.self',
       'documents.read',
       'documents.acknowledge',
       'ca.read.self',
@@ -349,6 +353,10 @@ export const BUILTIN_ROLES: Record<
       'training.read.all',
       'equipment.read.site',
       'equipment.inspect',
+      // Matches `equipment.read.site` above. ppe_items carries no org-unit
+      // column, so the site tier cannot filter by location and falls back to the
+      // holder column — see ppe-read-tier-contract.test.ts.
+      'ppe.read.site',
       'ppe.issue',
       'ppe.inspect',
       'documents.read',

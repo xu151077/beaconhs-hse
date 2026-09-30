@@ -57,6 +57,7 @@ import {
   resolveTenantLogoUrl,
 } from '@beaconhs/storage'
 import { appBaseUrl } from '../lib/app-base-url'
+import { scopeReportSourcesForRunAs } from '../lib/report-run-as-scope'
 import { escapeHtml } from '../lib/escape-html'
 
 // Attach the rendered PDF to recipient emails up to this size; larger reports
@@ -542,10 +543,15 @@ async function resolveScheduledReportContext(
   const accessibleApps = templates.filter((template) =>
     canAccessTemplate(requestCtx, template, resolved.roleKeys, 'operate'),
   )
-  const sources = await discoverEntitiesWithScopedApps(
+  const discovered = await discoverEntitiesWithScopedApps(
     tx,
     accessibleApps.map(({ id, name }) => ({ id, name })),
   )
+  // The run-as member's effective module read permission and row scope must
+  // reach the report engine, otherwise a scheduled run silently reports the
+  // whole tenant. `canAccessTemplate` above only gates which Builder apps a
+  // source may be read through; it does not scope the module tables.
+  const sources = scopeReportSourcesForRunAs(requestCtx, discovered)
 
   return {
     catalog: await loadBeaconReportCatalog(tx, sources),
