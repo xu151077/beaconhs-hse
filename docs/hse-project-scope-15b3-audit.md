@@ -1177,3 +1177,71 @@ and both deny an unusable one.
 **Unchanged.** No column, no migration, no RLS edit. Drizzle journal remains at 41
 entries, last idx 40. `documents` gains no scope column, so the exemption rests on
 the absence of anything to bind on — which the shape guard keeps honest.
+---
+
+## 16. 15B-3C — the Insights trusted system KPI (DECIDED AND IMPLEMENTED)
+
+**Status: IMPLEMENTED.** A settled product decision, recorded here so the
+exception is not later mistaken for an oversight. §12 item 5, §14 and §15 are
+retained above as the historical record and are not modified by this section.
+
+### The two cards
+
+Only two built-in Overview cards read the `app_responses` entity:
+
+| card                            | query                                                    | shape                    |
+| ------------------------------- | -------------------------------------------------------- | ------------------------ |
+| `kpi-submissions`               | `count(app_responses)` where `submitted_at` today        | one scalar, no `groupBy` |
+| `kpi-monitored-sessions-active` | `count(app_responses)` where `monitor_status = 'active'` | one scalar, no `groupBy` |
+
+Neither projects a person, a site, or any row. Both are aggregate system
+metrics, which is why they are tenant-wide rather than Project-Scope-scoped: a
+tenant KPI is not a scoped view.
+
+### The rule
+
+`app_responses` remains on the analytics `ALWAYS_ALLOWED` list, so Project Scope
+is intentionally **not** applied to it. The permission half is decided in apps/web
+by `canReadAppResponses`, and it admits **`forms.response.read.all` only**:
+
+| permission                  | Project Scope | trusted KPI |
+| --------------------------- | ------------- | ----------- |
+| `forms.response.read.all`   | unrestricted  | tenant-wide |
+| `forms.response.read.all`   | restricted    | tenant-wide |
+| `forms.response.read.all`   | `empty`       | tenant-wide |
+| `forms.response.read.all`   | `unknown`     | tenant-wide |
+| `forms.response.read.site`  | any           | **DENY**    |
+| `forms.response.read.self`  | any           | **DENY**    |
+| no response read permission | any           | **DENY**    |
+
+`forms.response.read.site` does not authorize these cards. It did before this
+decision, which is why a site-scoped reader could see a tenant-wide total.
+
+**Why `empty` / `unknown` do not block it.** Not because a scope was widened.
+`forms.response.read.all` is a tenant-wide capability in its own right, and an
+aggregate with no rows has no scope left to narrow. The grant rests on the
+permission, which is enforced before the analytics layer is reached — so this is
+a documented exception, not a fail-open.
+
+### The boundary that must not blur
+
+```
+Apps Responses — ordinary form-response records
+  └─ Project Scope APPLIES (moduleScopeWhere, `form_` spec)
+
+Insights trusted KPI — app_responses aggregate
+  └─ tenant-wide, `forms.response.read.all` only
+```
+
+`app_responses` is `{ ...formResponses }` with only `key` / `label` / `category` /
+`description` overridden, so it reads the **same rows** as ordinary form
+responses. The exemption is on the alias the two KPI cards use, not on the table.
+Ordinary response records keep their normal narrowing, and the analytics suite
+asserts both halves of that boundary side by side.
+
+### Schema / migration
+
+**Unchanged.** No column, no migration, no RLS edit, and no change to
+`moduleScopeWhere`, `projectScopePredicate`, `resolveProjectScopeIn`,
+`scopeContribution` or `resolveEntity`. `ALWAYS_ALLOWED` is retained rather than
+removed; only the caller's permission gate was narrowed.

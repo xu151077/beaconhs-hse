@@ -352,4 +352,20 @@ describe('insight dashboard render path', () => {
   it('gates the tenant-wide system-card source on a real read permission', () => {
     expect(render).toContain('trustedSystemCard && !canReadAppResponses(ctx)')
   })
+
+  it('and that gate is read.all alone, not read.all OR read.site', () => {
+    // The assertion above only proves a gate is CALLED. This proves what it
+    // admits, because a `read.site` holder reaching a tenant-wide KPI is exactly
+    // the regression 15B-3C closed. Behavioural assertions against the real
+    // function live in `insights-trusted-card-scope-contract.test.ts`; this one
+    // pins the wiring where the entity is injected, so the two cannot drift.
+    const access = readFileSync(new URL('./analytics-access.ts', import.meta.url), 'utf8')
+    const start = access.indexOf('export function canReadAppResponses')
+    expect(start, 'canReadAppResponses must still exist').toBeGreaterThan(-1)
+    // Read to the matching closing brace, not to the next line, so a Prettier
+    // rewrap cannot truncate the slice and make these checks vacuous.
+    const body = access.slice(start, access.indexOf('\n}', start))
+    expect(body).toContain("can(ctx, 'forms.response.read.all')")
+    expect(body).not.toContain('forms.response.read.site')
+  })
 })

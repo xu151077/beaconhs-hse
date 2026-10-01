@@ -103,6 +103,13 @@ function analyticsScopeSubject(
  * `resolveAnalyticsAccess` already applied the caller's module read permission
  * and row scope. The trusted system-card addition is the one entity that stays
  * tenant-wide by design, so it is gated separately on a real read permission.
+ *
+ * "Tenant-wide" covers exactly two built-in cards — `kpi-submissions` and
+ * `kpi-monitored-sessions-active` — and both are a single `count` with no
+ * `groupBy`, no person, no site and no row-level output. That is why the grant is
+ * tenant-wide rather than Project-Scope-scoped: a tenant KPI is not a scoped view.
+ * It is NOT a licence for the underlying response records, which keep their
+ * normal `moduleScopeWhere` narrowing everywhere else.
  */
 export async function runAuthorizedBhql(
   ctx: RequestContext,
@@ -121,7 +128,21 @@ export async function runAuthorizedBhql(
   })
 }
 
-/** The tenant-wide `app_responses` source needs a real response-read permission. */
+/**
+ * The tenant-wide `app_responses` KPI source, authorized by
+ * `forms.response.read.all` ONLY.
+ *
+ * `forms.response.read.site` deliberately does NOT authorize it. A site-scoped
+ * reader sees the tenant-wide total on a KPI that is a system metric by design,
+ * while the same reader is correctly narrowed to their own sites everywhere the
+ * underlying response records are read — so the two must not be confused. This
+ * is the whole difference between "Apps Responses" (ordinary records, Project
+ * Scope applied) and "Insights trusted KPI" (an aggregate, tenant-wide).
+ *
+ * Because the grant is a permission and not a scope, an `empty` or unresolved
+ * Project Scope does not block it: `read.all` is a tenant-wide capability in its
+ * own right, and there is no scope left to narrow an aggregate that has no rows.
+ */
 export function canReadAppResponses(ctx: RequestContext): boolean {
-  return can(ctx, 'forms.response.read.all') || can(ctx, 'forms.response.read.site')
+  return can(ctx, 'forms.response.read.all')
 }

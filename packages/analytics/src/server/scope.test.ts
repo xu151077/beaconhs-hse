@@ -237,6 +237,86 @@ describe('analytics row-scope rules', () => {
       const out = scopeAnalyticsEntities(subject({ permissions: () => false }), [appResponses])
       expect(out.map((e) => e.key)).toEqual(['app_responses'])
     })
+
+    // 15B-3C product decision: the two built-in cards that read `app_responses`
+    // are a single `count` each — no `groupBy`, no person, no site, no
+    // row-level output — so they are a tenant-wide SYSTEM METRIC rather than a
+    // Project-Scope-scoped view, and stay exempt.
+    //
+    // The PERMISSION half of the rule is NOT decided here and never was: this
+    // layer short-circuits on `ALWAYS_ALLOWED` before the permission is read,
+    // which is exactly why the entity is described as "granted, caller gate is
+    // separate". `canReadAppResponses` in apps/web is that gate and it admits
+    // `forms.response.read.all` only. These cases pin the SCOPE dimension alone;
+    // the permission cases live in
+    // `apps/web/src/lib/insights-trusted-card-scope-contract.test.ts`.
+    const withScope = (projectScopeKind: 'unrestricted' | 'restricted' | 'empty' | 'unknown') =>
+      scopeAnalyticsEntities(
+        subject({
+          permissions: (k) => k === 'forms.response.read.all',
+          projectScopeKind,
+          orgUnitIds: [SITE_A],
+          projectPersonIds: [],
+        }),
+        [appResponses],
+      )
+
+    it('is granted in an unrestricted scope (Case A)', () => {
+      expect(withScope('unrestricted').map((e) => e.key)).toEqual(['app_responses'])
+    })
+
+    it('is granted in a RESTRICTED scope too (Case B) — the aggregate is not narrowed', () => {
+      // The decision `read.site` must not silently inherit. Project Scope does
+      // not narrow this source, so a scoped `read.all` holder still sees the
+      // tenant-wide number on the KPI.
+      const out = withScope('restricted')
+      expect(out.map((e) => e.key)).toEqual(['app_responses'])
+      // Tenant-wide means tenant-wide: no row predicate is attached.
+      expect(out[0]?.baseFilter).toBeUndefined()
+    })
+
+    it('is granted with an EMPTY Project Scope (Case G)', () => {
+      // NOT because the scope was widened. `read.all` is a tenant-wide
+      // capability in its own right, and an aggregate with no rows has no scope
+      // left to narrow, so there is nothing for `empty` to withhold. This is the
+      // documented exception, not a fail-open: the permission half (Cases C–F)
+      // is enforced before this layer is ever reached.
+      expect(withScope('empty').map((e) => e.key)).toEqual(['app_responses'])
+    })
+
+    it('is granted with an UNRESOLVED Project Scope (Case H)', () => {
+      // Same reasoning as Case G. `unknown` means the scope was never resolved;
+      // here the grant rests on the permission, not on a scope.
+      expect(withScope('unknown').map((e) => e.key)).toEqual(['app_responses'])
+    })
+
+    it('stays exempt while an ordinary form-responses read is still scoped', () => {
+      // The boundary that must not blur. `form_responses` — the underlying
+      // records behind the same rows — keeps its `form_` spec and IS narrowed
+      // for a restricted caller. Only the alias the two KPI cards use is exempt,
+      // so "Insights trusted KPI" never becomes "all form responses are
+      // tenant-wide".
+      const formResponses = entity({
+        table: 'form_responses',
+        columns: [
+          { key: 'site_org_unit_id', label: 'Site', kind: 'uuid' },
+          { key: 'subject_person_id', label: 'Subject', kind: 'uuid' },
+        ] as AnalyticsEntity['columns'],
+      })
+      const out = scopeAnalyticsEntities(
+        subject({
+          permissions: (k) => k === 'forms.response.read.all',
+          projectScopeKind: 'restricted',
+          orgUnitIds: [SITE_A],
+          projectPersonIds: [],
+        }),
+        [appResponses, formResponses],
+      )
+      const ordinary = out.find((e) => e.key === formResponses.key)
+      expect(ordinary, 'the ordinary entity must survive to be filtered').toBeDefined()
+      expect(ordinary?.baseFilter, 'and it must be narrowed by Project Scope').toBeDefined()
+      expect(out.find((e) => e.key === 'app_responses')?.baseFilter).toBeUndefined()
+    })
   })
 
   describe('siteIdsFromScopes', () => {
