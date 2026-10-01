@@ -2,6 +2,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { MapPin } from 'lucide-react'
 import {
   and,
@@ -60,7 +61,28 @@ export default async function LocationsPage({
   const params = parseListParams(sp, { sort: 'name', dir: 'asc', perPage: 25, allowedSorts: SORTS })
   const statusFilter = pickString(sp.status) ?? 'active'
   const ctx = await requireRequestContext()
-  const canManage = can(ctx, 'admin.org.manage')
+  const canManage = ctx.isSuperAdmin || can(ctx, 'admin.org.manage')
+  // ACCEPT-BOTH, and deliberately not `requiredPermission`-style either/or.
+  //
+  // `admin.org.read` is the read capability for the org structure: the customer
+  // list, the hierarchy, and the customer contacts rendered with each customer.
+  // `admin.org.manage` is a WRITE capability and does not widen into it —
+  // `readTierCovers` only widens within one `read` family of one prefix, and
+  // `admin.org.read` is a flat key, not a family member. Without the second
+  // check, every role granted `admin.org.manage` before that key existed would
+  // have lost Locations on upgrade.
+  //
+  // This is a LOCAL migration boundary, not a global rule: `.manage` never implies
+  // `.read` anywhere else, and must not start to.
+  //
+  // There is no narrower tier to apply and none is being invented. `org_units` has
+  // no person, owner or site-membership column, so `read.self` is unenforceable
+  // and `read.site` is circular — `parent_id` is the tree itself. Permission + RLS
+  // is the whole boundary here.
+  if (!canManage && !can(ctx, 'admin.org.read')) redirect('/dashboard')
+  // Export is a SEPARATE axis and stays stricter than the read: it needs the
+  // generic tenant-wide export capability AND the org management capability.
+  // `admin.org.read` alone must never be enough to export.
   const canExport = can(ctx, 'admin.data.export') && canManage
   const hierarchy = await getTenantHierarchy(ctx.tenantId)
 

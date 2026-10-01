@@ -182,6 +182,12 @@ export const NAV_MODULES: NavModule[] = [
     href: '/locations',
     label: 'Locations',
     iconKey: 'pin',
+    // ANY-of, not a single `requiredPermission`: the page gate is accept-both, and
+    // a nav that demanded `admin.org.read` alone would hide Locations from a role
+    // holding only `admin.org.manage` — the exact upgrade regression the page's
+    // accept-both check exists to prevent. Before this, the entry had no gate at
+    // all, so the list was reachable by any authenticated member.
+    requiredAnyPermission: ['admin.org.read', 'admin.org.manage'],
     group: 'Assets & people',
   },
   {

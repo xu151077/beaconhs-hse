@@ -422,6 +422,21 @@ export default async function LocationDetailPage({
       ? requestedContactId
       : null
   const ctx = await requireRequestContext()
+  // ACCEPT-BOTH — the same boundary as the list page, and it must run BEFORE the
+  // fetch below, exactly as `people/[id]` does. This page renders the customer's
+  // full postal address and their `customer_contacts` (name, role, email, phone),
+  // so a guessed org-unit id must not resolve for a caller who cannot read the org
+  // structure at all. `notFound()` rather than a redirect, so a refused id is
+  // indistinguishable from one that does not exist.
+  //
+  // `admin.org.read` is the read capability; `admin.org.manage` is a write
+  // capability that does not widen into it, so both are accepted here to keep
+  // pre-existing manage-only roles working. Local migration boundary only —
+  // `.manage` must never start implying `.read` globally.
+  //
+  // No row-level filter is added, deliberately: `org_units` has no person, owner or
+  // site-membership column to filter on, so Permission + RLS is the whole boundary.
+  if (!can(ctx, 'admin.org.read') && !can(ctx, 'admin.org.manage')) notFound()
   const hierarchy = await getTenantHierarchy(ctx.tenantId)
   // Read-only unless the viewer can manage the org tree. The autosave / write
   // actions re-assert this server-side; this only gates the inputs and

@@ -314,6 +314,20 @@ export const PERMISSION_CATALOGUE = [
   // tenant_admin via the full catalogue; grant explicitly to anyone else.
   'admin.users.impersonate',
   'admin.roles.manage',
+  // Read the org structure: the customer list, the hierarchy, and the customer
+  // contacts rendered alongside them. A FLAT key, deliberately not a
+  // `read.{all,site,self}` family — `org_units` has no person, owner or
+  // site-membership column, so `self` is unenforceable and `site` is circular
+  // (`parent_id` is the tree itself). The tenant boundary is RLS, exactly as for
+  // `admin.audit.read`.
+  //
+  // MIGRATION: this is the read half of the `admin.org.manage` pair. It does NOT
+  // widen into `manage`, and `manage` does not widen into it — `readTierCovers`
+  // only widens WITHIN one `read` family of one prefix. So every Locations read
+  // boundary accepts EITHER key, which is what lets a role that was granted
+  // `admin.org.manage` before this key existed keep working. Do not "simplify"
+  // those boundaries to this key alone.
+  'admin.org.read',
   'admin.org.manage',
   'admin.api-keys.manage',
   'admin.settings.manage',

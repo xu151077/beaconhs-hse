@@ -133,6 +133,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   'admin.users.manage': 'Manage users',
   'admin.users.impersonate': 'Impersonate users',
   'admin.roles.manage': 'Manage roles',
+  'admin.org.read': 'View org hierarchy',
   'admin.org.manage': 'Manage org hierarchy',
   'admin.api-keys.manage': 'Manage API keys',
   'admin.settings.manage': 'Manage settings',
