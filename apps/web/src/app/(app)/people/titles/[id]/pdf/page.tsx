@@ -9,7 +9,7 @@ import { getGeneratedTranslations } from '@/i18n/generated.server'
 import { notFound } from 'next/navigation'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import { jobTitleTasks, people, personTitleAssignments, personTitles } from '@beaconhs/db/schema'
-import { requireRequestContext } from '@/lib/auth'
+import { requireModuleManage } from '@/lib/module-admin/guard'
 import { formatDate } from '@/lib/datetime'
 import { AutoPrint } from '@/components/browser-print-controls'
 import { isUuid } from '@/lib/list-params'
@@ -25,7 +25,7 @@ export default async function TitlePdfPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   if (!isUuid(id)) notFound()
 
-  const ctx = await requireRequestContext()
+  const ctx = await requireModuleManage('people')
   const data = await ctx.db(async (tx) => {
     const [row] = await tx
       .select()
