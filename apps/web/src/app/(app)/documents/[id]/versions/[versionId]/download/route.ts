@@ -14,16 +14,16 @@
 // without loading the parent, a soft-deleted document's artifacts remained
 // downloadable to anyone holding `documents.read` who knew the two UUIDs.
 //
-// PROJECT SCOPE IS DELIBERATELY ABSENT. `documents` has no reliable binding
-// column — no org unit, no site, no person, and `owner_tenant_user_id` is
-// authorship rather than placement. Restricting this route to a caller's scope
-// therefore needs a product decision (withhold, exempt as tenant-level
-// controlled-library data, or add a real placement column) before it can be
-// written. Until then this route matches every other document read surface:
-// tenant-wide within the tenant boundary. Do not "fix" this by borrowing
-// `document_acknowledgment_sessions.site_org_unit_id` — that is a sign-off
-// instance's location, not the document's, and a document may have sessions at
-// several sites or none at all.
+// PROJECT SCOPE — 15B-3C product decision. `documents` is a TENANT-LEVEL
+// CONTROLLED DOCUMENT LIBRARY: a tenant publishes one version of an SDS / SOP /
+// policy and every worker on every site must be able to read it, so a `restricted`
+// caller adds NO Project Scope constraint here. An `empty` or `unknown` scope
+// DOES deny, and that check is the shared `documentAuthorizationFilter`, not a
+// local rule. There is still no binding column — none is being introduced, and
+// `owner_tenant_user_id` remains authorship rather than placement. Do not "fix"
+// this by borrowing `document_acknowledgment_sessions.site_org_unit_id`: that is
+// a sign-off instance's location, not the document's, and a document may have
+// sessions at several sites or none at all.
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { and, eq, isNull, type SQL } from 'drizzle-orm'
@@ -32,7 +32,7 @@ import { assertCan, can } from '@beaconhs/tenant'
 import { getObjectStream } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
-import { documentReadFilter } from '@/lib/assistant/doc-access'
+import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -72,7 +72,7 @@ export async function GET(
     // this is strictly narrower than before — no previously-authorized download
     // is lost.
     const documentConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
-    const readFilter = documentReadFilter(ctx)
+    const readFilter = await documentAuthorizationFilter(ctx, tx)
     if (readFilter) documentConds.push(readFilter)
 
     const [v] = await tx

@@ -33,7 +33,7 @@ describe('document version visibility contract', () => {
     ['global search', '../app/api/search/route.ts'],
     ['public REST reads', './api/query.ts'],
   ])('%s uses the shared document visibility boundary', (_label, relativePath) => {
-    expect(source(relativePath)).toContain('documentReadFilter(ctx)')
+    expect(source(relativePath)).toContain('documentAuthorizationFilter(ctx, tx)')
   })
 
   it('does not offer a metadata-only bulk publication shortcut', () => {

@@ -16,7 +16,7 @@ import { augmentBeaconReportEntityWithCustomFields } from '@beaconhs/reports/ser
 import type { ReportEntity } from '@beaconhs/reports/entities'
 import { ApiError } from './errors'
 import { recordIdColumn } from './records'
-import { documentReadFilter } from '../assistant/doc-access'
+import { documentAuthorizationFilter } from '../assistant/document-project-scope'
 
 export const DEFAULT_LIMIT = 50
 export const MAX_LIMIT = 1000
@@ -120,10 +120,21 @@ function notDeletedSql(entity: ReportEntity): SQL | null {
 
 /** Entity-specific visibility that is stricter than tenant RLS. Document read
  * keys see the same published library as human readers; only a key carrying
- * documents.manage may inspect draft or archived document metadata. */
-function entityVisibilitySql(ctx: RequestContext, entity: ReportEntity): SQL | null {
+ * documents.manage may inspect draft or archived document metadata.
+ *
+ * 15B-3C: this is now the shared documents rule, which also denies a caller whose
+ * Project Scope is `empty` or `unknown`. Resolving that scope needs a
+ * transaction and neither caller holds one — the public API composes raw SQL
+ * rather than a Drizzle query — so a short dedicated transaction resolves the
+ * predicate and closes immediately. It runs no data query, and the caller's own
+ * reads stay exactly where they were. */
+async function entityVisibilitySql(
+  ctx: RequestContext,
+  entity: ReportEntity,
+): Promise<SQL | null> {
   if (entity.key !== 'documents') return null
-  return documentReadFilter(ctx) ?? null
+  const filter = await ctx.db((tx) => documentAuthorizationFilter(ctx, tx))
+  return filter ?? null
 }
 
 /** JSON-friendly value: timestamps → ISO, numerics → number, else as-is. */
@@ -170,7 +181,11 @@ export async function readEntityRows(
 
   // Soft-deleted rows are never exposed through the public API; the filters
   // from compileRuleGroup are AND-joined so composing here is safe.
-  const conditions = [notDeletedSql(entity), entityVisibilitySql(ctx, entity), filterSql].filter(
+  const conditions = [
+    notDeletedSql(entity),
+    await entityVisibilitySql(ctx, entity),
+    filterSql,
+  ].filter(
     (c): c is SQL => c !== null,
   )
   const whereSql = conditions.length
@@ -244,7 +259,10 @@ export async function getEntityRecord(
       ...fields.map((c) => `${columnRef(entity, c)} AS "${c}"`),
     ].join(', '),
   )
-  const fixedConditions = [notDeletedSql(entity), entityVisibilitySql(ctx, entity)].filter(
+  const fixedConditions = [
+    notDeletedSql(entity),
+    await entityVisibilitySql(ctx, entity),
+  ].filter(
     (condition): condition is SQL => condition !== null,
   )
   const query = sql.join(

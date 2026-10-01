@@ -180,16 +180,36 @@ type ScopeSpec = {
  *                               in org units cannot restrict the org units
  *                               themselves without being circular.
  *
+ *   `tenant-level-document-library` — the controlled-document library
+ *                               (`documents`). A tenant publishes ONE version of
+ *                               an SDS / SOP / policy and every field worker on
+ *                               every site must be able to read it; a document
+ *                               that varied by project would be a different
+ *                               artefact per project, which is not what a
+ *                               controlled document is. Distinct from
+ *                               `tenant-level-definition` because these rows DO
+ *                               carry business facts — a publication lifecycle
+ *                               (`draft` / `published` / `archived` /
+ *                               `under_review`), a review cycle, and a nullable
+ *                               owner — whereas the definition tables are pure
+ *                               structure.
+ *
  * An exemption skips the Project Scope ROW PREDICATE only. It never grants a
  * read permission — a caller without the module's read key is still withheld by
- * `tierFor` before the scope is ever consulted.
+ * `tierFor` before the scope is ever consulted — and it never rescues an
+ * unusable scope: `empty` and `unknown` are denied ABOVE the exemption check in
+ * `scopeContribution`, and that ordering is part of the contract.
  */
-export type ProjectScopeExemption = 'tenant-level-setting' | 'tenant-level-definition'
+export type ProjectScopeExemption =
+  | 'tenant-level-setting'
+  | 'tenant-level-definition'
+  | 'tenant-level-document-library'
 
 /** Every reason `validateScopeSpecs` will accept. Anything else is an error. */
 const PROJECT_SCOPE_EXEMPTIONS: readonly ProjectScopeExemption[] = [
   'tenant-level-setting',
   'tenant-level-definition',
+  'tenant-level-document-library',
 ]
 
 type Tier = 'all' | 'site' | 'self' | 'none'
@@ -375,7 +395,22 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   // are the most-read tables in the product, so they are spelled out explicitly
   // rather than relying on a prefix that does not apply.
   incidents: { read: { prefix: 'incidents' }, siteCols: SITE_COLUMNS },
-  documents: { read: { key: 'documents.read' } },
+  // 15B-3C product decision: the controlled-document library is TENANT-LEVEL.
+  // A tenant publishes one version of an SDS / SOP / policy and every field
+  // worker on every site must be able to read it, so a Project Scope must not
+  // narrow it — `documents.read` holders see the tenant's published library
+  // whether or not they are placed in a project.
+  //
+  // It is NOT `tenant-level-definition`: these rows carry business facts (a
+  // publication lifecycle, a review cycle, an owner), which the pure-structure
+  // definition tables do not. It declares no scope column because the table has
+  // none to declare — no applicability binding is being introduced — and
+  // `validateScopeSpecs` would reject the spec if it did.
+  //
+  // The exemption is a ROW-PREDICATE exemption only. `documents.read` is still
+  // the capability, and an unusable scope still denies, because `empty` and
+  // `unknown` are handled before the exemption is consulted.
+  documents: { read: { key: 'documents.read' }, projectScopeExempt: 'tenant-level-document-library' },
   people: { read: { key: 'admin.users.manage' } },
 
   // `corrective_actions` has no `ca_` prefix, so it is spelled out here.
@@ -602,6 +637,18 @@ export function runScopeSpecValidation(): { errors: string[] } {
       )
     }
   }
+  // The document-library exemption must be justified by the table's actual shape:
+  // no person-, site- or project-keyed column, or the exemption is a leak.
+  if (TABLE_SCOPE.documents?.projectScopeExempt === 'tenant-level-document-library') {
+    const unexpected = DOCUMENTS_COLUMNS.actual.filter((c) => !DOCUMENTS_COLUMNS.expected.includes(c))
+    if (unexpected.length > 0) {
+      errors.push(
+        `documents: exempts itself as a tenant-level document library, but the entity exposes ` +
+          `${unexpected.join(', ')}. A person-, site- or project-keyed column would make this a ` +
+          `project-scoped table and the exemption a leak.`,
+      )
+    }
+  }
   // The one exemption in use must be justified by the table's actual shape.
   const vehicle = TABLE_SCOPE.vehicle_log_settings
   if (vehicle?.projectScopeExempt) {
@@ -698,6 +745,58 @@ const DEFINITION_DOMAIN_COLUMNS: Record<
     actual: ['id', 'tenant_id', 'name', 'code', 'created_at', 'updated_at'],
   },
 }
+
+/**
+ * The columns the controlled-document entity is known to expose, asserted
+ * statically so the check runs without a database; transcribed from
+ * `documents` in `packages/db/src/schema/documents.ts`.
+ *
+ * This is the guard that keeps the exemption honest. `documents` is exempt
+ * because it has NOTHING to bind on, so the day a person-, site- or
+ * project-keyed column appears — an applicability binding, an owner promoted
+ * from authorship to scope — the exemption must stop being valid rather than
+ * quietly exempting what has become a business-data table.
+ *
+ * `owner_tenant_user_id` is listed as definitional-and-present: it is real
+ * authorship, it is nullable, and nothing scopes by it. Its presence is why the
+ * table still needs this guard rather than a blanket trust.
+ */
+const DOCUMENTS_COLUMNS = {
+  expected: [
+    'id',
+    'tenant_id',
+    'key',
+    'title',
+    'description',
+    'type_id',
+    'category_id',
+    'status',
+    'owner_tenant_user_id',
+    'review_frequency_months',
+    'next_review_on',
+    'source_attachment_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+  ],
+  actual: [
+    'id',
+    'tenant_id',
+    'key',
+    'title',
+    'description',
+    'type_id',
+    'category_id',
+    'status',
+    'owner_tenant_user_id',
+    'review_frequency_months',
+    'next_review_on',
+    'source_attachment_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+  ],
+} as const
 
 /**
  * The columns the vehicle-log settings entity is known to expose. Asserted

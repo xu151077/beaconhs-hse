@@ -384,8 +384,18 @@ describe('15B-3B — Project Scope applied to analytics resolutions', () => {
     table: 'training_records',
     columns: cols(['site_org_unit_id', 'person_id', 'id']),
   })
-  /** No location and no owner column: nothing to scope with. */
-  const unbound = entity({ table: 'documents', columns: cols(['id', 'title']) })
+  /**
+   * No location and no owner column, and NO exemption: nothing to scope with,
+   * so a restricted caller must be withheld.
+   *
+   * This was `documents` until 15B-3C. `documents` is now the
+   * `tenant-level-document-library` exemption — a tenant publishes one SDS for the
+   * whole company, so a Project Scope must not narrow it. The fail-closed rule
+   * this block pins is unchanged and still applies to every OTHER unbindable
+   * table, so the fixture moved to `insight_cards`: a flat `insights.read` key, no
+   * columns, no exemption.
+   */
+  const unbound = entity({ table: 'insight_cards', columns: cols(['id', 'title']) })
   /** The aggregates: no column, so a scoped caller is withheld. */
   const aggregate = entity({ table: 'report_incident_rates', columns: cols(['count', 'rate']) })
 
@@ -1065,5 +1075,168 @@ describe('15B-3E — the Project Scope definition domain is exempt, by name', ()
       [entity({ table: 'some_future_catalog', columns: defCols(['id', 'name']) })],
     )
     expect(out).toEqual([])
+  })
+})
+
+// ===========================================================================
+// 15B-3C — the controlled-document library
+//
+// PRODUCT DECISION: `documents` is a TENANT-LEVEL CONTROLLED DOCUMENT LIBRARY.
+// A tenant publishes one version of an SDS / SOP / policy and every field worker
+// on every site must be able to read it, so a Project Scope must not narrow it.
+// No applicability binding is introduced, and the table gains no scope column.
+//
+// The resulting rule, which the web half (`documentScopeUsable` in
+// `apps/web/src/lib/assistant/document-project-scope.ts`) must express
+// identically:
+//
+//   unrestricted -> visible, no row predicate
+//   restricted   -> visible, no row predicate
+//   empty        -> withheld
+//   unknown      -> withheld
+//
+// The last two matter most. The exemption is a ROW-PREDICATE exemption, and
+// `scopeContribution` denies `empty`/`unknown` ABOVE the exemption check, so an
+// exemption can never rescue a scope that could not be resolved.
+// ===========================================================================
+
+describe('15B-3C — the document library is tenant-level, not scope-bound', () => {
+  const doc = entity({
+    table: 'documents',
+    columns: defCols(['id', 'tenant_id', 'key', 'title', 'status', 'owner_tenant_user_id']),
+  })
+
+  const reader = (kind: 'unrestricted' | 'restricted' | 'empty' | 'unknown') =>
+    subject({
+      permissions: (k) => k === 'documents.read',
+      projectScopeKind: kind,
+      orgUnitIds: [SITE_A],
+      projectPersonIds: [],
+    })
+
+  it('unrestricted -> visible, with no row predicate', () => {
+    const out = scopeAnalyticsEntities(reader('unrestricted'), [doc])
+    expect(out).toHaveLength(1)
+    expect(out[0]?.baseFilter).toBeUndefined()
+  })
+
+  it('restricted -> visible, with no row predicate', () => {
+    // THE product decision. Before it, this caller was withheld.
+    const out = scopeAnalyticsEntities(reader('restricted'), [doc])
+    expect(out).toHaveLength(1)
+    expect(out[0]?.baseFilter).toBeUndefined()
+  })
+
+  it('empty -> withheld', () => {
+    expect(scopeAnalyticsEntities(reader('empty'), [doc])).toEqual([])
+  })
+
+  it('unknown -> withheld', () => {
+    expect(scopeAnalyticsEntities(reader('unknown'), [doc])).toEqual([])
+  })
+
+  it('the exemption does not grant documents.read', () => {
+    // An exemption skips a row predicate; it is not a capability. A caller with
+    // no read key is withheld at every scope state, restricted included.
+    for (const kind of ['unrestricted', 'restricted'] as const) {
+      const out = scopeAnalyticsEntities(
+        subject({
+          permissions: () => false,
+          projectScopeKind: kind,
+          orgUnitIds: [SITE_A],
+          projectPersonIds: [],
+        }),
+        [doc],
+      )
+      expect(out, kind).toEqual([])
+    }
+  })
+
+  it('the exemption is named, and it is not the definition-domain one', () => {
+    // A tenant-level LIBRARY of controlled documents is a different fact from
+    // tenant-level organizational STRUCTURE, and the two exemptions are named
+    // apart so neither can be read as the other.
+    const spec = entity({ table: 'documents', columns: [] })
+    const out = scopeAnalyticsEntities(reader('restricted'), [spec])
+    expect(out).toHaveLength(1)
+    expect(runScopeSpecValidation().errors).toEqual([])
+  })
+
+  it('documents declares no scope column, so no binding could creep in', () => {
+    // `validateScopeSpecs` already rejects exemption + columns; this pins the
+    // shape from the spec side as well, so the exemption stays only valid
+    // because there is genuinely nothing to narrow on.
+    const errors = validateScopeSpecs([
+      {
+        match: 'documents-like',
+        spec: {
+          read: { key: 'documents.read' },
+          projectScopeExempt: 'tenant-level-document-library',
+        },
+      },
+    ])
+    expect(errors).toEqual([])
+  })
+
+  it('an unknown exemption reason is still rejected', () => {
+    const errors = validateScopeSpecs([
+      {
+        match: 'mystery',
+        spec: {
+          read: { key: 'documents.read' },
+          projectScopeExempt: 'tenant-level-controlled-docs' as never,
+        },
+      },
+    ])
+    expect(errors.join('\n')).toContain('unrecognised projectScopeExempt')
+  })
+
+  it('the exemption still cannot be combined with a scope column', () => {
+    const errors = validateScopeSpecs([
+      {
+        match: 'documents-with-site',
+        spec: {
+          read: { key: 'documents.read' },
+          siteCols: ['site_org_unit_id'],
+          projectScopeExempt: 'tenant-level-document-library',
+        },
+      },
+    ])
+    expect(errors.join('\n')).toContain('licence to skip a bindable entity')
+  })
+
+  it('the other exemptions are unaffected by this one being added', () => {
+    // 15B-3E's four definition tables and the vehicle-log setting keep their own
+    // rules; adding a third reason must not relax any of them.
+    const setting = entity({
+      table: 'vehicle_log_settings',
+      columns: defCols(['id', 'enabled_modes', 'default_mode']),
+    })
+    const out = scopeAnalyticsEntities(
+      subject({
+        permissions: (k) => k === 'equipment.read.all',
+        projectScopeKind: 'restricted',
+        orgUnitIds: [SITE_A],
+        projectPersonIds: [],
+      }),
+      [setting],
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]?.baseFilter).toBeUndefined()
+
+    for (const table of ['org_units', 'departments', 'crews', 'trades']) {
+      const e = entity({ table, columns: defCols(['id', 'tenant_id', 'name']) })
+      const r = scopeAnalyticsEntities(
+        subject({
+          permissions: (k) => k === 'admin.org.manage',
+          projectScopeKind: 'restricted',
+          orgUnitIds: [SITE_A],
+          projectPersonIds: [],
+        }),
+        [e],
+      )
+      expect(r, table).toHaveLength(1)
+      expect(r[0]?.baseFilter, table).toBeUndefined()
+    }
   })
 })

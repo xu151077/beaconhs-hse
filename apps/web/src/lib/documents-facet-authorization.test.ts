@@ -245,7 +245,7 @@ describe('15B-3C-3G — list and both facet counts share one visibility rule', (
 describe('15B-3C-3G — the page wires the two counts, and leaves status alone', () => {
   it('builds one facet predicate from soft-delete plus the shared rule', () => {
     // Behaviour above proves the predicate is right; this proves the page uses it.
-    expect(PAGE).toContain('const visibility = documentReadFilter(ctx)')
+    expect(PAGE).toContain('const visibility = await documentAuthorizationFilter(ctx, tx)')
     expect(PAGE).toMatch(/const facetConds: SQL<unknown>\[\] = \[live\]/)
     expect(PAGE).toMatch(/if \(visibility\) facetConds\.push\(visibility\)/)
   })

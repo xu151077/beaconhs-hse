@@ -14,7 +14,7 @@ import { attachments, documentVersions, documents } from '@beaconhs/db/schema'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import { getObject } from '@beaconhs/storage'
 import { documentVersionVisibilityWhere } from '@/lib/document-version-policy'
-import { documentReadFilter } from './doc-access'
+import { documentAuthorizationFilter } from './document-project-scope'
 
 type DocumentTextSource = 'html' | 'pdf' | 'empty'
 
@@ -98,7 +98,7 @@ export async function getDocumentText(
   const includeUnpublished = ctx.isSuperAdmin || can(ctx, 'documents.manage')
   return ctx.db(async (tx): Promise<DocumentTextResult> => {
     const conds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
-    const filter = documentReadFilter(ctx)
+    const filter = await documentAuthorizationFilter(ctx, tx)
     if (filter) conds.push(filter)
     const [doc] = await tx
       .select({
@@ -190,7 +190,7 @@ export async function getDocumentPdfBytes(
   const includeUnpublished = ctx.isSuperAdmin || can(ctx, 'documents.manage')
   return ctx.db(async (tx): Promise<DocumentPdfBytesResult> => {
     const conds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
-    const filter = documentReadFilter(ctx)
+    const filter = await documentAuthorizationFilter(ctx, tx)
     if (filter) conds.push(filter)
     const [doc] = await tx
       .select({ title: documents.title })

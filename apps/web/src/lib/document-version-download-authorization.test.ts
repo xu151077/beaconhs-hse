@@ -138,8 +138,8 @@ describe('15B-3C-3B — the route reuses the shared publication rule', () => {
     // One implementation, so a change to the rule moves every surface at once.
     // `documentReadFilter` is imported from `assistant/doc-access` — the module
     // the assistant tools, the search route and `api/query.ts` already call.
-    expect(ROUTE).toContain("from '@/lib/assistant/doc-access'")
-    expect(ROUTE).toContain('documentReadFilter(ctx)')
+    expect(ROUTE).toContain("from '@/lib/assistant/document-project-scope'")
+    expect(ROUTE).toContain('documentAuthorizationFilter(ctx, tx)')
   })
 })
 
@@ -267,27 +267,35 @@ describe('15B-3C-3B — ids are validated before the query', () => {
 // 5. Project Scope is deferred, and the deferral is recorded in the source
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-3B — Project Scope stays deferred, on purpose', () => {
-  it('no Project Scope machinery was introduced', () => {
-    expect(ROUTE_CODE).not.toMatch(/projectScope/)
+describe('15B-3C — Project Scope is settled: a tenant-level document library', () => {
+  it('the route composes the shared rule and invents no scope of its own', () => {
+    // 15B-3C resolved what 15B-3B deliberately deferred. The route now composes
+    // the one shared documents rule, which carries BOTH the publication rule and
+    // the Project Scope usability gate. It still writes no scope logic inline.
+    expect(ROUTE_CODE).toContain('documentAuthorizationFilter(ctx, tx)')
     expect(ROUTE_CODE).not.toMatch(/moduleScopeWhere/)
     expect(ROUTE_CODE).not.toMatch(/projectScopeExempt/)
+    // No local scope judgement: the gate is reached only through the shared rule.
+    expect(ROUTE_CODE).not.toMatch(/projectScopeKind/)
   })
 
   it('none of the tempting-but-wrong bindings was borrowed', () => {
     // `owner_tenant_user_id` is authorship, not placement. The sign-off session's
     // `site_org_unit_id` is a sign-off instance's location, not the document's.
-    // Neither narrows a controlled-document library honestly.
+    // Neither narrows a controlled-document library honestly, and the product
+    // decision introduced no applicability binding at all.
     expect(ROUTE_CODE).not.toMatch(/owner_tenant_user_id|ownerTenantUserId/)
     expect(ROUTE_CODE).not.toMatch(/documentAcknowledgmentSessions|acknowledgmentSession/i)
-    // The deferred-reasoning comment above is what mentions them, which is why
-    // the assertions above run against the comment-stripped source.
+    // The reasoning comment above is what mentions them, which is why these
+    // assertions run against the comment-stripped source.
     expect(ROUTE).toMatch(/owner_tenant_user_id/)
   })
 
-  it('the deferral and its reasoning are written down where a reader will hit them', () => {
-    expect(ROUTE).toMatch(/PROJECT SCOPE IS DELIBERATELY ABSENT/)
-    expect(ROUTE).toMatch(/needs a product decision/)
+  it('the decision and its reasoning are written down where a reader will hit them', () => {
+    expect(ROUTE).toMatch(/PROJECT SCOPE — 15B-3C product decision/)
+    expect(ROUTE).toMatch(/TENANT-LEVEL/)
+    // The refusal to borrow a placement column is preserved verbatim.
+    expect(ROUTE).toMatch(/Do not "fix"/)
   })
 })
 

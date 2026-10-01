@@ -1058,3 +1058,122 @@ fail, and the file restored to an identical hash:
 No column was added to any of the four tables. Drizzle journal remains at 41
 entries, last idx 40. The exemption is a resolver-level fact about how a table is
 read, expressed in the scope specification — not a data-model change.
+
+---
+
+## 15. 15B-3C — the controlled-document library (DECIDED AND IMPLEMENTED)
+
+**Status: IMPLEMENTED.** This is a settled product decision and its final
+implementation, not an open question. The original analysis of `documents` as an
+unbound flat-key spec is retained above, unedited: §3 lists it among the 16 unbound
+specs and, under "Why this is the highest-risk item in 15B-3", groups it with
+`compliance` and `insights` as a record with no location column, records that
+withholding was then the only safe answer, and requires the question to be settled
+before any code is written. §7 recorded that `doc-access.ts` applies no Project
+Scope, and §6 row 9 classified `documents/export.csv`. That history records the
+question; this section records the answer.
+
+### Decision
+
+`documents` is a **tenant-level controlled document library**. A tenant publishes
+ONE version of an SDS / SOP / policy, and every field worker on every site must be
+able to read it. A document that varied by project would be a different artefact
+per project, which is not what a controlled document is.
+
+The Project Scope exemption is named **`tenant-level-document-library`**, and is
+deliberately NOT `tenant-level-definition`: a controlled-document library carries
+business facts — a publication lifecycle (`draft` / `published` / `archived` /
+`under_review`), a review cycle, and a nullable owner — whereas the §14 definition
+tables are pure organizational structure.
+
+### What was explicitly NOT built
+
+No applicability binding of any kind was introduced:
+
+- no `project_id`, no `site_org_unit_id`, no `person_id`
+- no owner-based Project Scope binding — `owner_tenant_user_id` is nullable
+  **authorship**, and was not promoted to scope
+- **no Document Applicability Scope** feature
+
+`documents` therefore still declares no scope column, and `runScopeSpecValidation`
+carries a shape guard transcribed from the schema so that a future person-, site-
+or project-keyed column fails the check instead of silently inheriting the
+exemption.
+
+### The four states — Web and Analytics agree
+
+| Project Scope  | Web       | Analytics    |
+| -------------- | --------- | ------------ |
+| `unrestricted` | **ALLOW** | **VISIBLE**  |
+| `restricted`   | **ALLOW** | **VISIBLE**  |
+| `empty`        | **DENY**  | **WITHHELD** |
+| `unknown`      | **DENY**  | **WITHHELD** |
+
+A `restricted` caller — a `worker`, `foreman` or `safety_manager` holding
+`documents.read` — reads the tenant-wide published library. That is the whole point
+of the decision: a field worker must not be unable to read the SDS for the site
+they are standing on.
+
+### An exemption may not rescue an unusable scope
+
+`empty` and `unknown` deny, and that ordering is structural rather than incidental.
+On the analytics side `scopeContribution` denies both **above** the exemption
+check, so an exemption cannot reach them; **the global fail-closed order was not
+changed**. On the web side the gate is written fail-closed by construction — only a
+scope that is present and not `empty` is usable, so an absent or unrecognised scope
+denies.
+
+`unknown` is grouped with `empty` for one reason: an absent scope is not evidence
+of a wide one, and a caller whose scope could not be resolved must never fall
+through to a company-wide read.
+
+### Authorization layers are independent
+
+`documents.read`, `documents.manage` and publication visibility are a **separate
+authorization layer** from Project Scope. The two are conjoined, never substituted:
+
+- `documentReadFilter` is **unchanged** and still answers exactly one question —
+  "may an unpublished document be seen". It is not scope-aware.
+- The web rule is `documentReadFilter` **AND** the Project Scope usability gate.
+  A manager inside a usable scope gets no extra constraint; a manager inside an
+  unusable scope is still denied. The publication waiver is not a scope bypass.
+
+### Web: a documents-specific primitive, not a change to the shared ladder
+
+The web ladder has no exemption concept, and teaching it one would have changed
+every module behind it. Instead `lib/assistant/document-project-scope.ts` adds a
+single-purpose primitive:
+
+- `documentScopeUsable(scope)` — pure, and the **only** place the four-state
+  decision is made
+- `documentScopeFilter(ctx, tx)` — resolves the caller's scope into a predicate
+- `documentAuthorizationFilter(ctx, tx)` — `documentReadFilter` AND the scope gate
+
+Every read surface composes that one function. Confirmed unchanged: `moduleScopeWhere`,
+`projectScopePredicate`, `resolveProjectScopeIn` and RLS. **The other 68 module
+lists are unaffected**, and no surface derives the four states for itself.
+
+### Analytics: the existing mechanism, reused
+
+`TABLE_SCOPE.documents` gains `projectScopeExempt: 'tenant-level-document-library'`,
+and the recognition set gains the member. `scopeContribution`, `resolveEntity` and
+`tierFor` are untouched: the resolver already handled exemptions generically, and
+already denied `empty`/`unknown` first.
+
+The 15B-3B fail-closed rule is unchanged and still applies to every OTHER
+unbindable table; its `unbound` test fixture moved from `documents` to
+`insight_cards` so the rule keeps testing a genuinely non-exempt entity.
+
+### What closed the Web/Analytics gap
+
+Before this decision the two halves disagreed: web applied no Project Scope at
+all and showed the tenant library, while analytics withheld `documents` from every
+scoped caller. That divergence is now closed, and it was closed in the direction
+that keeps the fail-closed property: both sides now allow a `restricted` caller
+and both deny an unusable one.
+
+### Schema / migration
+
+**Unchanged.** No column, no migration, no RLS edit. Drizzle journal remains at 41
+entries, last idx 40. `documents` gains no scope column, so the exemption rests on
+the absence of anything to bind on — which the shape guard keeps honest.
