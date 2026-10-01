@@ -19,6 +19,7 @@ findings; it does not fix them.
 ## Scope
 
 ### Authentication
+
 - Does the entry point require a real session? Pages under
   `apps/web/src/app/(app)/` are authenticated by the layout; anything outside
   must authenticate itself.
@@ -27,6 +28,7 @@ findings; it does not fix them.
 - Better-Auth tables are global, not tenant-scoped. Confirm no assumption of RLS.
 
 ### Authorization
+
 - Every mutation calls `assertCan(...)` (or `assertCanManageModule`) with the
   **specific** permission it needs — not a broader one that happens to pass.
 - Every list/detail read goes through `moduleScopeWhere` or
@@ -35,6 +37,7 @@ findings; it does not fix them.
   A page guard alone does not protect the action.
 
 ### Tenant isolation (RLS)
+
 - All tenant data reads through `ctx.db(...)`, never bare root `db`.
 - If root `db` is used, it must be `withSuperAdmin`, `withTenant`, or a
   transaction that sets the RLS config — and that scope must be intentional.
@@ -50,6 +53,7 @@ docker compose --profile local-db exec postgres \
 tenant table that does not is a defect.
 
 ### Project scope
+
 - `RoleScope` has six variants and **none** of them is project/org-unit
   (`packages/db/src/schema/iam.ts:49-55`).
 - Visibility has exactly three tiers — `all` / `site` / `self`
@@ -59,11 +63,13 @@ tenant table that does not is a defect.
   ad hoc filter.
 
 ### IDOR
-For every record fetched by id, confirm the read is also *scoped*, not just
+
+For every record fetched by id, confirm the read is also _scoped_, not just
 permission-checked. A permission gate plus an unscoped
 `.where(eq(table.id, params.id))` is an IDOR.
 
 ### File access
+
 - Attachments and objects are reached through the storage abstraction in
   `packages/storage`, not a raw bucket client.
 - Presigned URL issuance must re-check permission at issue time; the URL itself
@@ -74,6 +80,7 @@ permission-checked. A permission gate plus an unscoped
 - Check upload size limits, content-type handling, and filename sanitisation.
 
 ### Capability URLs
+
 `/verify/[token]` and `/verify/person/[token]` are unauthenticated by design.
 Confirm each:
 
@@ -83,6 +90,7 @@ Confirm each:
 - does not expose another tenant's data.
 
 ### Secrets
+
 - Never read, print, copy or commit a real secret. Project permissions deny
   reading `*.env`, `*.env.*`, `secrets/**`, `credentials/**`, `*.pem`, `*.key`,
   `.ssh/**`.
@@ -91,6 +99,7 @@ Confirm each:
 - If a secret was committed, that is a finding — report it, do not quietly fix.
 
 ### Logging
+
 - No secret, token, presigned URL, or full PII in logs or error messages.
 - PII in BeaconHS includes emergency contacts, date of birth, termination
   dates, and medical/injury detail on incidents.

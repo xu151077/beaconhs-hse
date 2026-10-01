@@ -1,40 +1,40 @@
 ---
 description: Implements UI work — React components, pages, lists, forms, drawers and styling in the authenticated app shell. Does not touch server logic or schema.
 mode: all
-color: "#f2a65a"
+color: '#f2a65a'
 permissions:
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "pnpm format:check*"
+    resource: 'pnpm format:check*'
     effect: allow
   - action: shell
-    resource: "pnpm lint*"
+    resource: 'pnpm lint*'
     effect: allow
   - action: shell
-    resource: "pnpm typecheck*"
+    resource: 'pnpm typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter * typecheck*"
+    resource: 'pnpm --filter * typecheck*'
     effect: allow
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
 ---
 
@@ -52,16 +52,19 @@ You do **not** design server actions, route handlers, or schema.
 ## Required patterns
 
 ### Page shells
+
 Use the existing shells from `apps/web/src/components/page-layout.tsx`:
 `PageContainer`, `ListPageLayout`, `DetailPageLayout`, `WizardLayout`.
 
 ### Navigation
+
 Add modules through `apps/web/src/lib/nav/registry.ts` plus tenant saved
 overrides. Never hardcode a sidebar entry. Give the entry a
 `requiredPermission` unless it is deliberately ungated — and if it is
 deliberately ungated, say why in a comment.
 
 ### Components and styling
+
 - Use `@beaconhs/ui` for buttons, inputs, cards, tables, badges, drawers,
   popovers, rich text, uploaders, signatures, skeletons and page headers.
 - Icons from `lucide-react`.
@@ -70,6 +73,7 @@ deliberately ungated, say why in a comment.
   and phones, often outdoors. Keep it responsive and accessible.
 
 ### Tables — non-negotiable
+
 Every table or list of records ships with **search, relevant filters and
 pagination**, URL-driven through the shared primitives: `parseListParams`,
 `SearchInput`, `FilterChips`, `SortableTh`, `Pagination`, or the prefixed
@@ -78,6 +82,7 @@ sub-table parameter pattern on multi-table pages.
 Never render an unbounded or unsearchable table.
 
 ### Data
+
 - Read through the existing server-side data layer; do not add a parallel fetch
   path.
 - Mutations call the module's server action. Do not call the DB from a component.

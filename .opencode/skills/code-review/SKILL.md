@@ -28,6 +28,7 @@ isolation invents false findings.
 ## The seven passes
 
 ### 1. Correctness
+
 - Does the code do what the change claims? Check the actual branch, not the
   happy path.
 - Off-by-one, inverted conditions, wrong enum member, null vs undefined.
@@ -35,17 +36,20 @@ isolation invents false findings.
 - Async: unawaited promises, missing error handling, race conditions.
 
 ### 2. Regression
+
 - What existing behaviour does this change break?
 - Any caller not updated? Search for every call site.
 - Enum additions: is every exhaustive `switch` still exhaustive?
 - Schema changes: does every query, view, or report column still line up?
 
 ### 3. Security
+
 Defer to the `security-review` skill. At minimum check: permission enforced on
 the **action** (not just the page), tenant id not trusted from input, no secret
 or PII logged, no RLS bypass added.
 
 ### 4. Performance
+
 - N+1 queries, especially inside a list render.
 - Missing index on a new filter or join column.
 - Unbounded list: `AGENTS.md` requires search, filters and pagination on every
@@ -53,17 +57,21 @@ or PII logged, no RLS bypass added.
 - Large `jsonb` round-tripped whole.
 
 ### 5. Types
+
 - `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride` are on.
 - Any `any`, non-null `!`, or cast that hides a real uncertainty?
 - Prefer narrowing or a guard clause over `as`.
 
 ### 6. Tests
+
 - Does the change have a test proportional to its risk?
 - Would the test fail if the change were reverted?
 - Schema/permission changes need a test that would catch a regression.
 
 ### 7. Architecture
+
 Defer to `project-architecture` and `hse-domain`. At minimum:
+
 - Does this duplicate an existing primitive?
 - Does it create a second lifecycle, permission vocabulary, or store?
 - Is module-specific logic in the right place, or does it belong in a package?

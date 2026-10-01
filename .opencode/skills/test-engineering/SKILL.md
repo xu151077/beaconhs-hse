@@ -20,9 +20,9 @@ writes it.
 
 The repo uses **two** runners. Use the one already in the package.
 
-| Runner | Used by |
-|---|---|
-| `vitest run` | most packages (db, compliance, reports, forms-core, events, storage, ui, …) |
+| Runner                                   | Used by                                                                             |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| `vitest run`                             | most packages (db, compliance, reports, forms-core, events, storage, ui, …)         |
 | `node --import tsx --test src/*.test.ts` | `packages/ai`, `packages/appkit-feedback`, `packages/integrations`, `packages/sync` |
 
 ```sh
@@ -36,15 +36,15 @@ verification is done through the `ui-e2e` skill, not a checked-in test.
 
 ## Choosing the level
 
-Ask: *what is the smallest thing that could break without the test failing?*
+Ask: _what is the smallest thing that could break without the test failing?_
 
-| Level | Use for | Example |
-|---|---|---|
-| **Unit** | pure logic, a function's contract | risk score derivation, expiry calculation |
-| **Integration** | a module against real collaborators | compliance evaluator against seeded rows; storage SDK against MinIO |
-| **Database** | schema, migrations, RLS, queries | the RLS coverage test in `packages/db/src/rls.test.ts` |
-| **Permission** | authorization decisions | tier resolution, scope filtering, action guards |
-| **E2E (browser)** | a user-visible workflow | login → report incident → it appears → close |
+| Level             | Use for                             | Example                                                             |
+| ----------------- | ----------------------------------- | ------------------------------------------------------------------- |
+| **Unit**          | pure logic, a function's contract   | risk score derivation, expiry calculation                           |
+| **Integration**   | a module against real collaborators | compliance evaluator against seeded rows; storage SDK against MinIO |
+| **Database**      | schema, migrations, RLS, queries    | the RLS coverage test in `packages/db/src/rls.test.ts`              |
+| **Permission**    | authorization decisions             | tier resolution, scope filtering, action guards                     |
+| **E2E (browser)** | a user-visible workflow             | login → report incident → it appears → close                        |
 
 Rules of thumb:
 
@@ -60,7 +60,7 @@ Rules of thumb:
 ## Writing a good test
 
 - **Name the behaviour**, not the function: `it('blocks closing a corrective
-  action that requires verification')`, not `it('close')`.
+action that requires verification')`, not `it('close')`.
 - **Assert on the outcome** (row state, returned value, thrown error) — never on
   log output.
 - **One reason to fail per test.** A test that asserts eight things reports one

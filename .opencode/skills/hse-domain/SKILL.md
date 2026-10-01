@@ -26,13 +26,13 @@ discover → classify → rate risk → assign measure → assign owner
 
 ## What exists today (verified)
 
-| Concept | Status | Evidence |
-|---|---|---|
-| `corrective_actions` | **The only complete lifecycle** — owner, due, verification, notification | `packages/db/src/schema/corrective-actions.ts:56-182` |
-| `findings` table | **Does not exist** | grep over `packages/db/src/schema` + `packages/db/drizzle` returns 0 |
-| `hazards` as findings | **Does not exist** — only library + per-assessment rows | `hazid-libraries.ts:58`, `hazid-assessments.ts:183` |
-| `risks` register | **Does not exist** — only 4 nullable ints per hazard row | `hazid-assessments.ts:198-204` |
-| Parallel partial lifecycles | **8 of them** | see `docs/hse-development-baseline.md` §6 |
+| Concept                     | Status                                                                   | Evidence                                                             |
+| --------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `corrective_actions`        | **The only complete lifecycle** — owner, due, verification, notification | `packages/db/src/schema/corrective-actions.ts:56-182`                |
+| `findings` table            | **Does not exist**                                                       | grep over `packages/db/src/schema` + `packages/db/drizzle` returns 0 |
+| `hazards` as findings       | **Does not exist** — only library + per-assessment rows                  | `hazid-libraries.ts:58`, `hazid-assessments.ts:183`                  |
+| `risks` register            | **Does not exist** — only 4 nullable ints per hazard row                 | `hazid-assessments.ts:198-204`                                       |
+| Parallel partial lifecycles | **8 of them**                                                            | see `docs/hse-development-baseline.md` §6                            |
 
 `hazid_assessment_hazards` has **no** owner, assignee, due date, status,
 review date, or corrective-action link. A risk row therefore cannot be tracked.

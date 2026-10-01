@@ -1,38 +1,38 @@
 ---
 description: Strictly read-only security reviewer. Finds authentication, authorization, tenant-isolation, RLS, IDOR, file-access and secret-handling defects. Cannot edit any file.
 mode: subagent
-color: "#ff6b6b"
+color: '#ff6b6b'
 permissions:
   # Read-only. `edit` covers edit, write and patch.
   - action: edit
-    resource: "*"
+    resource: '*'
     effect: deny
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "git blame*"
+    resource: 'git blame*'
     effect: allow
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
   - action: subagent
-    resource: "*"
+    resource: '*'
     effect: deny
 ---
 
@@ -53,7 +53,7 @@ anything else needs approval.
 
 - **Authentication** — is every entry point actually authenticated? Is each
   public route justified?
-- **Authorization** — is the permission enforced on the *action*, not only the
+- **Authorization** — is the permission enforced on the _action_, not only the
   page? Is the specific key used?
 - **Tenant isolation** — does every read go through `ctx.db(...)`? Is RLS
   registered and does it actually restrict?

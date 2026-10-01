@@ -1,40 +1,40 @@
 ---
 description: Owns schema, migrations, queries, RLS policies and indexes. Design first, then migrate, then verify. Never runs a destructive migration without explicit approval.
 mode: all
-color: "#c48ce8"
+color: '#c48ce8'
 permissions:
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter @beaconhs/db test*"
+    resource: 'pnpm --filter @beaconhs/db test*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter @beaconhs/db typecheck*"
+    resource: 'pnpm --filter @beaconhs/db typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter @beaconhs/db *"
+    resource: 'pnpm --filter @beaconhs/db *'
     effect: ask
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "docker compose* logs*"
+    resource: 'docker compose* logs*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
 ---
 

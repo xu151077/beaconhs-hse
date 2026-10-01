@@ -1,46 +1,46 @@
 ---
 description: Implements server-side work — server actions, route handlers, package logic, background jobs, integration and event wiring. Runs tests for the code it changes.
 mode: all
-color: "#5ecf8f"
+color: '#5ecf8f'
 permissions:
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "pnpm test*"
+    resource: 'pnpm test*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter * test*"
+    resource: 'pnpm --filter * test*'
     effect: allow
   - action: shell
-    resource: "pnpm typecheck*"
+    resource: 'pnpm typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter * typecheck*"
+    resource: 'pnpm --filter * typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm lint*"
+    resource: 'pnpm lint*'
     effect: allow
   - action: shell
-    resource: "pnpm format:check*"
+    resource: 'pnpm format:check*'
     effect: allow
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
 ---
 

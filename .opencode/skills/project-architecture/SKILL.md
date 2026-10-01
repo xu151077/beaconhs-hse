@@ -20,14 +20,14 @@ or service.
 
 Read the target area before writing anything. Never guess a layout.
 
-| Question | Where to look |
-|---|---|
-| Repo layout, CI gates, conventions | `AGENTS.md` (authoritative) |
-| Capability inventory | `docs/beaconhs-capability-matrix.md` |
-| Reuse points and limits | `docs/beaconhs-extension-points.md` |
-| HSE gap analysis | `docs/hse-gap-analysis.md` |
-| HSE decisions and plan | `docs/hse-development-baseline.md` |
-| Current project state | `docs/project-development-state.md` |
+| Question                           | Where to look                        |
+| ---------------------------------- | ------------------------------------ |
+| Repo layout, CI gates, conventions | `AGENTS.md` (authoritative)          |
+| Capability inventory               | `docs/beaconhs-capability-matrix.md` |
+| Reuse points and limits            | `docs/beaconhs-extension-points.md`  |
+| HSE gap analysis                   | `docs/hse-gap-analysis.md`           |
+| HSE decisions and plan             | `docs/hse-development-baseline.md`   |
+| Current project state              | `docs/project-development-state.md`  |
 
 Then confirm against **current code**, because the docs can lag:
 

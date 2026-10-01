@@ -44,13 +44,13 @@ user**. Leave them alone.
 
 ## What must be protected
 
-| Path | Why |
-|---|---|
-| `.env` | live credentials; gitignored; never read or commit |
-| `docker-compose.yml` | verified byte-identical to `HEAD`; it is the official deployment baseline |
-| `docs/**` | 14 audit documents, currently **untracked** — no Git copy exists |
-| `packages/db/drizzle/**` | applied migrations; already applied to the live database |
-| Any file you did not edit | it may be deliberate user work |
+| Path                      | Why                                                                       |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `.env`                    | live credentials; gitignored; never read or commit                        |
+| `docker-compose.yml`      | verified byte-identical to `HEAD`; it is the official deployment baseline |
+| `docs/**`                 | 14 audit documents, currently **untracked** — no Git copy exists          |
+| `packages/db/drizzle/**`  | applied migrations; already applied to the live database                  |
+| Any file you did not edit | it may be deliberate user work                                            |
 
 If a broad edit risks touching any of these, do not perform the broad edit.
 

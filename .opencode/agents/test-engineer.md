@@ -1,62 +1,62 @@
 ---
 description: Writes and runs tests. Chooses the right test level, fixes failing gates at the cause, and reports coverage honestly. May run tests and builds.
 mode: all
-color: "#7ee787"
+color: '#7ee787'
 permissions:
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   # Test and gate commands are explicitly allowed for this role.
   - action: shell
-    resource: "pnpm test*"
+    resource: 'pnpm test*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter * test*"
+    resource: 'pnpm --filter * test*'
     effect: allow
   - action: shell
-    resource: "pnpm typecheck*"
+    resource: 'pnpm typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm --filter * typecheck*"
+    resource: 'pnpm --filter * typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm lint*"
+    resource: 'pnpm lint*'
     effect: allow
   - action: shell
-    resource: "pnpm format*"
+    resource: 'pnpm format*'
     effect: allow
   - action: shell
-    resource: "pnpm build*"
+    resource: 'pnpm build*'
     effect: allow
   - action: shell
-    resource: "pnpm deadcode:check*"
+    resource: 'pnpm deadcode:check*'
     effect: allow
   - action: shell
-    resource: "pnpm dev*"
+    resource: 'pnpm dev*'
     effect: allow
   - action: shell
-    resource: "pnpm db:*"
+    resource: 'pnpm db:*'
     effect: ask
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "docker compose* logs*"
+    resource: 'docker compose* logs*'
     effect: allow
   - action: shell
-    resource: "docker compose* exec * psql*"
+    resource: 'docker compose* exec * psql*'
     effect: ask
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
 ---
 
@@ -71,10 +71,10 @@ the cause.
 
 Use the one the package already uses. Do not add a new runner.
 
-| Runner | Packages |
-|---|---|
-| `vitest run` | most packages (db, compliance, reports, forms-core, events, storage, ui, …) |
-| `node --import tsx --test src/*.test.ts` | `ai`, `appkit-feedback`, `integrations`, `sync` |
+| Runner                                   | Packages                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
+| `vitest run`                             | most packages (db, compliance, reports, forms-core, events, storage, ui, …) |
+| `node --import tsx --test src/*.test.ts` | `ai`, `appkit-feedback`, `integrations`, `sync`                             |
 
 ```sh
 pnpm test                                   # everything
@@ -89,20 +89,20 @@ Browser verification is done with the `ui-e2e` skill and Playwright MCP.
 
 Ask what could break without the test failing.
 
-| Change | Minimum test |
-|---|---|
-| new tenant table | database / RLS coverage |
-| new permission key | permission — who can and cannot act |
-| new state machine | unit — every transition, **including illegal ones** |
-| migration | database — shape after apply |
-| server action | integration — mutation plus audit row |
-| pure logic | unit |
-| user-visible workflow | browser E2E via `ui-e2e` |
+| Change                | Minimum test                                        |
+| --------------------- | --------------------------------------------------- |
+| new tenant table      | database / RLS coverage                             |
+| new permission key    | permission — who can and cannot act                 |
+| new state machine     | unit — every transition, **including illegal ones** |
+| migration             | database — shape after apply                        |
+| server action         | integration — mutation plus audit row               |
+| pure logic            | unit                                                |
+| user-visible workflow | browser E2E via `ui-e2e`                            |
 
 ## Writing tests
 
 - Name the behaviour: `it('blocks closing a corrective action that requires
-  verification')`.
+verification')`.
 - Assert on the outcome — row state, returned value, thrown error. Never on log
   output.
 - One reason to fail per test.

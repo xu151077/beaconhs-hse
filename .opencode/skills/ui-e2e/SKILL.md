@@ -38,13 +38,13 @@ message, and follow the link. Do not try to invent a password.
 Use the Playwright MCP tools through Code Mode. Keep a tab handle and pass it
 explicitly to every operation.
 
-| Intent | Tool |
-|---|---|
-| Open a page | `playwright_browser_navigate` |
-| Read the page | `playwright_browser_snapshot` |
+| Intent              | Tool                                  |
+| ------------------- | ------------------------------------- |
+| Open a page         | `playwright_browser_navigate`         |
+| Read the page       | `playwright_browser_snapshot`         |
 | Read console output | `playwright_browser_console_messages` |
-| Read network calls | `playwright_browser_network_requests` |
-| Prove visually | `playwright_browser_take_screenshot` |
+| Read network calls  | `playwright_browser_network_requests` |
+| Prove visually      | `playwright_browser_take_screenshot`  |
 
 Project permissions are set so read-only browser verbs are allowed and
 state-changing verbs (`click`, `type`, `fill_form`, `file_upload`) require
@@ -54,27 +54,33 @@ is intended.
 ## What to verify
 
 ### Login and session
+
 - Unauthenticated `/app` paths redirect to `/login`.
 - After sign-in the shell renders with the tenant context resolved.
 
 ### A list page
+
 - Search, filters and pagination are present **and wired to the URL**.
 - Filtering actually changes the result set (not just the control).
 
 ### A detail page
+
 - Loads by id with correct scoping.
 - A record the current user may not see does not render.
 
 ### A mutation
+
 - Submit, then confirm the persisted record (not just a success toast).
 - Confirm an audit row exists if the surface requires one.
 
 ### An upload
+
 - File is accepted, reaches storage, and the attachment row exists.
 - Metadata and tags survive the round trip on MinIO. They do **not** on
   SeaweedFS — see `docs/beaconhs-seaweedfs-verification.md`.
 
 ### A permission
+
 - Sign in as two roles and confirm the UI differs (nav entry, action button,
   row visibility). A permission that only works in code but not in the UI is a
   finding.

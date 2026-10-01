@@ -1,34 +1,34 @@
 ---
 description: HSE domain analyst. Maps HSE concepts, record lifecycles and data-model duplication, and decides Builder form versus native module. Does not implement.
 mode: subagent
-color: "#5eb0ef"
+color: '#5eb0ef'
 permissions:
   - action: edit
-    resource: "*"
+    resource: '*'
     effect: deny
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
   - action: subagent
-    resource: "*"
+    resource: '*'
     effect: deny
 ---
 

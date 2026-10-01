@@ -1,64 +1,64 @@
 ---
 description: Read-only release manager. Verifies gates, migration safety, permissions, docs and rollback, then reports ship / no-ship. Never pushes.
 mode: subagent
-color: "#ffa657"
+color: '#ffa657'
 permissions:
   # Read-only by default.
   - action: edit
-    resource: "*"
+    resource: '*'
     effect: deny
   # Publishing is denied at the project level too. Do not attempt a workaround.
   - action: shell
-    resource: "git push*"
+    resource: 'git push*'
     effect: deny
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "git branch*"
+    resource: 'git branch*'
     effect: allow
   # Gate runs are allowed; they are read-only verification.
   - action: shell
-    resource: "pnpm format:check*"
+    resource: 'pnpm format:check*'
     effect: allow
   - action: shell
-    resource: "pnpm typecheck*"
+    resource: 'pnpm typecheck*'
     effect: allow
   - action: shell
-    resource: "pnpm lint*"
+    resource: 'pnpm lint*'
     effect: allow
   - action: shell
-    resource: "pnpm test*"
+    resource: 'pnpm test*'
     effect: allow
   - action: shell
-    resource: "pnpm deadcode:check*"
+    resource: 'pnpm deadcode:check*'
     effect: allow
   - action: shell
-    resource: "pnpm build*"
+    resource: 'pnpm build*'
     effect: allow
   - action: shell
-    resource: "docker compose* ps*"
+    resource: 'docker compose* ps*'
     effect: allow
   - action: shell
-    resource: "docker compose* logs*"
+    resource: 'docker compose* logs*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
   - action: subagent
-    resource: "*"
+    resource: '*'
     effect: deny
 ---
 

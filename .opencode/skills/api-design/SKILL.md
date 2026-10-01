@@ -17,11 +17,11 @@ skill keeps them consistent.
 
 ## The three surfaces
 
-| Surface | Location | Caller | Auth |
-|---|---|---|---|
-| Server actions | `apps/web/src/app/(app)/**/_actions.ts` | the app's own UI | session + `assertCan` |
-| Route handlers | `apps/web/src/app/api/**/route.ts` | internal + integrations | varies — prove it |
-| Public REST API | `apps/web/src/app/api/v1/` | external systems | API key |
+| Surface         | Location                                | Caller                  | Auth                  |
+| --------------- | --------------------------------------- | ----------------------- | --------------------- |
+| Server actions  | `apps/web/src/app/(app)/**/_actions.ts` | the app's own UI        | session + `assertCan` |
+| Route handlers  | `apps/web/src/app/api/**/route.ts`      | internal + integrations | varies — prove it     |
+| Public REST API | `apps/web/src/app/api/v1/`              | external systems        | API key               |
 
 Do not mix their conventions. A server action is not an HTTP endpoint and should
 not be shaped like one.

@@ -25,16 +25,16 @@ visibility tiers, and how they compose into an effective per-record decision.
 Read `packages/db/src/schema/iam.ts` and `packages/tenant/src/index.ts` first.
 Current shape:
 
-| Element | Location | Notes |
-|---|---|---|
-| `PERMISSION_CATALOGUE` | `iam.ts:155-296` | **89** unique keys |
-| Built-in roles | `iam.ts:301-448` | `worker`, `foreman`, `safety_manager`, `tenant_admin` |
-| `RoleScope` | `iam.ts:49-55` | **6** variants |
-| Scope storage | `iam.ts:66` | per-assignment, not per-role |
-| `readTierCovers` | `tenant/src/index.ts:243-253` | `.read.all` covers `.read.site`, etc. |
-| `resolveVisibilityTier` | `visibility.ts:114-118` | **3** tiers |
-| `canSeeSite` | `tenant/src/index.ts:290-297` | exact-id membership only |
-| API keys | `api-keys.ts:19-45` | permissions + builder template ids, **no scope** |
+| Element                 | Location                      | Notes                                                 |
+| ----------------------- | ----------------------------- | ----------------------------------------------------- |
+| `PERMISSION_CATALOGUE`  | `iam.ts:155-296`              | **89** unique keys                                    |
+| Built-in roles          | `iam.ts:301-448`              | `worker`, `foreman`, `safety_manager`, `tenant_admin` |
+| `RoleScope`             | `iam.ts:49-55`                | **6** variants                                        |
+| Scope storage           | `iam.ts:66`                   | per-assignment, not per-role                          |
+| `readTierCovers`        | `tenant/src/index.ts:243-253` | `.read.all` covers `.read.site`, etc.                 |
+| `resolveVisibilityTier` | `visibility.ts:114-118`       | **3** tiers                                           |
+| `canSeeSite`            | `tenant/src/index.ts:290-297` | exact-id membership only                              |
+| API keys                | `api-keys.ts:19-45`           | permissions + builder template ids, **no scope**      |
 
 ### RoleScope variants
 

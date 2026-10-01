@@ -1,41 +1,41 @@
 ---
 description: Strictly read-only code reviewer. Reviews a change for correctness, regression, security, performance, types, tests and architecture. Cannot edit any file.
 mode: subagent
-color: "#e0c341"
+color: '#e0c341'
 permissions:
   # Read-only. `edit` covers edit, write and patch.
   - action: edit
-    resource: "*"
+    resource: '*'
     effect: deny
   - action: shell
-    resource: "git status*"
+    resource: 'git status*'
     effect: allow
   - action: shell
-    resource: "git diff*"
+    resource: 'git diff*'
     effect: allow
   - action: shell
-    resource: "git log*"
+    resource: 'git log*'
     effect: allow
   - action: shell
-    resource: "git show*"
+    resource: 'git show*'
     effect: allow
   - action: shell
-    resource: "git ls-files*"
+    resource: 'git ls-files*'
     effect: allow
   - action: shell
-    resource: "git blame*"
+    resource: 'git blame*'
     effect: allow
   - action: shell
-    resource: "pnpm list*"
+    resource: 'pnpm list*'
     effect: allow
   - action: shell
-    resource: "pnpm why*"
+    resource: 'pnpm why*'
     effect: allow
   - action: shell
-    resource: "*"
+    resource: '*'
     effect: ask
   - action: subagent
-    resource: "*"
+    resource: '*'
     effect: deny
 ---
 

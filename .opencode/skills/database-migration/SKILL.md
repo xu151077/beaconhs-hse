@@ -105,7 +105,7 @@ RLS count must equal `TENANT_SCOPED_TABLES` length.
 ## Forbidden
 
 - **Never** run `drizzle-kit drop`, `drizzle-kit push --force`, `prisma migrate
-  reset`, or hand-written `DROP`/`TRUNCATE` without explicit user approval.
+reset`, or hand-written `DROP`/`TRUNCATE` without explicit user approval.
   Project permissions also deny these.
 - Never edit an already-applied migration. Add a new one.
 - Never bypass RLS to "make it work". Fix the context, schema, or policy.
