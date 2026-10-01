@@ -1245,3 +1245,54 @@ asserts both halves of that boundary side by side.
 `moduleScopeWhere`, `projectScopePredicate`, `resolveProjectScopeIn`,
 `scopeContribution` or `resolveEntity`. `ALWAYS_ALLOWED` is retained rather than
 removed; only the caller's permission gate was narrowed.
+---
+
+## 17. 15B-3C — Dashboard trusted KPI gate alignment (IMPLEMENTED)
+
+**Status: IMPLEMENTED.** Follows §16 directly; §16 and all earlier sections are
+retained unmodified.
+
+### The inconsistency
+
+`WIDGET_CARD_KEY` renders two dashboard widgets as the very same Insights system
+cards §16 governs:
+
+| dashboard widget               | Insights system card            | reads                     |
+| ------------------------------ | ------------------------------- | ------------------------- |
+| `op-submissions-today`         | `kpi-submissions`               | `app_responses` aggregate |
+| `op-monitored-sessions-active` | `kpi-monitored-sessions-active` | `app_responses` aggregate |
+
+Their widget gate was `[...FORMS, ...ANALYTICS]`, i.e. ANY-of
+`forms.response.read.all`, `forms.response.read.site`, `insights.read`,
+`reports.read`, `dashboards.read`. But the card itself is released by
+`canReadAppResponses`, which §16 narrowed to `forms.response.read.all` alone. A
+`foreman` therefore passed the gate, reached the card, was refused, and
+`loadDashboardCardRenders` caught it into `{ result: null, error }` — an empty
+tile. No data leaked; the dashboard simply showed a failure where it used to show
+a count.
+
+### What changed
+
+Widget eligibility now equals the KPI's real authorization: both widgets require
+`forms.response.read.all` and nothing else.
+
+**Both** former admission paths had to go, not just `FORMS`:
+
+- `FORMS` admitted a `read.site` viewer directly.
+- `...ANALYTICS` was the quieter one. A `foreman` holds `insights.read`,
+  `reports.read` and `dashboards.read`, so narrowing `FORMS` alone would have
+  left the error tile exactly where it was. Analytics access is not authority
+  over this KPI.
+
+`FORMS` itself is unchanged and still used by `canSeeOrgAggregates` for the
+header tenant summary — a different question, deliberately not narrowed here.
+
+### What did not change
+
+- `app_responses` remains `ALWAYS_ALLOWED`; `forms.response.read.all` remains its
+  only caller gate (§16).
+- Ordinary **Apps Responses** keep `legacy {type:'sites'} role scope` **AND**
+  `Project Scope` conjoined. This decision is about widget eligibility for two
+  aggregate tiles and says nothing about response records.
+- The other 21 dashboard widgets, `moduleScopeWhere`, `projectScopePredicate`,
+  `scopeContribution`, schema, RLS and migrations are untouched.

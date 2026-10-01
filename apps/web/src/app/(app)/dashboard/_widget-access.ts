@@ -22,6 +22,27 @@ const FORMS = ['forms.response.read.all', 'forms.response.read.site']
 const INSPECT = ['inspections.read.all', 'inspections.read.site']
 const ANALYTICS = ['insights.read', 'reports.read', 'dashboards.read']
 
+// 15B-3C — the two TRUSTED RESPONSE KPI widgets.
+//
+// `WIDGET_CARD_KEY` renders `op-submissions-today` and
+// `op-monitored-sessions-active` as the Insights system cards
+// `kpi-submissions` and `kpi-monitored-sessions-active`. Both read the
+// tenant-wide `app_responses` aggregate, whose real authorization is
+// `canReadAppResponses` — `forms.response.read.all` and nothing else.
+//
+// Eligibility therefore has to match that exactly, and NEITHER former admission
+// path may remain:
+//   • `FORMS` admitted a `read.site` viewer, who was then refused by
+//     `canReadAppResponses` and left with an empty/error tile instead of a count;
+//   • `...ANALYTICS` grants analytics access, not this KPI. A `foreman` holds
+//     `insights.read` but still fails `canReadAppResponses`, so keeping it here
+//     would preserve the very inconsistency this removes.
+//
+// `FORMS` itself is deliberately left untouched: `canSeeOrgAggregates` below
+// still uses it for the header tenant summary, which is a different question and
+// must not be narrowed by a KPI decision.
+const TRUSTED_RESPONSE_KPI = ['forms.response.read.all']
+
 // Per-widget required permissions (ANY-of). Widgets ABSENT here are PERSONAL —
 // shown to everyone (personal-* + anything scoped to the viewer).
 const WIDGET_PERMISSIONS: Record<string, readonly string[]> = {
@@ -32,8 +53,8 @@ const WIDGET_PERMISSIONS: Record<string, readonly string[]> = {
   'kpi-training-compliance': [...TRAINING, ...ANALYTICS],
   'kpi-document-compliance': ['documents.manage', ...ANALYTICS],
   // Operations
-  'op-monitored-sessions-active': [...FORMS, ...ANALYTICS],
-  'op-submissions-today': [...FORMS, ...ANALYTICS],
+  'op-monitored-sessions-active': TRUSTED_RESPONSE_KPI,
+  'op-submissions-today': TRUSTED_RESPONSE_KPI,
   'op-inspections-mtd': [...INSPECT, ...ANALYTICS],
   // Incidents
   'list-recent-incidents': INCIDENTS,

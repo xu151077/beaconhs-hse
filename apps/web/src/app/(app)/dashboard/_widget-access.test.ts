@@ -66,4 +66,52 @@ describe('dashboard widget access', () => {
     expect(canPermissionSetPublishInsights(['reports.builder'])).toBe(false)
     expect(canPermissionSetPublishInsights(['insights.publish'])).toBe(true)
   })
+
+  // 15B-3C — widget eligibility must equal the KPI's real authorization.
+  //
+  // `op-submissions-today` and `op-monitored-sessions-active` render as the
+  // Insights system cards that read the tenant-wide `app_responses` aggregate.
+  // That data is released by `canReadAppResponses`, which is
+  // `forms.response.read.all` ALONE — so a viewer admitted here by any other
+  // permission reaches a card that then refuses to run and renders empty. These
+  // assertions drive the real `canSeeWidget`, not a source string, and they
+  // cover BOTH widgets so neither can drift back on its own.
+  describe('15B-3C — the two trusted response KPI widgets', () => {
+    const KPI_WIDGETS = ['op-submissions-today', 'op-monitored-sessions-active'] as const
+
+    it.each(KPI_WIDGETS)('%s is allowed for forms.response.read.all (Cases A/D)', (id) => {
+      expect(canSeeWidget(context(['forms.response.read.all']), id)).toBe(true)
+    })
+
+    it.each(KPI_WIDGETS)('%s is denied for forms.response.read.site (Cases B/E)', (id) => {
+      expect(canSeeWidget(context(['forms.response.read.site']), id)).toBe(false)
+    })
+
+    it.each(KPI_WIDGETS)('%s is denied for forms.response.read.self (Cases C/F)', (id) => {
+      expect(canSeeWidget(context(['forms.response.read.self']), id)).toBe(false)
+    })
+
+    it.each(KPI_WIDGETS)('%s is denied with no response permission at all', (id) => {
+      expect(canSeeWidget(context([]), id)).toBe(false)
+    })
+
+    it.each(KPI_WIDGETS)('%s is not admitted by analytics access alone', (id) => {
+      // The second former admission path. A `foreman` holds all three, so
+      // narrowing only `FORMS` would have left the error tile in place.
+      expect(canSeeWidget(context(['insights.read', 'reports.read', 'dashboards.read']), id)).toBe(
+        false,
+      )
+    })
+
+    it.each(KPI_WIDGETS)('%s still reaches a super-admin', (id) => {
+      expect(canSeeWidget(context([], true), id)).toBe(true)
+    })
+  })
+
+  it('does not narrow the header tenant summary, which is a different question', () => {
+    // `FORMS` is shared with `canSeeOrgAggregates`, and a KPI decision must not
+    // reach it. A site-tier forms reader still counts as seeing an org aggregate.
+    expect(canSeeOrgAggregates(context(['forms.response.read.site']))).toBe(true)
+    expect(canSeeOrgAggregates(context(['forms.response.read.self']))).toBe(false)
+  })
 })
