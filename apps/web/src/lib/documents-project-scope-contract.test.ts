@@ -70,6 +70,75 @@ const codeOnly = (src: string): string =>
     .replace(/^\s*\/\/.*$/gm, '')
     .replace(/^\s*--.*$/gm, '')
 
+const ANALYTICS_SCOPE_TS = '../../../../packages/analytics/src/server/scope.ts'
+
+/**
+ * The `documents` entry of `TABLE_SCOPE`, extracted by BRACE DEPTH.
+ *
+ * This deliberately does not read a single line. An earlier version sliced up to
+ * the next newline, which only worked while Prettier happened to keep the entry
+ * on one line — and when Prettier rewrapped it, the slice collapsed to the bare
+ * `documents: {`. That failed loudly for the positive assertions and, far worse,
+ * turned every `not.toContain('siteCols')` into an ALWAYS-TRUE check over a string
+ * that no longer contained the spec at all: a green test that could no longer
+ * detect a scope column being added to `documents`.
+ *
+ * Scanning to the matching brace makes the extraction independent of wrapping at
+ * every level — the entry itself, and the nested `read: { … }` inside it. String
+ * literals are skipped so a brace inside one cannot terminate the scan early.
+ * `codeOnly` has already removed comments, so only quotes need handling.
+ */
+const documentsSpecEntry = (): string => {
+  const spec = codeOnly(read(ANALYTICS_SCOPE_TS))
+  const anchor = spec.indexOf('\n  documents: {')
+  expect(anchor, 'the TABLE_SCOPE entry for documents').toBeGreaterThan(-1)
+  const open = spec.indexOf('{', anchor)
+  let depth = 0
+  let quote: string | null = null
+  for (let i = open; i < spec.length; i += 1) {
+    const ch = spec[i]!
+    if (quote !== null) {
+      if (ch === '\\') {
+        i += 1 // skip the escaped character
+        continue
+      }
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch
+      continue
+    }
+    if (ch === '{') {
+      depth += 1
+      continue
+    }
+    if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return spec.slice(open, i + 1)
+    }
+  }
+  throw new Error('documentsSpecEntry: unbalanced braces in the TABLE_SCOPE documents entry')
+}
+
+/**
+ * The same entry with ALL whitespace removed, so no assertion below can depend on
+ * how Prettier chose to wrap it. `siteCols` cannot hide behind a line break, and
+ * neither can the absence of it be mistaken for a clean entry.
+ *
+ * Trailing commas are dropped as well. Prettier adds one whenever it has to break
+ * an object across lines, so `read: { key: 'documents.read' }` can legitimately
+ * appear as `read: { key: 'documents.read', }`. Without this the assertion below
+ * would still be layout-sensitive — it would just fail less often.
+ */
+const documentsSpecFlat = (): string =>
+  documentsSpecEntry()
+    .replace(/\s+/g, '')
+    .replace(/,([}\]])/g, '$1')
+
+/** The scope-column keys a `documents` spec must never declare. */
+const SCOPE_COLUMN_KEYS = ['siteCols', 'orgUnitCols', 'personCols', 'userCols'] as const
+
 type ScopeState = 'unrestricted' | 'restricted' | 'empty' | 'unknown'
 const SCOPE_STATES: readonly ScopeState[] = ['unrestricted', 'restricted', 'empty', 'unknown']
 
@@ -292,24 +361,25 @@ describe('15B-3C documents — analytics exempts the library but still fails clo
   })
 
   it('the exemption is named for what it is, and is not the definition one', () => {
-    const spec = codeOnly(read('../../../../packages/analytics/src/server/scope.ts'))
-    const start = spec.indexOf('\n  documents: {')
-    expect(start, 'the TABLE_SCOPE entry for documents').toBeGreaterThan(-1)
-    const entry = spec.slice(start + 1, spec.indexOf('\n', start + 1))
-    expect(entry).toContain("read: { key: 'documents.read' }")
-    expect(entry).toContain("projectScopeExempt: 'tenant-level-document-library'")
+    const flat = documentsSpecFlat()
+    // Whitespace-free, so neither the outer entry nor the nested `read: { … }`
+    // can be split by a Prettier rewrap and hide these keys.
+    expect(flat).toContain("read:{key:'documents.read'}")
+    expect(flat).toContain("projectScopeExempt:'tenant-level-document-library'")
     // The org-structure exemption is a different fact and stays separate.
-    expect(entry).not.toContain('tenant-level-definition')
+    expect(flat).not.toContain('tenant-level-definition')
   })
 
   it('documents declares no scope column, so the exemption stays honest', () => {
-    const spec = codeOnly(read('../../../../packages/analytics/src/server/scope.ts'))
-    const start = spec.indexOf('\n  documents: {')
-    const entry = spec.slice(start + 1, spec.indexOf('\n', start + 1))
-    expect(entry).not.toContain('siteCols')
-    expect(entry).not.toContain('orgUnitCols')
-    expect(entry).not.toContain('personCols')
-    expect(entry).not.toContain('userCols')
+    // This is the guard that makes the exemption safe: `documents` is exempt
+    // because it has NOTHING to bind on, so a person-, site- or project-keyed
+    // column turning up here would make the exemption a leak. The extraction is
+    // by brace depth, so a key cannot escape the check by sitting on its own
+    // line — the failure mode that made these four assertions always-true.
+    const flat = documentsSpecFlat()
+    for (const key of SCOPE_COLUMN_KEYS) {
+      expect(flat, `documents must not declare ${key}`).not.toContain(key)
+    }
   })
 })
 
@@ -479,10 +549,13 @@ describe('15B-3C documents — the table still exposes no scope binding', () => 
     expect(owner).toBeDefined()
     expect(owner.notNull).toBe(false)
 
-    const spec = codeOnly(read('../../../../packages/analytics/src/server/scope.ts'))
-    const start = spec.indexOf('\n  documents: {')
-    const entry = spec.slice(start + 1, spec.indexOf('\n', start + 1))
-    expect(entry).not.toContain('userCols')
+    // Authorship is not placement, so the spec must bind on no owner column.
+    // Brace-depth extraction, so this cannot pass vacuously on a truncated slice.
+    const flat = documentsSpecFlat()
+    expect(flat).not.toContain('userCols')
+    // The exemption is the only thing the spec carries besides the read key, so
+    // an owner binding would have to appear as one of the recognised column keys.
+    expect(flat).toContain("projectScopeExempt:'tenant-level-document-library'")
   })
 
   it('the person and site columns that DO exist belong to interaction records', () => {
