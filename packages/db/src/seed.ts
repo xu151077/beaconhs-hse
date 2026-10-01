@@ -98,18 +98,32 @@ import { seedFormPdfTemplates, seedPdfTemplates } from './seed/pdf-templates'
 import { BEACON_REPORT_SEEDS } from './seed/report-definitions'
 import { seedToolboxTemplate } from './seed/toolbox-template'
 
+/**
+ * Identity of the development bootstrap, in one place.
+ *
+ * The super-admin LOGIN and the demo TENANT are separate facts with separate
+ * identities, and conflating them is what made the seed look successful against
+ * a half-initialised database. Nothing else in this file may gate on either.
+ */
+const ADMIN_EMAIL = 'admin@beaconhs.local'
+const DEMO_TENANT_SLUG = 'demo'
+
 async function main() {
   const { db, sql: pg } = createSuperClient()
   console.log('▶ Seeding…')
 
   await db.transaction(async (tx) => {
     // --- Super-admin ----------------------------------------------------
-    const adminId = randomUUID()
-    const inserted = await tx
+    // Provisioned INDEPENDENTLY of the tenant bootstrap below. Its existence
+    // must never gate tenant data: a database holding the super-admin but no
+    // demo tenant is exactly the partially-initialised state that the previous
+    // `return` here made permanent — the seed exited 0, printed "Seed
+    // complete", and left no tenant, roles, people, org units or job titles.
+    const [insertedAdmin] = await tx
       .insert(user)
       .values({
-        id: adminId,
-        email: 'admin@beaconhs.local',
+        id: randomUUID(),
+        email: ADMIN_EMAIL,
         name: 'Super Admin',
         emailVerified: true,
         isSuperAdmin: true,
@@ -117,17 +131,38 @@ async function main() {
       .onConflictDoNothing()
       .returning()
 
-    if (inserted.length === 0) {
-      console.log('  · super-admin already exists, skipping')
+    // Re-read on conflict so the summary line below can always name the login.
+    const admin =
+      insertedAdmin ?? (await tx.select().from(user).where(eq(user.email, ADMIN_EMAIL)).limit(1))[0]
+    if (!admin) throw new Error('Failed to provision the super-admin')
+
+    // --- Demo tenant: the convergence guard -------------------------------
+    // Everything from here to the end of this transaction is FIRST-RUN ONLY. It
+    // contains unguarded inserts whose safety rests entirely on the unique keys
+    // of the tables they target — `tenants_slug_ux`, `roles_tenant_key_ux`,
+    // `departments_tenant_normalized_name_ux`, `people_tenant_employee_no_ux`,
+    // `org_units_tenant_code_ux`, `person_titles_tenant_normalized_name_ux` — and
+    // they are reachable ONLY when the demo tenant is absent. So the guard
+    // belongs on the TENANT, never on the super-admin. Re-running against a
+    // seeded database skips them here and therefore cannot raise a unique
+    // violation.
+    const [existingDemo] = await tx
+      .select({ id: tenants.id, name: tenants.name })
+      .from(tenants)
+      .where(eq(tenants.slug, DEMO_TENANT_SLUG))
+      .limit(1)
+
+    if (existingDemo) {
+      console.log(`  · demo tenant "${DEMO_TENANT_SLUG}" already exists, skipping tenant bootstrap`)
+      console.log(`  · super-admin: ${admin.email}`)
       return
     }
-    const admin = inserted[0]!
 
     // --- Demo tenant ----------------------------------------------------
     const [tenant] = await tx
       .insert(tenants)
       .values({
-        slug: 'demo',
+        slug: DEMO_TENANT_SLUG,
         name: 'Acme Industrial',
         defaultLanguage: 'en',
         enabledLanguages: ['en'],
@@ -1524,6 +1559,43 @@ async function main() {
       await seedFormPdfTemplates(tx as any, t.id)
     }
   })
+
+  // Completeness assertion. Everything above is best-effort per stage, so this
+  // is the one place that can tell the truth about the run as a whole.
+  //
+  // A tenant is not usable until its built-in roles exist — without them no
+  // membership can be granted a permission and nobody can sign in with a role —
+  // so a demo tenant carrying none of `BUILTIN_ROLES` is a half-initialised
+  // database, not a seeded one. The first-run-only bootstrap above cannot repair
+  // that state (the tenant exists, so it is correctly skipped), so the seed
+  // reports the gap loudly and names the remedy instead of printing
+  // "Seed complete" over it.
+  const [demoAfter] = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.slug, DEMO_TENANT_SLUG))
+    .limit(1)
+  if (!demoAfter) {
+    throw new Error(
+      `Seed finished without the "${DEMO_TENANT_SLUG}" tenant — refusing to report success`,
+    )
+  }
+
+  const seededRoles = await db
+    .select({ key: roles.key })
+    .from(roles)
+    .where(and(eq(roles.tenantId, demoAfter.id), inArray(roles.key, Object.keys(BUILTIN_ROLES))))
+  const missingRoles = Object.keys(BUILTIN_ROLES).filter(
+    (key) => !seededRoles.some((r) => r.key === key),
+  )
+  if (missingRoles.length > 0) {
+    throw new Error(
+      `Tenant "${DEMO_TENANT_SLUG}" exists but is missing built-in roles ` +
+        `(${missingRoles.join(', ')}). The demo bootstrap is first-run only and cannot ` +
+        `repair this state. Drop the database (or the docker volume) and re-run ` +
+        `"pnpm db:migrate && pnpm db:seed".`,
+    )
+  }
 
   await pg.end()
   console.log('✔ Seed complete')
