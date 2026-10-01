@@ -201,9 +201,7 @@ type ScopeSpec = {
  * `scopeContribution`, and that ordering is part of the contract.
  */
 export type ProjectScopeExemption =
-  | 'tenant-level-setting'
-  | 'tenant-level-definition'
-  | 'tenant-level-document-library'
+  'tenant-level-setting' | 'tenant-level-definition' | 'tenant-level-document-library'
 
 /** Every reason `validateScopeSpecs` will accept. Anything else is an error. */
 const PROJECT_SCOPE_EXEMPTIONS: readonly ProjectScopeExemption[] = [
@@ -410,7 +408,10 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   // The exemption is a ROW-PREDICATE exemption only. `documents.read` is still
   // the capability, and an unusable scope still denies, because `empty` and
   // `unknown` are handled before the exemption is consulted.
-  documents: { read: { key: 'documents.read' }, projectScopeExempt: 'tenant-level-document-library' },
+  documents: {
+    read: { key: 'documents.read' },
+    projectScopeExempt: 'tenant-level-document-library',
+  },
   people: { read: { key: 'admin.users.manage' } },
 
   // `corrective_actions` has no `ca_` prefix, so it is spelled out here.
@@ -640,7 +641,9 @@ export function runScopeSpecValidation(): { errors: string[] } {
   // The document-library exemption must be justified by the table's actual shape:
   // no person-, site- or project-keyed column, or the exemption is a leak.
   if (TABLE_SCOPE.documents?.projectScopeExempt === 'tenant-level-document-library') {
-    const unexpected = DOCUMENTS_COLUMNS.actual.filter((c) => !DOCUMENTS_COLUMNS.expected.includes(c))
+    const unexpected = DOCUMENTS_COLUMNS.actual.filter(
+      (c) => !DOCUMENTS_COLUMNS.expected.includes(c),
+    )
     if (unexpected.length > 0) {
       errors.push(
         `documents: exempts itself as a tenant-level document library, but the entity exposes ` +

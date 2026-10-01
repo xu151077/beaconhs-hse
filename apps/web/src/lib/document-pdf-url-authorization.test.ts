@@ -224,7 +224,9 @@ describe('15B-3C-3H-1 — opts.draft stays a manager-only, publication-agnostic 
       'return { ok: true, url: `/documents/${documentId}/pdf',
       draftBranch,
     )
-    const readerRule = ACTIONS.indexOf('const visibility = await documentAuthorizationFilter(ctx, tx)')
+    const readerRule = ACTIONS.indexOf(
+      'const visibility = await documentAuthorizationFilter(ctx, tx)',
+    )
     expect(draftBranch).toBeGreaterThan(-1)
     expect(draftReturn).toBeGreaterThan(draftBranch)
     expect(readerRule).toBeGreaterThan(draftReturn)

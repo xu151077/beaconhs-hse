@@ -128,10 +128,7 @@ function notDeletedSql(entity: ReportEntity): SQL | null {
  * rather than a Drizzle query — so a short dedicated transaction resolves the
  * predicate and closes immediately. It runs no data query, and the caller's own
  * reads stay exactly where they were. */
-async function entityVisibilitySql(
-  ctx: RequestContext,
-  entity: ReportEntity,
-): Promise<SQL | null> {
+async function entityVisibilitySql(ctx: RequestContext, entity: ReportEntity): Promise<SQL | null> {
   if (entity.key !== 'documents') return null
   const filter = await ctx.db((tx) => documentAuthorizationFilter(ctx, tx))
   return filter ?? null
@@ -185,9 +182,7 @@ export async function readEntityRows(
     notDeletedSql(entity),
     await entityVisibilitySql(ctx, entity),
     filterSql,
-  ].filter(
-    (c): c is SQL => c !== null,
-  )
+  ].filter((c): c is SQL => c !== null)
   const whereSql = conditions.length
     ? sql.join([sql.raw('WHERE'), sql.join(conditions, sql.raw(' AND '))], sql.raw(' '))
     : sql.raw('')
@@ -259,10 +254,7 @@ export async function getEntityRecord(
       ...fields.map((c) => `${columnRef(entity, c)} AS "${c}"`),
     ].join(', '),
   )
-  const fixedConditions = [
-    notDeletedSql(entity),
-    await entityVisibilitySql(ctx, entity),
-  ].filter(
+  const fixedConditions = [notDeletedSql(entity), await entityVisibilitySql(ctx, entity)].filter(
     (condition): condition is SQL => condition !== null,
   )
   const query = sql.join(
