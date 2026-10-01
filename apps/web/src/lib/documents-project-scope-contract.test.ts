@@ -250,9 +250,7 @@ describe('15B-3C documents — web composes scope AND publication', () => {
 
   it('the publication half is still documentReadFilter, unchanged', () => {
     // The composed rule must not have absorbed or altered the publication rule.
-    expect(compile(documentReadFilter(webCtx('restricted'))!).sql).toBe(
-      '"documents"."status" = $1',
-    )
+    expect(compile(documentReadFilter(webCtx('restricted'))!).sql).toBe('"documents"."status" = $1')
     expect(documentReadFilter(webCtx('restricted', ['documents.manage']))).toBeUndefined()
   })
 })
@@ -374,6 +372,10 @@ describe('15B-3C documents — there is a single documents rule, and no second',
     ['public REST query', '../lib/api/query.ts'],
     ['AI action', '../app/(app)/documents/[id]/_ai-actions.ts'],
     ['in-chat reader action', '../app/(app)/assistant/_document-reader-actions.ts'],
+    // The one OUTBOUND surface: it pushes document content to recipients outside
+    // the tenant, so it composes the shared rule too. Added by the 15B-3C
+    // follow-up that closed the last documents surface left without a gate.
+    ['outbound email', '../app/(app)/documents/[id]/_send-email.ts'],
   ]
 
   it('each of them composes the shared rule', () => {

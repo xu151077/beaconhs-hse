@@ -3,12 +3,35 @@
 // version has a content attachment, we surface its authenticated, audited
 // download route too. (We don't attach the PDF inline — the
 // email queue keeps payloads small.)
+//
+// 15B-3C FOLLOW-UP — PROJECT SCOPE. This path was the one documents surface with
+// no Project Scope gate at all, and it is the only one that pushes document
+// CONTENT to recipients outside the tenant: title, key, description, and the
+// first 4 000 characters of the published text. A manager whose scope could not
+// be resolved could therefore still export it.
+//
+// The four-state decision is NOT restated here. `documentAuthorizationFilter` is
+// the single documents rule, composed exactly as the eleven read surfaces
+// compose it, so `unrestricted` and `restricted` add no constraint while `empty`
+// and `unknown` contribute `false` and the row does not match.
+//
+// WHY `status = 'published'` STAYS EXPLICIT AND UNCONDITIONAL
+//
+// A manager is not a reader, and the publication half of the shared rule waives
+// itself for a manager — correctly, because a manager may inspect drafts. If
+// that half were relied on alone here it would REMOVE the constraint and let a
+// manager email a DRAFT or ARCHIVED document, which this path has never allowed.
+// So `published` remains this surface's own business invariant, stated
+// explicitly, and the two layers are conjoined: publication AND scope usability.
+// `documents.manage` is asserted here as well as at the caller, because this
+// function is exported and must not depend on a future caller remembering it.
 
 import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { documentCategories, documentVersions, documents } from '@beaconhs/db/schema'
-import type { RequestContext } from '@beaconhs/tenant'
+import { assertCan, type RequestContext } from '@beaconhs/tenant'
 import { appBaseUrl } from '@/lib/app-base-url'
 import { recordAudit } from '@/lib/audit'
+import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
 
 export async function sendDocumentEmail(
   ctx: RequestContext,
@@ -20,6 +43,7 @@ export async function sendDocumentEmail(
     messageOverride?: string
   },
 ): Promise<{ recipientCount: number }> {
+  assertCan(ctx, 'documents.manage')
   if ((options?.subjectPrefix?.length ?? 0) > 120) {
     throw new Error('Subject prefix must be 120 characters or fewer')
   }
@@ -36,6 +60,10 @@ export async function sendDocumentEmail(
           eq(documents.id, documentId),
           eq(documents.status, 'published'),
           isNull(documents.deletedAt),
+          // Project Scope usability. `undefined` for a usable scope, `false` for
+          // `empty` / `unknown`; `and()` drops the undefined case, so a manager in
+          // a usable scope issues exactly the statement they did before.
+          await documentAuthorizationFilter(ctx, tx),
         ),
       )
       .limit(1)
