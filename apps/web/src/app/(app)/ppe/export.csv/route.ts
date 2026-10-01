@@ -57,7 +57,7 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
 
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(ppeItems.deletedAt)]
-    // Read tier AND Project Scope, via the same call the PPE list makes
+    // Read tier AND tenant, via the same call the PPE list makes
     // (`ppe/page.tsx`). `ppe_items` has no org-unit column, so the binding is
     // `current_holder_person_id` — the column the table already carries, on the
     // table this query already reads. No join and no new column is needed, and

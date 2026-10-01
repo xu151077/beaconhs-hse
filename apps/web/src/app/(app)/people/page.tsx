@@ -9,8 +9,6 @@ import { primaryPersonTitleName } from '@beaconhs/db'
 import { departments, people, trades } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { resolveProjectScopeIn } from '@/lib/project-scope'
-import { projectScopePredicate } from '@/lib/project-scope-predicate'
 import { canManageModule } from '@/lib/module-admin/guard'
 import { DownloadLink } from '@/components/download-link'
 import { buildExportHref, mergeHref, parseListParams, pickString } from '@/lib/list-params'
@@ -63,22 +61,20 @@ export default async function PeoplePage({
   // roster must not be listed at all — it carries names, employee numbers,
   // job titles and hire dates.
   if (!can(ctx, 'people.read.all')) redirect('/dashboard')
-  // Project Scope. `people` has no location column, so the binding is the
-  // person column: a restricted caller may only see people inside their resolved
-  // scope. `undefined` (no predicate) is returned for exactly one reason — the
-  // caller is company-wide — and an empty scope is a hard `false`, so a caller
-  // with no assignment sees an empty roster rather than the whole tenant.
-  // Resolved inside the caller's tenant transaction, so the org tree and
-  // assignment reads run under the same RLS context as the roster query below.
-  const projectScope = await ctx.db((tx) => resolveProjectScopeIn(ctx, tx))
   const canManage = canManageModule(ctx, 'people')
-  const canExport = can(ctx, 'admin.data.export') && can(ctx, 'admin.users.manage')
+  // Mirrors the export route exactly: data-export rights AND user management AND
+  // the same read capability this page is already gated on. Showing a button the
+  // route would reject is worse than hiding it.
+  const canExport =
+    can(ctx, 'admin.data.export') && can(ctx, 'admin.users.manage') && can(ctx, 'people.read.all')
 
   const { rows, total, statusCounts, allCount } = await ctx.db(async (tx) => {
-    const scopeWhere = projectScopePredicate(projectScope, { personCol: people.id })
     const primaryTitleName = primaryPersonTitleName(people.id, people.tenantId)
+    // `people.read.all` is the whole boundary: the gate above already refused
+    // every caller without it, and RLS bounds the query to the tenant. The
+    // `people` table declares no site and no owner column, so there is no narrower
+    // native tier to apply — the catalogue says so at the key itself.
     const baseFilters: SQL<unknown>[] = [isNull(people.deletedAt)]
-    if (scopeWhere) baseFilters.push(scopeWhere)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(

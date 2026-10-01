@@ -15,7 +15,7 @@ import { can } from '@beaconhs/tenant'
 import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
 import { presignExistingGet } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { documentVersionVisibilityWhere } from '@/lib/document-version-policy'
 import { isUuid } from '@/lib/list-params'
 
@@ -46,7 +46,7 @@ export async function getReaderDocument(id: string): Promise<ReaderResult> {
   const includeUnpublished = ctx.isSuperAdmin || can(ctx, 'documents.manage')
   return ctx.db(async (tx) => {
     const conds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
-    const filter = await documentAuthorizationFilter(ctx, tx)
+    const filter = documentReadFilter(ctx)
     if (filter) conds.push(filter)
     const [doc] = await tx
       .select({

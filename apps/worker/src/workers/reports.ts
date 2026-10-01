@@ -58,7 +58,6 @@ import {
 } from '@beaconhs/storage'
 import { appBaseUrl } from '../lib/app-base-url'
 import { scopeReportSourcesForRunAs } from '../lib/report-run-as-scope'
-import { resolveProjectScopeIn } from '@beaconhs/analytics/server'
 import { escapeHtml } from '../lib/escape-html'
 
 // Attach the rendered PDF to recipient emails up to this size; larger reports
@@ -548,20 +547,15 @@ async function resolveScheduledReportContext(
     tx,
     accessibleApps.map(({ id, name }) => ({ id, name })),
   )
-  // The run-as member's effective module read permission AND their Project Scope
-  // must reach the report engine, otherwise a scheduled run silently reports the
-  // whole tenant. `canAccessTemplate` above only gates which Builder apps a
-  // source may be read through; it does not scope the module tables.
+  // The run-as member's effective module read permission must reach the report
+  // engine, otherwise a scheduled run silently reports the whole tenant.
+  // `canAccessTemplate` above only gates which Builder apps a source may be read
+  // through; it does not scope the module tables.
   //
-  // The scope is resolved here, in the run's own tenant transaction, and passed
-  // in. Omitting it would make the subject `unknown`, which withholds every
-  // entity — fail-closed, but it would mean a scheduled report with no scope
-  // returns nothing at all.
-  const sources = scopeReportSourcesForRunAs(
-    requestCtx,
-    discovered,
-    await resolveProjectScopeIn(requestCtx, tx),
-  )
+  // The run-as member's own permission, Role Scope and read tier decide what this
+  // run may report, so a scheduled run can never read past what the impersonated
+  // member could read by hand.
+  const sources = scopeReportSourcesForRunAs(requestCtx, discovered)
 
   return {
     catalog: await loadBeaconReportCatalog(tx, sources),

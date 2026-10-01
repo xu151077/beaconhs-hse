@@ -14,15 +14,12 @@
 // without loading the parent, a soft-deleted document's artifacts remained
 // downloadable to anyone holding `documents.read` who knew the two UUIDs.
 //
-// PROJECT SCOPE — 15B-3C product decision. `documents` is a TENANT-LEVEL
-// CONTROLLED DOCUMENT LIBRARY: a tenant publishes one version of an SDS / SOP /
-// policy and every worker on every site must be able to read it, so a `restricted`
-// caller adds NO Project Scope constraint here. An `empty` or `unknown` scope
-// DOES deny, and that check is the shared `documentAuthorizationFilter`, not a
-// local rule. There is still no binding column — none is being introduced, and
-// `owner_tenant_user_id` remains authorship rather than placement. Do not "fix"
-// this by borrowing `document_acknowledgment_sessions.site_org_unit_id`: that is
-// a sign-off instance's location, not the document's, and a document may have
+// `documents` is a TENANT-LEVEL CONTROLLED DOCUMENT LIBRARY: a tenant publishes
+// one version of an SDS / SOP / policy and every worker on every site must be able
+// to read it, so there is no location binding on this route — and none should be
+// added. `owner_tenant_user_id` remains authorship rather than placement. Do not
+// "fix" this by borrowing `document_acknowledgment_sessions.site_org_unit_id`: that
+// is a sign-off instance's location, not the document's, and a document may have
 // sessions at several sites or none at all.
 
 import { NextResponse, type NextRequest } from 'next/server'
@@ -32,7 +29,7 @@ import { assertCan, can } from '@beaconhs/tenant'
 import { getObjectStream } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -72,7 +69,7 @@ export async function GET(
     // this is strictly narrower than before — no previously-authorized download
     // is lost.
     const documentConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
-    const readFilter = await documentAuthorizationFilter(ctx, tx)
+    const readFilter = documentReadFilter(ctx)
     if (readFilter) documentConds.push(readFilter)
 
     const [v] = await tx

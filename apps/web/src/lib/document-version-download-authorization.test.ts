@@ -138,8 +138,8 @@ describe('15B-3C-3B — the route reuses the shared publication rule', () => {
     // One implementation, so a change to the rule moves every surface at once.
     // `documentReadFilter` is imported from `assistant/doc-access` — the module
     // the assistant tools, the search route and `api/query.ts` already call.
-    expect(ROUTE).toContain("from '@/lib/assistant/document-project-scope'")
-    expect(ROUTE).toContain('documentAuthorizationFilter(ctx, tx)')
+    expect(ROUTE).toContain("from '@/lib/assistant/doc-access'")
+    expect(ROUTE).toContain('documentReadFilter(ctx)')
   })
 })
 
@@ -267,16 +267,15 @@ describe('15B-3C-3B — ids are validated before the query', () => {
 // 5. Project Scope is deferred, and the deferral is recorded in the source
 // ---------------------------------------------------------------------------
 
-describe('15B-3C — Project Scope is settled: a tenant-level document library', () => {
+describe('the document library is tenant-level, so the route invents no scope', () => {
   it('the route composes the shared rule and invents no scope of its own', () => {
-    // 15B-3C resolved what 15B-3B deliberately deferred. The route now composes
-    // the one shared documents rule, which carries BOTH the publication rule and
-    // the Project Scope usability gate. It still writes no scope logic inline.
-    expect(ROUTE_CODE).toContain('documentAuthorizationFilter(ctx, tx)')
+    // The one shared documents rule is the publication half, and it is the whole
+    // read boundary: the library is tenant-level, so there is no location axis to
+    // narrow on. The route therefore writes no scope logic inline — a hand-rolled
+    // `inArray` over a borrowed column would be a second ladder.
+    expect(ROUTE_CODE).toContain('documentReadFilter(ctx)')
     expect(ROUTE_CODE).not.toMatch(/moduleScopeWhere/)
-    expect(ROUTE_CODE).not.toMatch(/projectScopeExempt/)
-    // No local scope judgement: the gate is reached only through the shared rule.
-    expect(ROUTE_CODE).not.toMatch(/projectScopeKind/)
+    expect(ROUTE_CODE).not.toMatch(/inArray\(/)
   })
 
   it('none of the tempting-but-wrong bindings was borrowed', () => {
@@ -292,10 +291,14 @@ describe('15B-3C — Project Scope is settled: a tenant-level document library',
   })
 
   it('the decision and its reasoning are written down where a reader will hit them', () => {
-    expect(ROUTE).toMatch(/PROJECT SCOPE — 15B-3C product decision/)
-    expect(ROUTE).toMatch(/TENANT-LEVEL/)
-    // The refusal to borrow a placement column is preserved verbatim.
-    expect(ROUTE).toMatch(/Do not "fix"/)
+    expect(ROUTE).toMatch(/TENANT-LEVEL CONTROLLED DOCUMENT LIBRARY/)
+    expect(ROUTE).toMatch(/no location binding on this route/)
+    // The refusal to borrow a placement column is preserved — it is the thing a
+    // future reader is most likely to "fix" by mistake. The sentence wraps across
+    // three comment lines, so strip the comment leaders as well as the wrapping
+    // before matching it.
+    const flat = ROUTE.replace(/^\s*\/\/\s?/gm, '').replace(/\s+/g, ' ')
+    expect(flat).toMatch(/Do not "fix" this by borrowing/)
   })
 })
 

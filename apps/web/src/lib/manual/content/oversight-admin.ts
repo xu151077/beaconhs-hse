@@ -41,12 +41,18 @@ export const OVERSIGHT_ADMIN_ARTICLES: ManualArticle[] = [
       'read all',
       'not found',
       'empty directory',
-      'see only my site',
       'cannot see a colleague',
     ],
+    // Mirrors the People nav entry, which requires exactly this key
+    // (`nav/registry.ts`). AGENTS.md: article visibility mirrors nav visibility, so
+    // a member without `people.read.all` cannot open /people and must not be told
+    // how it works — the article describes the directory's own semantics, and its
+    // "Who you can see" section would otherwise be the only place a refused user
+    // could read what they are missing.
+    requiredPermission: 'people.read.all',
     body: `The People directory lists the people you are allowed to see — workers, contractors, and
-supervisors. How much of the company you see depends on where you are assigned to work. The
-**Who you can see** section below explains exactly what that means.
+supervisors. It is **read all** or nothing, so the **Who you can see** section below explains
+exactly that.
 
 ## What this is for
 
@@ -87,30 +93,31 @@ Assignments are never deleted, so the history stays accurate:
 An assignment is active from its start date up to and including its end date. If you pick a start
 date in the future, the assignment waits in the history list until that day arrives.
 
-Only a company admin can add, change or end assignments. Everyone else can see the list, as long as
-the person is within their own assigned locations.
+Only a company admin can add, change or end assignments. Everyone else who can see
+the person can see the list of assignments.
 
 ## Who you can see
 
-The directory shows the people who work where **you** are assigned to work. If you are assigned to
-one site, you see the people at that site. You do not see people at a different site, even when
-your role is allowed to read everything in the company.
+The People directory is **read all** or **nothing**. The **People: read all**
+permission is the whole boundary, and a member either has it or they are sent
+back to the dashboard without seeing a single name, employee number or job
+title.
 
-This matters most for anyone who works on one project at a time.
+This is deliberate. The directory is master data that the rest of the app depends
+on — compliance reminders, the training matrix, the org chart and every person
+picker all read it — so a partly visible roster would be worse than none. The
+directory is not a place to apply a narrower view; use **search** and the
+department filter for that.
 
-- **Someone with no active assignment sees an empty directory.** Every person's page, including their
-  own, is not found.
-- **An assignment that has ended does not count.** So does one whose start date has not arrived yet.
-- **Nobody sees the whole company by accident.** Only a member with a company-wide scope, or a
-  platform super-admin, sees every person.
+- **A member without read all sees an empty directory.** Not their own page either.
+  That is a permission boundary, not a location rule.
+- **A member with read all sees the whole workspace roster**, in every location.
+- **Nobody sees another workspace**, whatever their permissions, because each
+  workspace keeps its own records separate.
 
-If a colleague seems to be missing, check their **Location assignments** tab first. A missing or
-finished assignment is the usual reason.
-
-### "Read all" does not mean "everyone"
-
-A permission like **People: read all** means "read every person you are allowed to reach". It does
-not remove the location rule. Both always apply, and the tighter one wins.
+If a colleague seems to be missing, check that the account holds **People: read
+all**. A missing or finished location assignment is not the reason — assignments
+do not limit what an account can see.
 
 ## Add a person
 
@@ -180,7 +187,7 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
 ## Tips
 
 - Some companies sync people from another system. Synced fields show as read-only and cannot be edited here. If a locked field is wrong, fix it in the source system and it will update on the next sync.
-- A sync brings in the person, but it does not set their **Location assignments**. Until an admin adds one, that person is placed nowhere, and neither they nor anyone else can find them in the directory. After each sync, check the new people and add their location.
+- A sync brings in the person, but it does not set their **Location assignments**. Until an admin adds one, that person is placed nowhere, so they get no compliance reminders. Their directory visibility is unaffected. After each sync, check the new people and add their location.
 - Overdue training and other requirements for one person live on their **Compliance** tab. For the whole company, see [Managing compliance](/help/compliance-management).`,
   },
   {
@@ -200,6 +207,15 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
       'areas',
       'custom fields',
     ],
+    // ANY-of, mirroring the Locations nav entry exactly
+    // (`requiredAnyPermission: ['admin.org.read', 'admin.org.manage']`).
+    //
+    // A single `requiredPermission: 'admin.org.read'` would be wrong twice over: it
+    // would hide this article from a manage-only custom role whose nav entry is
+    // visible, and it would re-create the nav/article divergence Phase 3 closed.
+    // `admin.org.manage` is still accepted because it does not widen into
+    // `admin.org.read` — `readTierCovers` only widens within one `read` family.
+    requiredAnyPermission: ['admin.org.read', 'admin.org.manage'],
     body: `Locations describe where your work happens: customers at the top, then projects, then sites.
 
 ## What this is for
@@ -685,29 +701,32 @@ Open the member to manage only this workspace's settings:
 
 Pending invitations cannot be marked active by an administrator. The person must prove control of the invited email by using the one-time link.
 
-## Role scope and location are different things
+## Role scope decides what a member can reach
 
-A member has two separate records, and they are not linked:
+A member's **role scope** is their access boundary. It says how far their
+permissions reach, and it is set on the account under **Roles & scope**.
 
-- **Role scope** is the access boundary. It says how far this account's permissions reach.
-- **Location assignment** is where the person works. It is set on the person, not the account, under
-  **Location assignments** on their page. See [People directory](/help/people).
+Location assignments are a different thing: they record where a person works.
+They are set on the person, not the account, under **Location assignments** on
+their page. See [People directory](/help/people). Location assignments drive
+compliance reminders and the org chart. They do not limit what an account can
+reach, and changing one never changes anybody's permissions.
 
-Both apply at the same time, and the tighter one wins. Giving someone a wider role scope does not
-give them more locations, and adding a location does not widen their role.
+What decides access, in order:
 
-Three things follow from that:
+1. **Permission.** A read permission says which records of a kind this account
+   may look at. There are three levels: **read all**, **read site**, and
+   **read own**.
+2. **Role scope.** A read-all permission reaches the whole workspace. A read-site
+   permission reaches only the sites named in the account's role scope. A read-own
+   permission reaches only that person's own records, and falls back to that when
+   an account holds no read level at all.
+3. **Nothing else narrows it.** A member never sees another workspace, whatever
+   their permissions, because every workspace keeps its own records separate.
 
-1. **A read-all permission is not the whole company.** **Read all** means "every record you are
-   allowed to reach". The location rule is still applied on top of it. A role with read-all rights
-   still only sees the people at the locations its members are assigned to.
-2. **Only two things give a company-wide view.** A company-wide role scope, or platform super-admin.
-   Nothing else does. Narrowing a role scope to specific sites does not narrow where somebody stands,
-   and widening it does not widen that either — for that, change the location assignments. Give
-   tenant admins a company-wide scope and a location assignment covering the whole company, or they
-   cannot administer the workspace.
-3. **Nobody is widened automatically.** An account with no location assignment reaches nothing. That
-   is deliberate: it is better to show too little than to show another site's records.
+Give a tenant administrator a company-wide role scope, or they cannot administer
+the workspace. Narrow a supervisor's role scope to their own sites and that is
+exactly what they will see.
 
 A platform-level workspace suspension blocks normal member access, pending invitations, API keys, public kiosks, live badge pages, and in-browser Word or PowerPoint editing and playback. Printed individual certificate links remain available so issued credentials can still be verified.
 
@@ -719,10 +738,12 @@ Platform super-admins manage global identity from **Platform → Users**. Search
 
 ## Tips
 
-- Link the correct **Person record** before assigning self-scoped work. A person record with no
-  location assignment reaches nothing, so add the assignment too.
-- Give the smallest role and scope the person needs. Role scope and location assignment are separate
-  — set both, and neither one widens the other.
+- Link the correct **Person record** to the account, so self-scoped work reaches
+  the right person. A person record with no location assignment still shows on the
+  person's own page and still drives nothing but compliance reminders.
+- Give the smallest role and scope the person needs. Permissions decide what they
+  can reach; the role scope narrows a site-level read to particular sites. Location
+  assignments are a separate record and widen nothing.
 - Suspend access when someone is temporarily away. Remove the membership only when its tenant-specific role history is no longer needed.`,
   },
   {

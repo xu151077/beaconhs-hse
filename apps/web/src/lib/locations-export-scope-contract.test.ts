@@ -15,21 +15,23 @@
 //
 // and projects eight descriptive fields. It is a filtered VIEW of `org_units`,
 // gated by the SAME `admin.org.manage` key, and — like the list pages beside it —
-// it applies no Project Scope row predicate; its tenant boundary is RLS via
-// `ctx.db`.
+// it applies no row-scope predicate; its tenant boundary is RLS via `ctx.db`.
 //
-// Since 15B-3C-3E, `org_units` is an explicit `tenant-level-definition`
-// exemption. So this route's behaviour is not an undecided gap that happens to
-// look like an exemption: it is the same table, the same permission and the same
-// semantics, on the web side. No separate Project Scope binding is required,
-// and none was added.
+// `org_units` is tenant master data, and the analytics spec grants it with a flat
+// read key — which `tierFor` resolves to tier `all`, i.e. no row predicate. That
+// is the correct NATIVE answer for a table holding only structure: a tenant
+// administrator who administers the org tree must be able to group or filter a
+// report by location, and there is no narrower option that is not circular
+// (`org_units.parentId` points at another org unit). So this route's behaviour is
+// not an undecided gap: it is the same table, the same permission and the same
+// semantics, on the web side.
 //
 // WHAT IS DELIBERATELY NOT ASSERTED
 //
 //   • NOT "the source must not contain `moduleScopeWhere`". That pins an
 //     implementation detail, and a future correct refactor would fail it while
 //     the product behaviour stayed right.
-//   • NOT "a restricted caller must be filtered". That is the open PII /
+//   • NOT "a caller must not see the whole address book". That is the open PII /
 //     export-authorization question below, and it is NOT decided.
 //
 // The assertions below lock the facts that ARE settled: the permission surface,
@@ -39,13 +41,13 @@
 // OPEN, AND NOT DECIDED HERE
 //
 // Five of the eight exported columns are address components
-// (`line1`, `city`, `region`, `postal`, `country`). Whether a Project-Scope
-// restricted `tenant_admin` may export the tenant-wide customer address book is
-// a data-export / compliance-authorization question. It is deliberately kept
-// separate from Project Scope exemption: an exemption answers "does a scope
-// predicate apply to this table", never "may this role see this data". Nothing
-// in this file asserts that the current behaviour is correct, only that it is
-// what the code does and that it is bounded by permission + RLS.
+// (`line1`, `city`, `region`, `postal`, `country`). Whether a
+// `tenant_admin` may export the tenant-wide customer address book is a
+// data-export / compliance-authorization question, and it is NOT decided. It is
+// deliberately kept separate from the tenant-level question: "is this table
+// tenant-level" never answers "may this role see this data". Nothing in this file
+// asserts that the current behaviour is correct, only that it is what the code
+// does and that it is bounded by permission + RLS.
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -313,32 +315,29 @@ describe('15B-3C — the export can only narrow its eight declared columns', () 
 })
 
 // ===========================================================================
-// 4. Project Scope semantic contract
+// 4. The tenant-level contract
 // ===========================================================================
 
-describe('15B-3C — Project Scope semantics of the locations export', () => {
-  it('the route and the org_units definition-domain spec share one permission', () => {
+describe('the locations export is bounded by permission + RLS, as a tenant-level view', () => {
+  it('the route and the org_units spec share one permission', () => {
     // The alignment that makes a separate binding unnecessary: same table, same
-    // capability. If either key moved, the two would stop agreeing and the
-    // exemption below would no longer describe this route.
+    // capability. If either key moved, the two would stop agreeing.
     expect(ROUTE_CODE).toContain("assertCan(ctx, 'admin.org.manage')")
     expect(specEntry('org_units')).toContain("read: { key: 'admin.org.manage' }")
   })
 
-  it('org_units is an explicit, named tenant-level-definition exemption', () => {
-    // Not inferred from `tier === 'all'`, from having no columns, or from the
-    // permission. The exemption is a named fact about the spec.
+  it('all four org-structure tables are granted with the same flat key', () => {
+    // A flat key resolves to tier `all` in `tierFor`, i.e. no row predicate. That
+    // is the native answer for per-tenant structure.
     for (const table of ['org_units', 'departments', 'crews', 'trades']) {
-      const entry = specEntry(table)
-      expect(entry, table).toContain("read: { key: 'admin.org.manage' }")
-      expect(entry, table).toContain("projectScopeExempt: 'tenant-level-definition'")
+      expect(specEntry(table), table).toContain("read: { key: 'admin.org.manage' }")
     }
   })
 
-  it('the four definition tables declare no Project Scope binding column', () => {
-    // The reason the exemption is definitionally correct rather than a
-    // convenience: there is nothing to bind, and `parentId` is the tree itself,
-    // so binding on it would be circular.
+  it('and none of them declares a row-scope column', () => {
+    // The reason tenant-level is definitional rather than a convenience: there is
+    // nothing to narrow on, and `parent_id` is the tree itself, so binding on it
+    // would be circular.
     for (const table of ['org_units', 'departments', 'crews', 'trades']) {
       const entry = specEntry(table)
       expect(entry, table).not.toContain('siteCols')
@@ -346,6 +345,13 @@ describe('15B-3C — Project Scope semantics of the locations export', () => {
       expect(entry, table).not.toContain('personCols')
       expect(entry, table).not.toContain('userCols')
     }
+  })
+
+  it('the flat key is guarded: a flat spec may not also declare columns', () => {
+    // `validateScopeSpecs` rejects that combination, so a future site- or
+    // person-keyed column on a flat-key table has to be resolved by giving the
+    // table a tiered read spec, not by silently leaving the columns dead.
+    expect(ANALYTICS_SCOPE).toContain('A flat key resolves to tier ')
   })
 
   it('the tenant boundary is RLS through ctx.db, not a scope predicate', () => {
@@ -362,9 +368,9 @@ describe('15B-3C — Project Scope semantics of the locations export', () => {
     expect(select).toBeGreaterThan(db)
   })
 
-  it('the org_units exemption does not grant a permission on its own', () => {
-    // An exemption skips a row predicate; it is not a capability. The tier is
-    // still resolved from the read key, so the two gates remain independent.
+  it('a flat key is a capability, not an implicit grant', () => {
+    // Tier `all` is reached only when the read key is actually held, so the
+    // tenant-level answer is gated rather than unconditional.
     expect(ANALYTICS_SCOPE).toContain(
       "if ('key' in read) return subject.permissions(read.key) ? 'all' : 'none'",
     )

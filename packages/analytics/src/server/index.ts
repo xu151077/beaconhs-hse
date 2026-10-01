@@ -13,38 +13,12 @@ export { compileRuleGroup as compileAnalyticsRuleGroup } from './filter-sql'
 export { addTrustedSystemAppResponsesEntity, discoverEntities, discoverEntityMap } from './discover'
 export { discoverEntitiesWithScopedApps } from './custom-fields'
 
-/**
- * The canonical Project Scope resolver (see ./project-scope.ts).
- *
- * Exported from here so BOTH apps can reach it: `apps/web` re-exports it from
- * `lib/project-scope.ts` for its existing imports, and `apps/worker` imports it
- * directly for scheduled-report run-as scoping. One resolver, one answer.
- */
-export {
-  MAX_ORG_UNIT_DEPTH,
-  ancestorOrgUnitIds,
-  buildOrgTreeIndex,
-  descendantOrgUnitIds,
-  effectiveOn,
-  isAssignmentEffectiveOn,
-  resolveProjectScope,
-  resolveProjectScopeIn,
-  todayIso,
-  type IsoDate,
-  type OrgNode,
-  type ProjectScope,
-  type ProjectScopeEmptyReason,
-  type ProjectScopeIdentity,
-  type ProjectScopeOptions,
-} from './project-scope'
-
 /** Row-level authorization for analytics/report queries (see ./scope.ts). */
 export {
   analyticsScopeFingerprint,
   analyticsScopeSubject,
   scopeAnalyticsEntities,
   siteIdsFromScopes,
-  type AnalyticsScopeIdentity,
   type AnalyticsScopeSubject,
 } from './scope'
 

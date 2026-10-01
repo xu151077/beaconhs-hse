@@ -18,7 +18,7 @@ import {
 import { presignExistingGet } from '@beaconhs/storage'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { recordAuditInTransaction } from '@/lib/audit'
 import { isDocumentKeyConflict, parseDocumentKey } from '@/lib/document-key-policy'
 import { DOCUMENT_METADATA_LIMITS } from '@/lib/document-metadata-limits'
@@ -84,10 +84,10 @@ export async function getDocumentPdfUrl(
   // "Document not found." — the same answer the reader, list and detail surfaces
   // give, and one that no longer distinguishes "exists but unpublished" from
   // "does not exist".
-  // 15B-3C: the shared rule is resolved inside the transaction that applies it, so
-  // the Project Scope half runs under the same RLS context as the row it gates.
+  // 15B-3C: the shared rule is applied inside the transaction that uses it, so the
+  // publication predicate runs under the same RLS context as the row it gates.
   const [doc] = await ctx.db(async (tx) => {
-    const visibility = await documentAuthorizationFilter(ctx, tx)
+    const visibility = documentReadFilter(ctx)
     const docConds: SQL[] = [eq(documents.id, documentId), isNull(documents.deletedAt)]
     if (visibility) docConds.push(visibility)
     return tx

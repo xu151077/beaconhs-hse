@@ -4,7 +4,6 @@ import type { Database } from '@beaconhs/db'
 import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from '@beaconhs/db/schema'
 import type { RequestContext } from '@beaconhs/tenant'
 import { canSeeRecord, moduleScopeWhere } from './visibility'
-import { projectScopeTx } from './testing/project-scope-fixture'
 
 function context(permissions: string[]): RequestContext {
   return {
@@ -26,7 +25,7 @@ function context(permissions: string[]): RequestContext {
   }
 }
 
-const tx = projectScopeTx()
+const tx = {} as Database
 const other = { prefix: 'hazid', ownerIds: ['member_2'], siteId: 'site_1' }
 const mine = { prefix: 'hazid', ownerIds: ['member_1'], siteId: 'site_1' }
 

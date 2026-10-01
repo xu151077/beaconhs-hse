@@ -16,7 +16,7 @@ import { augmentBeaconReportEntityWithCustomFields } from '@beaconhs/reports/ser
 import type { ReportEntity } from '@beaconhs/reports/entities'
 import { ApiError } from './errors'
 import { recordIdColumn } from './records'
-import { documentAuthorizationFilter } from '../assistant/document-project-scope'
+import { documentReadFilter } from '../assistant/doc-access'
 
 export const DEFAULT_LIMIT = 50
 export const MAX_LIMIT = 1000
@@ -122,15 +122,15 @@ function notDeletedSql(entity: ReportEntity): SQL | null {
  * keys see the same published library as human readers; only a key carrying
  * documents.manage may inspect draft or archived document metadata.
  *
- * 15B-3C: this is now the shared documents rule, which also denies a caller whose
- * Project Scope is `empty` or `unknown`. Resolving that scope needs a
- * transaction and neither caller holds one — the public API composes raw SQL
- * rather than a Drizzle query — so a short dedicated transaction resolves the
- * predicate and closes immediately. It runs no data query, and the caller's own
- * reads stay exactly where they were. */
+ * 15B-3C: this is now the shared documents rule — `documentReadFilter`, the same
+ * one the human-facing surfaces compose — so the API and the app cannot disagree
+ * about who may see an unpublished document. It needs no transaction: it resolves
+ * entirely from `ctx`. The public API composes raw SQL rather than a Drizzle
+ * query, which is why the caller has nothing to pass, and the caller's own reads
+ * stay exactly where they were. */
 async function entityVisibilitySql(ctx: RequestContext, entity: ReportEntity): Promise<SQL | null> {
   if (entity.key !== 'documents') return null
-  const filter = await ctx.db((tx) => documentAuthorizationFilter(ctx, tx))
+  const filter = documentReadFilter(ctx)
   return filter ?? null
 }
 

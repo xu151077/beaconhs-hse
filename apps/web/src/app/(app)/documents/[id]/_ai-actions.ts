@@ -20,7 +20,7 @@ import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
 import { getTenantAiConfig } from '@/lib/ai-config'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { isUuid } from '@/lib/list-params'
 
 const SCOPE = 'documents.editor'
@@ -37,10 +37,10 @@ async function documentIsVisible(
   documentId: string,
 ): Promise<boolean> {
   if (!isUuid(documentId)) return false
-  // 15B-3C: the shared documents rule is resolved inside this transaction, so the
-  // Project Scope reads run under the same RLS context as the row they gate.
+  // 15B-3C: the shared documents rule is applied inside this transaction, so the
+  // publication predicate runs under the same RLS context as the row it gates.
   const [document] = await ctx.db(async (tx) => {
-    const visibility = await documentAuthorizationFilter(ctx, tx)
+    const visibility = documentReadFilter(ctx)
     return tx
       .select({ id: documents.id })
       .from(documents)

@@ -24,7 +24,7 @@ import { can } from '@beaconhs/tenant'
 import { manualArticleForUser, searchManualArticles } from '@/lib/manual/registry'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { moduleScopeWhere, recordVisibilityWhere } from '@/lib/visibility'
-import { documentAuthorizationFilter } from './document-project-scope'
+import { documentReadFilter } from './doc-access'
 import { getDocumentPdfBytes, getDocumentText } from './document-content'
 import { truncateText, type AssistantToolDef, type ToolImage, type ToolResult } from './types'
 
@@ -352,7 +352,7 @@ const findDocuments: AssistantToolDef = {
     const limit = Math.min(a.limit ?? 25, 50)
     return ctx.db(async (tx) => {
       const conds: SQL[] = [isNull(documents.deletedAt)]
-      const pubOnly = await documentAuthorizationFilter(ctx, tx)
+      const pubOnly = documentReadFilter(ctx)
       if (pubOnly) conds.push(pubOnly)
       if (a.query) {
         const t = like(a.query)

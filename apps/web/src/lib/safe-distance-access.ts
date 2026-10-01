@@ -42,13 +42,6 @@ export const SAFE_DISTANCE_SCOPE_COLUMNS = {
   prefix: SAFE_DISTANCE_SCOPE_PREFIX,
   siteCol: safeDistanceRecords.siteOrgUnitId,
   personCol: safeDistanceRecords.operatorPersonId,
-  // Safe Distance is bounded by Permission + Role Scope + tier + RLS alone. It
-  // opts out of the Project Scope conjunct that `moduleScopeWhere` ANDs for every
-  // other module, so the tier is the WHOLE read boundary here rather than one of
-  // two. The tier logic itself is untouched — this is one conjunct, not a
-  // parallel ladder — and the site binding still comes from the caller's own
-  // `{type:'sites'}` Role Scope.
-  applyProjectScope: false,
 } as const
 
 /** May this person open and operate the Safe Distance tool? */
@@ -79,6 +72,5 @@ export function canSeeSafeDistanceRecord(
     prefix: SAFE_DISTANCE_SCOPE_PREFIX,
     siteId: rec.siteOrgUnitId ?? null,
     personId: rec.operatorPersonId ?? null,
-    applyProjectScope: false,
   })
 }

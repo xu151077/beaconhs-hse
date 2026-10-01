@@ -6,8 +6,6 @@ import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { journalEntries, people } from '@beaconhs/db/schema'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import type { Database } from '@beaconhs/db'
-import { resolveProjectScopeIn } from '@/lib/project-scope'
-import { projectScopePredicate } from '@/lib/project-scope-predicate'
 export { htmlToText } from '@beaconhs/forms-core'
 import { nextReference } from '@/lib/reference'
 
@@ -23,7 +21,7 @@ export function journalCanBrowseAll(ctx: RequestContext): boolean {
 
 /**
  * Visibility predicate for journal_entries based on the caller's read tier:
- *   read.all  → the caller's Project Scope (see the note on that branch)
+ *   read.all  → the whole tenant; no row filter, because RLS already bounds it
  *   read.site → entries at the caller's scoped sites, UNION their own
  *   read.self → only entries authored by, or created by, the caller (default)
  *
@@ -31,39 +29,31 @@ export function journalCanBrowseAll(ctx: RequestContext): boolean {
  * still sees a journal they wrote at another site or with no site set. This
  * mirrors the generalised `moduleScopeWhere` (see record-visibility model) so
  * journals behave like every other record module.
+ *
+ * `_tx` is retained for signature stability and is not read: the predicate
+ * resolves entirely from `ctx` and `authorPersonId`. See `moduleScopeWhere` for
+ * the same convention.
  */
 export async function journalScopeWhere(
   ctx: RequestContext,
-  tx: Database,
+  _tx: Database,
   authorPersonId: string | null,
 ): Promise<SQL | undefined> {
   if (journalCanReadAll(ctx)) {
-    // 15B-3C-4B — Option A. This branch used to `return undefined`, i.e. no row
-    // filter at all. That is the pre-15B-2 model: it read `journals.read.all` as
-    // "you may see the whole tenant". Since 15B-2 a Project Scope is a dimension
-    // ORTHOGONAL to the read tier, and the canonical ladder applies it even at
-    // tier `all` (`lib/visibility.ts`, `if (tier === 'all') return scopeCond`).
-    // A `safety_manager` — the built-in role holding `journals.read.all` —
-    // assigned `{type:'sites'}` was reading every journal in the tenant from all
-    // nine call sites below, while analytics had already narrowed the same table
-    // (`packages/analytics/src/server/scope.ts` declares `siteCols` for
-    // `journal_`) and every other record module had.
+    // `journals.read.all` means the whole tenant, and that is the native
+    // meaning — the same one `moduleScopeWhere` gives tier `all` (no row filter;
+    // RLS already bounds the query). Returning `undefined` here is correct.
     //
-    // SCOPE OF THIS FIX — deliberately narrow. Only the one branch that actually
-    // escaped Project Scope is touched; the `.site` and `.self` branches below are
-    // unchanged and keep journals' own semantics, which `moduleScopeWhere` does
-    // NOT share:
+    // SCOPE NOTE — deliberately narrow. Only this branch is the `all` tier. The
+    // `.site` and `.self` branches below keep journals' own semantics, which
+    // `moduleScopeWhere` does NOT share:
     //   • own entries visible at every tier, including outside the caller's sites
     //   • the `'super-admin'` sentinel guard in `authorTenantUserId`
     //   • `getAuthorPersonId`'s exclusion of soft-deleted employee rows
     // A wholesale migration to `moduleScopeWhere` would also close the `.site` /
-    // `.self` under-exposure, but it would bind the own leg to the scope and
-    // break all three of those. That is a product decision, tracked separately.
-    const projectScope = await resolveProjectScopeIn(ctx, tx)
-    return projectScopePredicate(projectScope, {
-      orgUnitCol: journalEntries.siteOrgUnitId,
-      personCol: journalEntries.personId,
-    })
+    // `.self` under-exposure, but it would bind the own leg to the tier and break
+    // all three of those. That is a product decision, tracked separately.
+    return undefined
   }
 
   const own: SQL[] = []
@@ -106,8 +96,8 @@ export async function journalAuthorScopeWhere(
   target: { personId: string | null; tenantUserId: string | null },
 ): Promise<SQL> {
   const byAuthor = journalByAuthorWhere(target.personId, target.tenantUserId)
-  // 15B-3C-4B: `journalScopeWhere` now resolves Project Scope inside `tx`, so it is
-  // awaited and the transaction threaded through. `journalByAuthorWhere` is
+  // `journalScopeWhere` is awaited because it is async by signature, not because
+  // it reads a transaction — `_tx` is unused. `journalByAuthorWhere` is
   // unchanged, so the author filter and its `false` fallback behave as before.
   const viewer = await journalScopeWhere(ctx, tx, viewerPersonId)
   return viewer ? and(byAuthor, viewer)! : byAuthor

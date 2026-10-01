@@ -8,10 +8,9 @@
 //
 // Before this module, nothing but an org administrator clicking the Assignments
 // drawer on `/people/<id>` ever wrote `people_assignments`, and `seed.ts` wrote
-// none at all. Project Scope resolves from this table and fails closed, so a
-// tenant whose roster is unplaced resolves every non-tenant-wide caller to
-// `empty` — correct, and useless. This fills the placement gap in the one place
-// that is allowed to: the fixture/dev data path.
+// none at all — which left the compliance audience and identity resolvers
+// resolving to zero people. This fills the placement gap in the one place that is
+// allowed to: the fixture/dev data path.
 //
 // INVARIANTS (all of them load-bearing):
 //   1. ADD ONLY. No update, no delete, no truncate. A row that already exists is
@@ -240,10 +239,12 @@ export async function convergePersonnelAssignments(
 //      all — a service account, or a user who has not been onboarded. There is
 //      nothing to place, so the derivation would have to invent a person.
 //   3. It is a permission-derived widening, and a permission must never be the
-//      reason a row appears that widens visibility. Project Scope is
-//      fail-closed precisely because it is computed from placement, not from
-//      access.
+//      reason a row appears that widens anything. This holds under BeaconHS's
+//      own model too: visibility is decided by Permission, Role Scope and the
+//      read tier, and none of those should be able to invent an employment
+//      record as a side effect.
 //
 // If an access scope and a personnel placement genuinely disagree, that is
-// reported, not reconciled. See `docs/hse-project-scope-resolver.md`.
+// reported, not reconciled. Placement is read by the compliance audience and
+// identity resolvers, and is informational everywhere else.
 // ---------------------------------------------------------------------------

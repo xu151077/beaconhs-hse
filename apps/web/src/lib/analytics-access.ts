@@ -15,7 +15,6 @@ import {
   type AnalyticsScopeSubject,
 } from '@beaconhs/analytics/server'
 import { can, type RequestContext } from '@beaconhs/tenant'
-import { resolveProjectScopeIn, type ProjectScope } from './project-scope'
 import { getEffectiveRoleKeys } from './effective-roles'
 import {
   accessibleAnalyticsTemplates,
@@ -59,7 +58,7 @@ export async function resolveAnalyticsAccess(
   // permission for, and pin a row predicate onto the ones they may read only
   // narrowly. Both compilers AND `entity.baseFilter` under the caller's own
   // filters, so a saved report can never widen past the caller's own access.
-  const subject = analyticsScopeSubject(ctx, await resolveProjectScopeIn(ctx, tx))
+  const subject = analyticsScopeSubject(ctx)
   const entities = scopeAnalyticsEntities(subject, discovered)
   return {
     entities,
@@ -76,27 +75,20 @@ export async function resolveAnalyticsAccess(
 /**
  * Resolve the identity + permission surface the analytics scope rules need.
  *
- * Since 15B-3B this is a thin wrapper over the SHARED constructor in
- * `@beaconhs/analytics/server`, which `apps/worker` also calls. That is the point:
- * a scheduled report and a dashboard must answer "what may this identity see?"
- * identically, and two hand-written copies of this object are how they would
- * drift. The three Project Scope fields are no longer only cache-key inputs —
- * `resolveEntity` now reads them to pin the row predicate.
+ * A thin wrapper over the SHARED constructor in `@beaconhs/analytics/server`,
+ * which `apps/worker` also calls. That is the point: a scheduled report and a
+ * dashboard must answer "what may this identity see?" identically, and two
+ * hand-written copies of this object are how they would drift. Every field comes
+ * off the `RequestContext`, so nothing here needs a database read.
  */
-function analyticsScopeSubject(
-  ctx: RequestContext,
-  projectScope?: ProjectScope,
-): AnalyticsScopeSubject {
-  return sharedAnalyticsScopeSubject(
-    {
-      isSuperAdmin: ctx.isSuperAdmin,
-      permissions: (key) => can(ctx, key),
-      siteIds: siteIdsFromScopes(ctx.scopes),
-      personId: ctx.personId,
-      tenantUserId: ctx.membership?.id ?? null,
-    },
-    projectScope,
-  )
+function analyticsScopeSubject(ctx: RequestContext): AnalyticsScopeSubject {
+  return sharedAnalyticsScopeSubject({
+    isSuperAdmin: ctx.isSuperAdmin,
+    permissions: (key) => can(ctx, key),
+    siteIds: siteIdsFromScopes(ctx.scopes),
+    personId: ctx.personId,
+    tenantUserId: ctx.membership?.id ?? null,
+  })
 }
 
 /**
@@ -136,12 +128,12 @@ export async function runAuthorizedBhql(
  * reader sees the tenant-wide total on a KPI that is a system metric by design,
  * while the same reader is correctly narrowed to their own sites everywhere the
  * underlying response records are read — so the two must not be confused. This
- * is the whole difference between "Apps Responses" (ordinary records, Project
- * Scope applied) and "Insights trusted KPI" (an aggregate, tenant-wide).
+ * is the whole difference between "Apps Responses" (ordinary records, narrowed by
+ * the read tier) and "Insights trusted KPI" (an aggregate, tenant-wide).
  *
- * Because the grant is a permission and not a scope, an `empty` or unresolved
- * Project Scope does not block it: `read.all` is a tenant-wide capability in its
- * own right, and there is no scope left to narrow an aggregate that has no rows.
+ * Because the grant is the `read.all` permission itself, nothing narrows it: a
+ * tier `all` holder resolves to no row predicate, and there are no rows for an
+ * aggregate to be narrowed by.
  */
 export function canReadAppResponses(ctx: RequestContext): boolean {
   return can(ctx, 'forms.response.read.all')

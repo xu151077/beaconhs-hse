@@ -1,16 +1,30 @@
-// 15B-2 — the insights card cache key must reflect the caller's Project Scope.
+// The insights card cache key must reflect every native authorization dimension
+// that changes a caller's result.
 //
 // `insights/_data.ts` keeps a process-level `CARD_RESULT_CACHE` (60 s TTL) keyed on
 //
 //     ${ctx.tenantId}:${access.scopeKey}:${trustScope}:${key}
 //
 // and the source comment already states that the scope in that key is load-bearing.
-// Before 15B-2 the fingerprint only carried `sites` (from `{type:'sites'}` scopes),
-// so a scope that derives from `people_assignments` was invisible to it: a user
-// removed from a project kept being served that project's card rows for the TTL.
+// Before the fingerprint carried the caller's row scope at all, the key covered
+// role and template ids only, so two members holding the same role with different
+// `{type:'sites'}` Role Scopes shared one entry and were served each other's rows.
 //
-// These tests pin the eight cases the brief requires. They exercise the REAL
-// fingerprint function, not a copy of it.
+// WHAT IS IN THE KEY, AND WHY EACH FIELD IS LOAD-BEARING
+//
+//   super      a super-admin resolves every entity to tier `all`
+//   sites      the `{type:'sites'}` Role Scope, which is the `site` tier's only input
+//   person     the `self` tier's identity binding
+//   user       `ctx.membership.id` — the tenant_users row, so the key is PER MEMBER
+//
+// The `user` field deserves its own note. Because it is the membership id, two
+// different members can never share a `rowScope`, and a given member's permission
+// set — the only other input to the tier — is fixed for them. So the tier is
+// captured transitively and does not need to be in the key itself. Impersonation
+// rebases onto the TARGET's membership id, so two impersonation targets under one
+// admin also get two different keys.
+//
+// These tests exercise the REAL fingerprint function, not a copy of it.
 
 import { describe, expect, it } from 'vitest'
 import { analyticsScopeFingerprint, type AnalyticsScopeSubject } from '@beaconhs/analytics/server'
@@ -29,76 +43,51 @@ const key = (over: Partial<AnalyticsScopeSubject> = {}) => analyticsScopeFingerp
 const A = '0a000000-0000-4000-8000-000000000001'
 const B = '0b000000-0000-4000-8000-000000000002'
 
-describe('insights cache key and Project Scope', () => {
-  it('A. the same user with the same scope gets the same key', () => {
-    expect(key({ orgUnitIds: [A], projectPersonIds: ['p1'] })).toBe(
-      key({ orgUnitIds: [A], projectPersonIds: ['p1'] }),
+describe("insights cache key — the caller's native row scope", () => {
+  it('A. the same caller with the same scope gets the same key', () => {
+    expect(key({ siteIds: [A] })).toBe(key({ siteIds: [A] }))
+  })
+
+  it('B. a caller scoped to site A gets a distinct key from one scoped to site B', () => {
+    expect(key({ siteIds: [A] })).not.toBe(key({ siteIds: [B] }))
+  })
+
+  it('C. site order in the Role Scope does not change the key', () => {
+    // Two members can hold the same sites in a different insertion order; they must
+    // still share a key, or the cache would miss on every request for one of them.
+    expect(key({ siteIds: [A, B] })).toBe(key({ siteIds: [B, A] }))
+  })
+
+  it('D. an empty site list is still distinct from a real site list', () => {
+    // A caller holding a non-`sites` scope resolves the `self` tier, not the site
+    // tier, so their result is their own rows — never the tenant's.
+    expect(key({ siteIds: [] })).not.toBe(key({ siteIds: [A] }))
+  })
+
+  it('E. two members never share a key, whatever else matches', () => {
+    // The membership id makes the key per-member, which is what makes the tier
+    // transitively safe: a given member's permission set cannot change under a
+    // stable key.
+    expect(key({ tenantUserId: 'user_1', siteIds: [A] })).not.toBe(
+      key({ tenantUserId: 'user_2', siteIds: [A] }),
     )
   })
 
-  it('B. the same user scoped to project A gets a distinct A key', () => {
-    const a = key({ orgUnitIds: [A] })
-    expect(a).toContain(A)
+  it('F. two people with the same role and sites still get different keys', () => {
+    // The `self` tier resolves to the caller's own person, so a shared key here
+    // would serve one member's rows to the other.
+    expect(key({ personId: 'p1', siteIds: [A] })).not.toBe(key({ personId: 'p2', siteIds: [A] }))
   })
 
-  it('C. the same user scoped to project B gets a DIFFERENT key from project A', () => {
-    expect(key({ orgUnitIds: [B] })).not.toBe(key({ orgUnitIds: [A] }))
+  it('G. super-admin is distinct from a plain member with the same inputs', () => {
+    expect(key({ isSuperAdmin: true, siteIds: [A] })).not.toBe(key({ siteIds: [A] }))
   })
 
-  it('D. the same user scoped to A and B gets a third, different key', () => {
-    const both = key({ orgUnitIds: [A, B] })
-    expect(both).not.toBe(key({ orgUnitIds: [A] }))
-    expect(both).not.toBe(key({ orgUnitIds: [B] }))
-  })
-
-  it('E. an EMPTY scope never shares a key with a restricted scope', () => {
-    // An empty scope resolves to zero rows, so it must not reuse a real project's
-    // cached result.
-    expect(key({ orgUnitIds: [], projectPersonIds: [] })).not.toBe(key({ orgUnitIds: [A] }))
-  })
-
-  it('F. unrestricted, empty and restricted never share a key', () => {
-    // Caught by this test: `unrestricted` and a scope that resolved to `empty`
-    // both produce empty id lists, so without the discriminator a caller who can
-    // see nothing would be served a company-wide cached result.
-    const unrestricted = key({ projectScopeKind: 'unrestricted' })
-    const empty = key({ projectScopeKind: 'empty', orgUnitIds: [], projectPersonIds: [] })
-    const restricted = key({ projectScopeKind: 'restricted', orgUnitIds: [A] })
-    const unknown = key()
-    const all = new Set([unrestricted, empty, restricted, unknown])
-    expect(all.size, 'all four scope states must have distinct keys').toBe(4)
-    expect(unrestricted).not.toBe(empty)
-  })
-
-  it('G. REVOKING a project changes the key', () => {
-    // The regression this exists for: the same user, the same role, one fewer
-    // project. Before 15B-2 the key was unchanged and the stale rows were served.
-    const before = key({ orgUnitIds: [A, B] })
-    const after = key({ orgUnitIds: [A] })
-    expect(after).not.toBe(before)
-  })
-
-  it('H. the user dimension still distinguishes two members of the same scope', () => {
-    expect(key({ orgUnitIds: [A], tenantUserId: 'user_1' })).not.toBe(
-      key({ orgUnitIds: [A], tenantUserId: 'user_2' }),
-    )
-  })
-
-  it('canonicalises the ids: order and duplicates do not change the key', () => {
-    // Unsorted Set iteration would make two identical scopes produce different
-    // keys, which would silently defeat the cache for everyone.
-    expect(key({ orgUnitIds: [B, A, A] })).toBe(key({ orgUnitIds: [A, B] }))
-    expect(key({ projectPersonIds: ['p2', 'p1', 'p2'] })).toBe(
-      key({ projectPersonIds: ['p1', 'p2'] }),
-    )
-  })
-
-  it('a project scope does not disturb the pre-existing fingerprint fields', () => {
-    // The `user`/`sites`/`super` dimensions must keep working exactly as before,
-    // because the existing key was already correct for those.
-    const withScope = key({ orgUnitIds: [A], tenantUserId: 'user_1' })
-    const withoutScope = key({ tenantUserId: 'user_1' })
-    expect(withScope).not.toBe(withoutScope)
-    expect(key({ orgUnitIds: [A], isSuperAdmin: true })).not.toBe(key({ orgUnitIds: [A] }))
+  it('H. a null membership and a null person are encoded, not dropped', () => {
+    // An API-key or service context has neither. They must still produce a
+    // distinct, stable key rather than colliding with an all-null one.
+    const bare = key({ tenantUserId: null, personId: null })
+    expect(bare).not.toBe(key({ tenantUserId: 'user_1', personId: null }))
+    expect(bare).toBe(key({ tenantUserId: null, personId: null }))
   })
 })

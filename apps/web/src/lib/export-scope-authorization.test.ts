@@ -1,43 +1,41 @@
-// 15B-3C-1 — the three exports that had a usable Project Scope binding.
+// CSV exports must never be a way around the list they mirror.
 //
-// Each of these routes already asserted a PERMISSION. None of them applied a
-// row scope, so a caller holding that permission downloaded the whole tenant
-// even though the corresponding list page — the thing the user actually reads —
-// was already scoped. A CSV is the same rows as a list: if the two disagree, the
-// export is the way around the restriction.
+// Each route below already asserted a PERMISSION. The point of this file is the
+// second half: that a caller who passes the permission gate still gets the SAME
+// rows the corresponding list page would show them. A CSV is the same rows as a
+// list; if the two disagree, the export is the bypass.
 //
-// The bindings used here are columns the tables ALREADY carry. Nothing was added
-// to the schema, and no join was introduced:
+// The three modules differ in how they express that, and each is asserted in its
+// own terms:
 //
-//   people            people.id                       (the list's binding)
-//   ppe_items         current_holder_person_id        (the list's binding)
+//   people         `people.read.all` is the whole boundary — the table declares no
+//                  site or owner column, so there is no narrower native tier. The
+//                  export therefore requires the same read capability the list
+//                  requires, and RLS bounds both to the tenant.
+//   ppe            a tiered module. `ppe.read.{all,site,self}` decides the rows and
+//                  the export calls the same shared ladder the list does.
+//   safe-distance  a tiered module added in Phase 1, with the binding declared once
+//                  in `lib/safe-distance-access.ts` and shared by list, detail,
+//                  print, CSV and the analytics spec.
 //
-// Safe Distance was in this set under 15B-3C-1 and left it in Phase 1: its
-// permission is now a tiered family, so it no longer has a Project Scope binding
-// and is asserted through the shared native ladder instead — see the Phase 1
-// block below and `safe-distance-native-tier.test.ts`.
+// WHERE THE ASSERTIONS COME FROM
 //
-// The properties asserted are the same four the Project Scope adapter guarantees,
-// applied at the boundary each route owns:
+// The row-level tier behaviour is asserted against the REAL resolvers on compiled
+// SQL and bound parameters — never by grepping SQL text for an id, which would pass
+// for the wrong reason (drizzle binds ids, so an id never appears in the text).
 //
-//   unrestricted            -> no predicate
-//   restricted + matching   -> predicate naming the caller's own ids
-//   restricted + nonmatching-> predicate that excludes the other ids
-//   empty / unresolved      -> `false`, i.e. an empty file, never the tenant
-//
-// Plus the point of the whole exercise: a restricted caller cannot reach a row
-// the list would hide, and the `admin.users.manage` holder gets no special pass.
+// The cross-surface checks read the SOURCES, because the failure being guarded is
+// drift between a list and its export: two independently correct filters that
+// disagree at runtime. That is a wiring property, not a SQL property, and reading
+// the file is the honest way to test it.
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { sql } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
-import { people, ppeItems, safeDistanceRecords } from '@beaconhs/db/schema'
+import { ppeItems } from '@beaconhs/db/schema'
 import type { Database } from '@beaconhs/db'
 import type { RequestContext } from '@beaconhs/tenant'
-import { isAlwaysFalse, projectScopePredicate } from './project-scope-predicate'
-import type { ProjectScope } from './project-scope'
-import { projectScopeTx } from './testing/project-scope-fixture'
+import { moduleScopeWhere } from './visibility'
 
 const SITE_A = '00000000-0000-4000-8000-00000000a001'
 const SITE_B = '00000000-0000-4000-8000-00000000b001'
@@ -46,169 +44,185 @@ const PEER_A = '0c000000-0000-4000-8000-0000000000c2'
 const PEER_B = '0c000000-0000-4000-8000-0000000000c3'
 
 const dialect = new PgDialect()
+const bound = (p: unknown): string[] =>
+  p === undefined ? [] : dialect.sqlToQuery(p as never).params.map(String)
+const sqlText = (p: unknown): string =>
+  p === undefined ? '(no predicate)' : dialect.sqlToQuery(p as never).sql
 
-/**
- * The predicate as SQL text plus its BOUND VALUES, space-joined.
- *
- * The ids must be read from `params`: drizzle compiles an `inArray` to
- * `in ($1, $2)` and binds the values, so no id ever appears in the SQL text. A
- * test that greps the text for an id passes for the wrong reason — it simply
- * never finds one, whether or not the filter is correct.
- */
-const renderWithValues = (p: unknown): string => {
-  if (p === undefined) return '(no predicate)'
-  const q = dialect.sqlToQuery(p as never)
-  return `${q.sql} ${q.params.map(String).join(' ')}`
+/** The tier ladder resolves from `ctx` alone and never reads the transaction. */
+const tx = {} as Database
+
+function ctx(permissions: string[], over: Partial<RequestContext> = {}): RequestContext {
+  return {
+    userId: 'user_1',
+    tenantId: '10000000-0000-4000-8000-0000000000aa',
+    isSuperAdmin: false,
+    timezone: 'UTC',
+    locale: 'en',
+    defaultLocale: 'en',
+    enabledLocales: ['en'],
+    localeOverride: null,
+    membership: { id: 'm1', displayName: 'A' },
+    personId: READER,
+    permissions: new Set(permissions),
+    scopes: [],
+    activeRoleId: null,
+    db: (async (fn: (t: unknown) => unknown) => fn({})) as RequestContext['db'],
+    ...over,
+  } as RequestContext
 }
 
-/** The binding each route is required to use, read straight from its source. */
+const atSites = (siteIds: string[]) => [{ type: 'sites' as const, siteIds }]
+
 function source(relative: string): string {
   return readFileSync(new URL(relative, import.meta.url), 'utf8')
 }
 
 const PEOPLE_EXPORT = source('../app/(app)/people/export.csv/route.ts')
+const PEOPLE_LIST = source('../app/(app)/people/page.tsx')
 const PPE_EXPORT = source('../app/(app)/ppe/export.csv/route.ts')
+const PPE_LIST = source('../app/(app)/ppe/page.tsx')
 const SAFE_DISTANCE_EXPORT = source('../app/(app)/tools/safe-distance/export.csv/route.ts')
+const SAFE_DISTANCE_LIST = source('../app/(app)/tools/safe-distance/page.tsx')
 
 // ---------------------------------------------------------------------------
-// The three bindings, exercised through the real adapter.
+// people — the whole boundary is the read capability.
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-1 — people export is bound by the person column', () => {
-  const bind = (scope: ProjectScope) => projectScopePredicate(scope, { personCol: people.id })
-
-  it('unrestricted -> no predicate at all', () => {
-    expect(bind({ kind: 'unrestricted' })).toBeUndefined()
-  })
-
-  it('restricted -> the caller sees only themselves and their placed peers', () => {
-    const out = bind({ kind: 'peopleAndOrgUnits', orgUnitIds: [SITE_A], personIds: [PEER_A] })
-    const text = renderWithValues(out)
-    expect(out).toBeDefined()
-    expect(text).toContain('"people"."id"')
-    expect(text).toContain(PEER_A)
-    // The project they are NOT placed at must not be reachable.
-    expect(text).not.toContain(PEER_B)
-  })
-
-  it('a scope placing them only in project B cannot reach a project A peer', () => {
-    const out = bind({ kind: 'peopleAndOrgUnits', orgUnitIds: [SITE_B], personIds: [PEER_B] })
-    const text = renderWithValues(out)
-    expect(text).toContain(PEER_B)
-    expect(text).not.toContain(PEER_A)
-  })
-
-  it('empty -> a hard false, never "no filter"', () => {
-    const out = bind({ kind: 'empty', reason: 'no_assignment' })
-    expect(isAlwaysFalse(out)).toBe(true)
-    expect(out).not.toBeUndefined()
-  })
-
-  it('the route actually uses this binding, and resolves inside its transaction', () => {
-    // The regression that matters: the predicate must be on the ROUTE, not only
-    // in this test. Both the call and the binding column are asserted.
-    expect(PEOPLE_EXPORT).toContain('resolveProjectScopeIn(ctx, tx)')
-    expect(PEOPLE_EXPORT).toContain('projectScopePredicate(projectScope, { personCol: people.id })')
-    expect(PEOPLE_EXPORT).toContain('if (scopeWhere) filters.push(scopeWhere)')
-  })
-
-  it('admin.users.manage alone does not restore tenant-wide', () => {
-    // The permission is the capability gate and stays. What must NOT appear is
-    // any path where holding it skips the scope.
+describe('the people export is bounded by the same capability as the list', () => {
+  it('the route requires BOTH the management and the read capability', async () => {
+    // `admin.users.manage` says who may export the roster at all;
+    // `people.read.all` is what the list is gated on. Requiring both is what stops
+    // a CUSTOM role that holds one without the other from exporting a roster it
+    // cannot open on screen.
     expect(PEOPLE_EXPORT).toContain("assertCan(ctx, 'admin.users.manage')")
-    // The scope is resolved unconditionally after the gate, and pushed into the
-    // same filter list as the deleted-at check.
-    const gate = PEOPLE_EXPORT.indexOf("assertCan(ctx, 'admin.users.manage')")
-    const scope = PEOPLE_EXPORT.indexOf('resolveProjectScopeIn(ctx, tx)')
-    expect(scope, 'the scope must be applied after the capability gate').toBeGreaterThan(gate)
-    // No early return between the gate and the scope.
-    expect(PEOPLE_EXPORT.slice(gate, scope)).not.toContain('return csvResponse')
+    expect(PEOPLE_EXPORT).toContain("assertCan(ctx, 'people.read.all')")
+  })
+
+  it('the list gates on the same read capability', () => {
+    expect(PEOPLE_LIST).toContain("if (!can(ctx, 'people.read.all')) redirect('/dashboard')")
+  })
+
+  it('the list shows the export button only when the route would accept it', () => {
+    // Showing a button the route rejects is worse than hiding it.
+    expect(PEOPLE_LIST).toContain("can(ctx, 'admin.data.export')")
+    expect(PEOPLE_LIST).toContain("can(ctx, 'admin.users.manage')")
+    expect(PEOPLE_LIST).toContain("can(ctx, 'people.read.all')")
+  })
+
+  it('the read gate comes before the management gate, and nothing returns between them', () => {
+    // A capability checked after an early return is not a control.
+    const manage = PEOPLE_EXPORT.indexOf("assertCan(ctx, 'admin.users.manage')")
+    const read = PEOPLE_EXPORT.indexOf("assertCan(ctx, 'people.read.all')")
+    expect(manage).toBeGreaterThan(-1)
+    expect(read).toBeGreaterThan(manage)
+    expect(PEOPLE_EXPORT.slice(manage, read)).not.toContain('return csvResponse')
+  })
+
+  it('keeps the soft-delete filter rather than substituting the boundary', () => {
+    expect(PEOPLE_EXPORT).toContain('isNull(people.deletedAt)')
+    expect(PEOPLE_EXPORT).toContain('const whereClause = and(...filters)')
+  })
+
+  it('declares no narrower row scope, because the table has no column to bind one to', () => {
+    // `people` carries no site and no owner column. Asserting the absence is the
+    // point: a future site-keyed column should make this fail and be given a real
+    // tier rather than silently inheriting a tenant-wide read.
+    expect(PEOPLE_EXPORT).not.toMatch(
+      /people\.(siteOrgUnitId|orgUnitId|personId|ownerTenantUserId)/,
+    )
   })
 })
 
-describe('15B-3C-1 — ppe export is bound by the holder column', () => {
-  const bind = (scope: ProjectScope) =>
-    projectScopePredicate(scope, { personCol: ppeItems.currentHolderPersonId })
+// ---------------------------------------------------------------------------
+// ppe — a tiered module, on the shared ladder.
+// ---------------------------------------------------------------------------
 
-  it('unrestricted -> no predicate', () => {
-    expect(bind({ kind: 'unrestricted' })).toBeUndefined()
+describe('the ppe export uses the shared native ladder, like the list', () => {
+  const ppePredicate = (permissions: string[], siteIds: string[]) =>
+    moduleScopeWhere(ctx(permissions, { scopes: atSites(siteIds) }), tx, {
+      prefix: 'ppe',
+      personCol: ppeItems.currentHolderPersonId,
+    })
+
+  it('read.all binds nothing, so the export is the tenant register', async () => {
+    expect(await ppePredicate(['ppe.read.all'], [SITE_A])).toBeUndefined()
   })
 
-  it('restricted -> only the gear held by people in scope', () => {
-    const out = bind({ kind: 'persons', personIds: [READER] })
-    const text = renderWithValues(out)
-    expect(text).toContain('"ppe_items"."current_holder_person_id"')
-    expect(text).toContain(READER)
-    expect(text).not.toContain(PEER_B)
+  it("read.self binds only the caller's own holder id", async () => {
+    const p = await ppePredicate(['ppe.read.self'], [SITE_A])
+    expect(bound(p)).toEqual([READER])
+    expect(bound(p)).not.toContain(PEER_B)
   })
 
-  it('a nonmatching placement yields a predicate excluding the other holder', () => {
-    const out = bind({ kind: 'persons', personIds: [PEER_B] })
-    const text = renderWithValues(out)
-    expect(text).toContain(PEER_B)
-    expect(text).not.toContain(READER)
+  it('a caller with no read key degrades to self, never to the register', async () => {
+    const p = await ppePredicate(['ppe.use'], [SITE_A])
+    expect(p).toBeDefined()
+    expect(bound(p)).toEqual([READER])
   })
 
-  it('empty -> a hard false', () => {
-    expect(isAlwaysFalse(bind({ kind: 'empty', reason: 'expired_assignment' }))).toBe(true)
+  it('the route and the list both call the shared ladder on the holder column', () => {
+    for (const [name, src] of [
+      ['export', PPE_EXPORT],
+      ['list', PPE_LIST],
+    ] as const) {
+      expect(src, name).toContain('moduleScopeWhere')
+      expect(src, name).toContain('prefix:')
+      expect(src, name).toContain('personCol: ppeItems.currentHolderPersonId')
+    }
   })
 
-  it('the route uses moduleScopeWhere on the holder column, like the list does', () => {
-    // Reuses the shared ladder rather than a second, export-only rule.
-    expect(PPE_EXPORT).toContain('moduleScopeWhere')
-    expect(PPE_EXPORT).toContain('prefix:')
-    expect(PPE_EXPORT).toContain('personCol: ppeItems.currentHolderPersonId')
-    expect(PPE_EXPORT).toContain('if (scope) filters.push(scope)')
-    // The capability gate is unchanged.
+  it('the route keeps the capability gate and the soft-delete filter', () => {
     expect(PPE_EXPORT).toContain("assertCan(ctx, 'ppe.read.all')")
+    expect(PPE_EXPORT).toContain('isNull(')
+    expect(PPE_EXPORT).toMatch(/filters\.push\(scope\)/)
+    // A substitution would drop the soft-delete check.
+    expect(PPE_EXPORT).not.toMatch(/whereClause\s*=\s*scope\b/)
   })
 
   it('adds no join and no new column', () => {
-    // The binding is the column the table already had. A `person_id` column or
-    // an `item_id -> holder` join would both be a schema change.
+    // The binding is the column the table already had.
     expect(PPE_EXPORT).not.toMatch(/\bperson_id\b/)
     expect(PPE_EXPORT).not.toMatch(/itemId:\s*ppeIssues/)
     expect(PPE_EXPORT).not.toMatch(/from\(ppeIssues|from\(ppeIssueReports/)
   })
 })
 
-// Phase 1 — the Safe Distance export reads through the shared native ladder.
-//
-// SUPERSEDES 15B-3C-1. That block asserted the CSV applied the same PROJECT
-// SCOPE as the list, and that the route must NOT use `moduleScopeWhere` because
-// `tools.safe-distance.use` was a flat key with no read tier. Both premises are
-// gone: `tools.safe-distance.read.{all,site,self}` now exists, so the export calls
-// the shared ladder and declares no Project Scope predicate of its own.
-//
-// The properties that mattered are preserved and are now enforced by the tier:
-//   • the export can never return more than the list, because both call the same
-//     helper over the same two columns;
-//   • the operate capability alone still cannot widen to the tenant — it resolves
-//     to the self tier and binds only the caller's own operator id.
-//
-// Row-level tier behaviour is covered in `safe-distance-native-tier.test.ts`.
-describe('Phase 1 — the safe-distance export uses the shared native ladder', () => {
-  it('routes through the one shared helper, not a bespoke predicate', () => {
+// ---------------------------------------------------------------------------
+// safe-distance — a tiered module whose binding is declared once.
+// ---------------------------------------------------------------------------
+
+describe('the safe-distance export uses the one shared binding', () => {
+  it('routes through the shared helper, not a bespoke predicate', () => {
     expect(SAFE_DISTANCE_EXPORT).toContain('safeDistanceScopeWhere(ctx, tx)')
     // No second binding: re-declaring the columns is how the list and the export
-    // drifted apart in 15B-3C-2A.
+    // drifted apart once already.
     expect(SAFE_DISTANCE_EXPORT).not.toMatch(/orgUnitCol:\s*safeDistanceRecords/)
     expect(SAFE_DISTANCE_EXPORT).not.toMatch(/personCol:\s*safeDistanceRecords/)
     expect(SAFE_DISTANCE_EXPORT).not.toMatch(/siteCol:\s*safeDistanceRecords/)
   })
 
-  it('carries no Project Scope dependency at all', () => {
-    expect(SAFE_DISTANCE_EXPORT).not.toContain('resolveProjectScopeIn')
-    expect(SAFE_DISTANCE_EXPORT).not.toContain('projectScopePredicate')
-    expect(SAFE_DISTANCE_EXPORT).not.toContain('ProjectScope')
+  it('the list calls the same helper, so the two cannot answer differently', () => {
+    expect(SAFE_DISTANCE_LIST).toContain('safeDistanceScopeWhere(ctx, tx)')
+  })
+
+  it('carries no second authorization dimension', () => {
+    for (const [name, src] of [
+      ['export', SAFE_DISTANCE_EXPORT],
+      ['list', SAFE_DISTANCE_LIST],
+    ] as const) {
+      expect(src, name).not.toContain('resolveProjectScopeIn')
+      expect(src, name).not.toContain('projectScopePredicate')
+      expect(src, name).not.toContain('ProjectScope')
+      expect(src, name).not.toContain('applyProjectScope')
+    }
   })
 
   it('keeps the operate-capability gate, so read and operate stay separate axes', () => {
     expect(SAFE_DISTANCE_EXPORT).toContain('assertCan(ctx, SAFE_DISTANCE_PERMISSION)')
   })
 
-  it('ANDs the scope into the existing filters rather than replacing them', () => {
-    // A substitution would drop the soft-delete check and leak deleted records.
+  it('ANDs the boundary into the existing filters rather than replacing them', () => {
     expect(SAFE_DISTANCE_EXPORT).toMatch(
       /const filters: SQL<unknown>\[\] = \[isNull\(safeDistanceRecords\.deletedAt\)\]/,
     )
@@ -222,66 +236,74 @@ describe('Phase 1 — the safe-distance export uses the shared native ladder', (
 })
 
 // ---------------------------------------------------------------------------
-// The cross-cutting property: a restricted caller cannot use a CSV to get around
-// what the list already hides. The list pages are the reference, exactly as
-// `project-scope-oracle.test.ts` treats the dashboard for analytics.
+// The cross-cutting property, restated for the three modules.
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-1 — the export cannot be a way around the list', () => {
-  /** How many people each of these scopes would let the export return. */
-  const visiblePeople = (scope: ProjectScope): number => {
-    const p = projectScopePredicate(scope, { personCol: people.id })
-    if (p === undefined) return Number.POSITIVE_INFINITY // company-wide
-    if (isAlwaysFalse(p)) return 0
-    return 1
-  }
-
-  it('a restricted caller exporting people gets a subset, not the roster', () => {
-    const scope: ProjectScope = {
-      kind: 'peopleAndOrgUnits',
-      orgUnitIds: [SITE_A],
-      personIds: [PEER_A],
+describe('no export can return more than its list', () => {
+  it('every tiered export pushes its boundary into the SAME filter list', () => {
+    // Substituting the boundary for the filter list would drop the soft-delete
+    // check and the search term, which is a leak of a different kind.
+    //
+    // The people export is deliberately NOT in this list: it has no narrower tier
+    // to push, because `people` declares no site or owner column. Its boundary is
+    // the capability gate plus RLS, asserted in its own block above.
+    for (const [name, src] of [
+      ['ppe', PPE_EXPORT],
+      ['safe-distance', SAFE_DISTANCE_EXPORT],
+    ] as const) {
+      expect(src, name).toContain('isNull(')
+      expect(src, `${name} must AND the boundary, not replace filters`).toMatch(
+        /filters\.push\((scope|scopeWhere)\)/,
+      )
+      expect(src, name).toContain('const whereClause = and(...filters)')
+      expect(src, name).not.toMatch(/whereClause\s*=\s*(scope|scopeWhere)\b/)
     }
-    expect(visiblePeople(scope)).toBeLessThan(Number.POSITIVE_INFINITY)
-    expect(visiblePeople(scope)).toBeGreaterThan(0)
   })
 
-  it('a caller with no assignment exports nothing at all', () => {
-    // The regression a management permission would otherwise open: `false`, so
-    // the file has headers and no rows — not the company.
-    expect(visiblePeople({ kind: 'empty', reason: 'no_assignment' })).toBe(0)
+  it('the people export keeps its own filters and adds no row scope', () => {
+    // The negative counterpart: asserting the absence is what stops a future
+    // column from being silently filtered on one surface only.
+    expect(PEOPLE_EXPORT).toContain('isNull(people.deletedAt)')
+    expect(PEOPLE_EXPORT).toContain('const whereClause = and(...filters)')
+    expect(PEOPLE_EXPORT).not.toMatch(/filters\.push\((scope|scopeWhere)\)/)
   })
 
-  it('the people list and the export resolve the scope the same way', () => {
-    // Both call the same resolver and the same adapter on the same column, so
-    // the two cannot drift. Asserted on the source so a future edit to one
-    // without the other fails here.
-    const list = source('../app/(app)/people/page.tsx')
-    expect(list).toContain('projectScopePredicate(projectScope, { personCol: people.id })')
-    expect(PEOPLE_EXPORT).toContain('projectScopePredicate(projectScope, { personCol: people.id })')
+  it('every export resolves its boundary inside its own transaction', () => {
+    // A boundary resolved outside the export's transaction could read a different
+    // snapshot from the rows it is about to filter.
+    for (const [name, src] of [
+      ['ppe', PPE_EXPORT],
+      ['safe-distance', SAFE_DISTANCE_EXPORT],
+    ] as const) {
+      expect(src, name).toMatch(/ctx\.db\(async \(tx\) =>/)
+      expect(src, name).toMatch(/await (moduleScopeWhere|safeDistanceScopeWhere)\(ctx, tx/)
+    }
   })
 
-  it('the ppe list and the ppe export resolve the scope the same way', () => {
-    const list = source('../app/(app)/ppe/page.tsx')
-    expect(list).toContain('personCol: ppeItems.currentHolderPersonId')
-    expect(PPE_EXPORT).toContain('personCol: ppeItems.currentHolderPersonId')
-  })
-
-  it('a restricted export filters rather than erroring, and never widens', () => {
-    // Every binding above can only narrow. `andPredicates` is the shared AND-ing
-    // helper; the exports push the scope into the SAME filter list as their
-    // other conditions rather than replacing them.
+  it('every export audits what it produced', () => {
     for (const [name, src] of [
       ['people', PEOPLE_EXPORT],
       ['ppe', PPE_EXPORT],
       ['safe-distance', SAFE_DISTANCE_EXPORT],
     ] as const) {
-      expect(src, name).toContain('isNull(')
-      expect(src, `${name} must AND the scope, not replace filters`).toMatch(
-        /filters\.push\((scope|scopeWhere)\)/,
-      )
-      expect(src, name).not.toMatch(/whereClause\s*=\s*scope\b/)
+      expect(src, name).toContain('recordAudit')
     }
-    void sql
+  })
+
+  it('an empty result is a header-only file, not an error and not the tenant', async () => {
+    for (const [name, src] of [
+      ['people', PEOPLE_EXPORT],
+      ['ppe', PPE_EXPORT],
+      ['safe-distance', SAFE_DISTANCE_EXPORT],
+    ] as const) {
+      expect(src, name).toContain('csvResponse')
+    }
+    // The self tier with no person record is the terminal case: `false`, never
+    // `undefined`. `undefined` would be the tenant-wide answer.
+    const p = await moduleScopeWhere(ctx([], { personId: null, scopes: atSites([SITE_A]) }), tx, {
+      prefix: 'ppe',
+      personCol: ppeItems.currentHolderPersonId,
+    })
+    expect(sqlText(p)).toBe('false')
   })
 })

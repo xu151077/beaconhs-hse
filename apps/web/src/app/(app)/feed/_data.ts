@@ -48,11 +48,11 @@ type ModuleScope = SQL | undefined | 'none'
  * filter", so a caller holding `incidents.read.all` (or `ca.read.all`,
  * `forms.response.read.all`) saw the WHOLE TENANT in the feed while
  * `/incidents`, `/corrective-actions` and the CSV exports — which all go through
- * the canonical resolver — correctly showed only their Project Scope.
+ * the canonical resolver — correctly showed only the rows their tiers allow.
  *
  * It also read `role_assignments.scope` directly, so its `site` tier used bare
- * scope ids with no org-tree walk and no personnel-placement expansion, and so
- * disagreed with the canonical answer in both directions depending on tier.
+ * scope ids with no org-tree walk, and so disagreed with the canonical answer in
+ * both directions depending on tier.
  *
  * It now DELEGATES to `moduleScopeWhere`, the one ladder the module lists,
  * exports, dashboard metrics, search and picker already use. `'none'` is kept as

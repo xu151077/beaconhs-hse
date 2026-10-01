@@ -174,7 +174,7 @@ When authorised, the sequence from `docs/hse-development-baseline.md` §17:
 | 7     | Incident/Investigation completion                                                                                                            | Due date, reviewer, CA link                                                           |
 | 8     | HSE Dashboard / Reports                                                                                                                      | Risk/finding datasets visible                                                         |
 | 9     | Notifications completion                                                                                                                     | All module paths notified                                                             |
-| 10    | Permission / Project Scope                                                                                                                   | Project scoping expressible; `people.*` gated                                         |
+| 10    | ~~Permission / Project Scope~~ — **withdrawn**; removed as a permanent decision                                                              | Authorization is Permission → Role Scope → Visibility Tier only                       |
 
 **Two independent items can proceed first, without waiting for phase approval:**
 

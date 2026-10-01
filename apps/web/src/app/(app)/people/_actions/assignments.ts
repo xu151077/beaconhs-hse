@@ -11,8 +11,9 @@
 //     audience.ts:96-103) resolved to zero people.
 //
 // Phase A only adds the ability to record assignments. It deliberately does NOT
-// change how authorisation consumes them — no Project Scope resolver, no change
-// to `read.all`, no change to `visibility.ts`.
+// change how authorisation consumes them — a placement is not an access boundary,
+// and recording one grants nothing on its own. Visibility is decided by
+// Permission, Role Scope and the read tier, none of which read this table.
 //
 // Semantics:
 //   • A person may hold SEVERAL concurrent assignments. There is no `is_primary`

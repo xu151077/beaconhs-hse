@@ -4,7 +4,7 @@ import { and, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm'
 import { documentAcknowledgments, documentVersions, documents } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { isUuid } from '@/lib/list-params'
 import { DocumentReader } from './_reader'
 
@@ -34,7 +34,7 @@ export default async function DocumentReadPage({ params }: { params: Promise<{ i
     // `documentReadFilter` yields `undefined` for a manager, and a manager is
     // NOT thereby allowed to see unpublished versions — the version query below
     // still requires `publishedAt`, unchanged.
-    const visibility = await documentAuthorizationFilter(ctx, tx)
+    const visibility = documentReadFilter(ctx)
     const docConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
     if (visibility) docConds.push(visibility)
 

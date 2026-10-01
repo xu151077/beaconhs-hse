@@ -1,27 +1,57 @@
-// Assignment validity — web-side form parsing, plus a re-export of the shared
-// effective-date rule.
+// Assignment validity — the effective-date RULE plus the form-input validators.
 //
-// The RULE (`todayIso`, `isAssignmentEffectiveOn`, `effectiveOn`, `IsoDate`)
-// moved to `packages/analytics/src/server/project-scope.ts` in 15B-3B, so the
-// web app, the worker and the resolver cannot drift into three definitions of
-// "currently effective". It is re-exported below unchanged, so every existing
-// `from '@/lib/assignment-validity'` import keeps working.
+// `people_assignments` carries a `validFrom` / `validTo` window, and "is this
+// assignment current?" is asked in two forms: a pure predicate for rendering the
+// person's assignment history, and a SQL predicate for queries. Both live here
+// so they cannot drift apart.
 //
-// What stays HERE is the form-input half: `parseIsoDate` and
-// `parseValidityWindow` exist to validate what an administrator typed into a
-// date field, and they are only ever called from React server components and the
-// people-assignment server actions. They are not part of the authorization
-// surface and moving them would drag the message translator into a package that
-// has no business owning user-facing copy.
+// The SQL form matches how `packages/compliance/src/audience.ts` and
+// `identity.ts` already read the same table: `valid_to` is INCLUSIVE, so a person
+// whose assignment ends today is still on it today.
+//
+// The form-input half (`parseIsoDate`, `parseValidityWindow`) validates what an
+// administrator typed into a date field. It is only ever called from React server
+// components and the people-assignment server actions, and it owns the message
+// translator, which has no business in a data package.
 
-import type { IsoDate } from '@beaconhs/analytics/server'
+import { and, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm'
+import type { AnyColumn } from 'drizzle-orm'
 
-export {
-  effectiveOn,
-  isAssignmentEffectiveOn,
-  todayIso,
-  type IsoDate,
-} from '@beaconhs/analytics/server'
+/** A `YYYY-MM-DD` calendar date, matching the pg `date` column type. */
+export type IsoDate = string
+
+/** Today as a `YYYY-MM-DD` string in UTC, matching how the DB compares dates. */
+export function todayIso(now: Date = new Date()): IsoDate {
+  return now.toISOString().slice(0, 10)
+}
+
+/**
+ * The pure form of the window rule, for rendering and for tests.
+ *
+ * `validTo` is INCLUSIVE: a person whose assignment ends today is still on the
+ * assignment today.
+ */
+export function isAssignmentEffectiveOn(
+  row: { validFrom: string; validTo: string | null },
+  today: IsoDate = todayIso(),
+): boolean {
+  if (row.validFrom > today) return false
+  return row.validTo === null || row.validTo >= today
+}
+
+/**
+ * The SQL form of the same rule, for queries. `sql`current_date`` is used rather
+ * than a bound parameter so the predicate stays sargable against the existing
+ * `(tenant_id, person_id)` and `(tenant_id, org_unit_id)` indexes and evaluates
+ * in the database's own timezone.
+ */
+export function effectiveOn(
+  validFrom: AnyColumn,
+  validTo: AnyColumn,
+  onDate: SQL = sql`current_date`,
+): SQL | undefined {
+  return and(lte(validFrom, onDate), or(isNull(validTo), gte(validTo, onDate)))
+}
 
 /**
  * Message translator: takes the ENGLISH SOURCE LITERAL and returns the string to

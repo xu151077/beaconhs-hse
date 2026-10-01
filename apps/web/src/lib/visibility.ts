@@ -1,39 +1,42 @@
-// Configurable record-visibility resolver.
+// BeaconHS record visibility.
 //
-// Turns a user's role-assignment scopes (RoleScope) into a WHERE predicate over
-// a record's "owner" columns, so a limited user sees only: their own records ·
-// own + a hand-picked set of people · a department (people in chosen departments
-// and/or groups) · specific sites · or everybody. Each record list calls this
-// inside its query and ANDs the result into its filters.
+// The model, top to bottom, with nothing in between:
 //
-// Super-admins and anyone holding a `tenant` scope see everything (returns
-// undefined). Department membership is read from people.departmentId and group
-// membership from the denormalised people.groupIds cache, so no extra joins are
-// needed.
+//     Tenant / RLS  ->  Permission  ->  Role Scope  ->  Read Tier  ->  predicate
 //
-// SINCE 15B-2 this file ANDs a third input: the canonical Project Scope
-// (`resolveProjectScopeIn`). The model is
+// Two resolvers live here.
 //
-//     Permission  ->  Read Tier  ->  Visibility  AND  Project Scope  ->  predicate
+// `recordVisibilityWhere` is scope-driven: it reads the caller's raw `RoleScope`
+// variants (own · chosen people · a department · chosen sites · everyone) and
+// turns them into a predicate over a record's owner columns. It is the older
+// model, still used by the modules that have not moved to tiered read keys.
 //
-// and the rule that makes it safe is that **Project Scope can only narrow**.
-// Before 15B-2 a maximal tier short-circuited to "no filter", which silently
-// discarded scope. Now `undefined` (no constraint) is returned for exactly one
-// reason — the caller is genuinely company-wide — and an empty scope is a hard
-// `sql`false``. `projectScopePredicate` is the single place that decides which.
+// `moduleScopeWhere` and `canSeeRecord` are the tiered ladder every record module
+// uses. The tier comes from `<prefix>.read.{all,site,self}`; the row filter comes
+// from the caller's `{type:'sites'}` Role Scope and their own identity.
+//
+// RLS is not represented here: `ctx.db()` already runs under
+// `withTenant(baseDb, ctx.tenantId, …)`, so the tenant boundary is enforced below
+// every predicate in this file.
 
-import { eq, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import type { PgColumn } from 'drizzle-orm/pg-core'
 import { people } from '@beaconhs/db/schema'
 import type { Database } from '@beaconhs/db'
 import { can, type RequestContext } from '@beaconhs/tenant'
-import { resolveProjectScopeIn } from './project-scope'
-import {
-  andPredicates,
-  isAlwaysFalse,
-  projectScopePredicate,
-  recordInProjectScope,
-} from './project-scope-predicate'
+
+/**
+ * AND predicates, treating `undefined` as "this leg did not constrain anything".
+ *
+ * The only AND-ing helper in this file, so a caller cannot compose a narrower leg
+ * beside a wider one by accident.
+ */
+export function andPredicates(...parts: (SQL | undefined)[]): SQL | undefined {
+  const present = parts.filter((p): p is SQL => p !== undefined)
+  if (present.length === 0) return undefined
+  if (present.length === 1) return present[0]!
+  return and(...present)!
+}
 
 type RecordOwnerColumns = {
   /** Person the record is about/assigned to (holder, owner, assignee, author). */
@@ -71,16 +74,6 @@ export async function recordVisibilityWhere(
   if (scopes.some((s) => s.type === 'tenant')) return undefined
 
   const conds: SQL[] = []
-
-  // Project Scope, ANDed in. Deliberately placed AFTER the two unrestricted
-  // returns above: those are the only paths that may yield `undefined`, and the
-  // only two that may skip the scope entirely.
-  const projectScope = await resolveProjectScopeIn(ctx, tx)
-  const scopeCond = projectScopePredicate(projectScope, {
-    orgUnitCol: cols.siteCol,
-    personCol: cols.personCol,
-  })
-  if (scopeCond) conds.push(scopeCond)
 
   // Always include the caller's own records (as subject and/or creator).
   if (cols.personCol && ctx.personId) {
@@ -162,22 +155,6 @@ type ModuleScopeCols = {
   siteCol?: PgColumn
   /** A person column when the viewer can also be the record's SUBJECT. */
   personCol?: PgColumn
-  /**
-   * Whether Project Scope is ANDed on top of the read tier. Defaults to `true`
-   * for every module.
-   *
-   * Set `false` for a module whose visibility is fully described by
-   * Permission + Role Scope + tier + RLS, so its rows are not narrowed a second
-   * time by a dimension that model does not use. This is an OPT-OUT on one
-   * conjunct of the shared ladder — not a second ladder, not a bespoke resolver
-   * and not a new scope type: `resolveVisibilityTier`, the site/self branches and
-   * `canSeeRecord` are unchanged, and the column bindings still come from the
-   * caller's own `{type:'sites'}` Role Scope.
-   *
-   * Used by Safe Distance, which carries `site_org_unit_id` and
-   * `operator_person_id` and therefore has a real native tier of its own.
-   */
-  applyProjectScope?: boolean
 }
 
 /** The "this record is mine" conditions: an owner column equals me, or I'm the subject. */
@@ -195,54 +172,42 @@ async function ownPredicates(ctx: RequestContext, cols: ModuleScopeCols): Promis
  *   all  → undefined (no extra filter; RLS already bounds to tenant)
  *   site → records at the caller's scoped sites, unioned with their own
  *   self → records the caller owns/created or is the subject of (else `false`)
- * Call inside `ctx.db((tx) => …)` so the person sub-select runs under the same tx.
+ *
+ * `_tx` is retained for signature stability: the tier ladder resolves entirely
+ * from `ctx`, and every one of its ~40 call sites passes the transaction it is
+ * already inside. Call inside `ctx.db((tx) => …)`.
  */
 export async function moduleScopeWhere(
   ctx: RequestContext,
-  tx: Database,
+  _tx: Database,
   cols: ModuleScopeCols,
 ): Promise<SQL | undefined> {
   const tier = resolveVisibilityTier(ctx, cols.prefix)
 
-  // Project Scope is resolved ONCE per call and ANDed with the visibility
-  // predicate below. It is not an input to the tier decision, and it never
-  // replaces the tier decision. A module that opts out resolves nothing and gets
-  // no conjunct, so its rows are bounded by the tier and RLS alone.
-  const scopeCond =
-    cols.applyProjectScope === false
-      ? undefined
-      : projectScopePredicate(await resolveProjectScopeIn(ctx, tx), {
-          orgUnitCol: cols.siteCol,
-          personCol: cols.personCol,
-        })
-
-  // Opt-in hazid read of others' assessments. Since 15B-2 this removes only the
-  // VISIBILITY restriction (it lets a self-tier holder see other people's rows) —
-  // it no longer implies company-wide, because Project Scope is ANDed regardless.
+  // Opt-in hazid read of others' assessments. It lifts the VISIBILITY tier only:
+  // a self-tier holder sees other people's rows, and it is still bounded by the
+  // caller's own sites when they hold any.
   const othersTier = cols.prefix === 'hazid' && can(ctx, 'hazid.read.others')
 
-  // An empty Project Scope is terminal: nothing a permission can grant is visible
-  // inside no scope. Returning the visibility predicate here would be a leak.
-  if (isAlwaysFalse(scopeCond)) return scopeCond
-
-  if (tier === 'all' || othersTier) return scopeCond
+  if (tier === 'all' || othersTier) return undefined
 
   const ownConds = await ownPredicates(ctx, cols)
 
   if (tier === 'site' && cols.siteCol) {
     const sites = mySiteIds(ctx)
     if (sites.length > 0) {
-      return andPredicates(or(inArray(cols.siteCol, sites), ...ownConds), scopeCond)
+      return or(inArray(cols.siteCol, sites), ...ownConds)
     }
     // read.site but no site scope assigned → fall through to own-only.
     // NOTE: this is the "own-only fallback" the 15B-1 audit flagged as
-    // disagreeing with `packages/analytics/src/server/scope.ts:383`, which
-    // withholds instead. The disagreement is recorded, not resolved here.
+    // disagreeing with `packages/analytics/src/server/scope.ts`, which withholds
+    // instead. The disagreement is recorded, not resolved here: both behaviours
+    // predate the removal of the second authorization dimension, so unifying them
+    // is a product decision and not part of that removal.
   }
 
-  const visibility =
-    ownConds.length === 0 ? sql`false` : ownConds.length === 1 ? ownConds[0]! : or(...ownConds)
-  return andPredicates(visibility, scopeCond)
+  if (ownConds.length === 0) return sql`false`
+  return ownConds.length === 1 ? ownConds[0]! : or(...ownConds)
 }
 
 type RecordOwnership = {
@@ -252,36 +217,24 @@ type RecordOwnership = {
   siteId?: string | null
   /** person id the record is about, compared to the caller's person. */
   personId?: string | null
-  /** See `ModuleScopeCols.applyProjectScope`. Must match the list filter's choice. */
-  applyProjectScope?: boolean
 }
 
 /**
  * Detail-page guard mirroring `moduleScopeWhere` for a single loaded record —
  * `notFound()` when this returns false. Closes the read-by-guessing-the-URL gap:
  * all → always; site → record at one of my sites (or mine); self → mine only.
+ *
+ * The branch order is the single-record form of `moduleScopeWhere`, so the list
+ * filter and this guard cannot disagree: a record the SQL filters out is not
+ * readable by id, and a record this refuses cannot come back from a list query.
  */
 export async function canSeeRecord(
   ctx: RequestContext,
-  tx: Database,
+  _tx: Database,
   rec: RecordOwnership,
 ): Promise<boolean> {
-  // Project Scope first, and it is NOT overridable by a permission. Resolved from
-  // the same resolver, in the same transaction, as `moduleScopeWhere` — so the
-  // list filter and this detail guard cannot disagree. A record the SQL filters
-  // out is not readable by id, and a record this refuses cannot come back from a
-  // list query.
-  if (rec.applyProjectScope !== false) {
-    const projectScope = await resolveProjectScopeIn(ctx, tx)
-    if (!recordInProjectScope(projectScope, { siteId: rec.siteId, personId: rec.personId })) {
-      return false
-    }
-  }
-
   const tier = resolveVisibilityTier(ctx, rec.prefix)
-  // Same opt-in as moduleScopeWhere, with the same narrowed meaning since 15B-2:
-  // `hazid.read.others` lifts the VISIBILITY tier, not the Project Scope check
-  // that already ran above.
+  // Same opt-in as moduleScopeWhere, with the same narrowed meaning.
   if (tier === 'all' || (rec.prefix === 'hazid' && can(ctx, 'hazid.read.others'))) return true
   if (tier === 'site' && rec.siteId && mySiteIds(ctx).includes(rec.siteId)) return true
 

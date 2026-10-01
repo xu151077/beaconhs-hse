@@ -354,16 +354,17 @@ async function main() {
     const [john, sarah, marcus, priya, tom] = insertedPeople
 
     // --- Personnel placement ---------------------------------------------
-    // Project Scope resolves from `people_assignments`, and until this step
-    // nothing seeded one, so every non-tenant-wide caller resolved to `empty`.
+    // Nothing seeded `people_assignments`, so the compliance audience and identity
+    // resolvers resolved to zero people for a freshly seeded tenant.
     // The placement is derived from data the fixture already has rather than
     // invented: Crew Alpha works Site A (Tank Farm) and Crew Bravo works Site B
     // (Cracker Unit). E001's own note — "Lead supervisor for Tank Farm
     // operations" — agrees, so the mapping is corroborated, not arbitrary.
     //
     // Office staff (E009, E010) are deliberately left unplaced. They have no
-    // crew, and leaving them out keeps the fail-closed `empty` path exercised
-    // by real seeded rows instead of only by test fixtures.
+    // crew, so the seeded rows exercise the real unplaced path that the
+    // audience and identity resolvers have to handle, instead of only test
+    // fixtures exercising it.
     const siteForCrew = new Map<string, string>([
       [crewAlpha!.id, siteA.id],
       [crewBravo!.id, siteB.id],

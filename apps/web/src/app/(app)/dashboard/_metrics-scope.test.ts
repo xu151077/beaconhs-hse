@@ -3,7 +3,6 @@ import { and, sql, type SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { can } from '@beaconhs/tenant'
 import { moduleScopeWhere } from '../../../lib/visibility'
-import { projectScopeTx } from '../../../lib/testing/project-scope-fixture'
 
 /**
  * F2 regression tests: the dashboard greeting showed tenant-wide figures to a
@@ -53,8 +52,12 @@ function context(
   } as unknown as Ctx
 }
 
-/** `moduleScopeWhere` ignores its tx for the site/owner tiers, so a stub is enough. */
-const tx = projectScopeTx() as Tx
+/**
+ * The tier ladder resolves entirely from `ctx` and never reads the transaction,
+ * so an empty stand-in is not a shortcut here — it is what the resolver actually
+ * does with it. A stub that threw would fail these tests, which is the point.
+ */
+const tx = {} as Tx
 
 const dialect = new PgDialect()
 

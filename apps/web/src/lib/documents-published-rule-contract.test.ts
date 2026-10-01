@@ -207,11 +207,11 @@ describe('15B-3C-3F — the three surfaces delegate rather than restate', () => 
   it('each imports and calls the shared helper', () => {
     for (const [name, src] of surfaces) {
       // 15B-3C: the shared helper each surface composes is now
-      // `documentAuthorizationFilter`, which is `documentReadFilter` AND-ed with
+      // `documentReadFilter`, which is the single canonical documents read rule —
       // the Project Scope usability gate. `documentReadFilter` itself is unchanged
       // and still answers only "may an unpublished document be seen".
-      expect(src, name).toContain("from '@/lib/assistant/document-project-scope'")
-      expect(src, name).toContain('documentAuthorizationFilter(ctx, tx)')
+      expect(src, name).toContain("from '@/lib/assistant/doc-access'")
+      expect(src, name).toContain('documentReadFilter(ctx)')
     }
   })
 
@@ -249,7 +249,7 @@ describe('15B-3C-3F — the 404 / redirect outcomes are preserved', () => {
     // Navigation, not authorization — the consolidation must not have absorbed it.
     expect(DETAIL).toContain('redirect(`/documents/${id}/read`)')
     // …and it is still reached only on the reader branch, after the probe.
-    const probe = DETAIL.indexOf('documentAuthorizationFilter(ctx, tx)')
+    const probe = DETAIL.indexOf('documentReadFilter(ctx)')
     const redirect = DETAIL.indexOf('redirect(`/documents/${id}/read`)')
     expect(probe).toBeGreaterThan(-1)
     expect(redirect).toBeGreaterThan(probe)

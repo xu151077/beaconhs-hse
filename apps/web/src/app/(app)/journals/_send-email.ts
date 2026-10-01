@@ -31,11 +31,11 @@ export async function sendJournalEntryEmail(ctx: RequestContext, entryId: string
   const authorPersonId = journalCanReadAll(ctx) ? null : await getAuthorPersonId(ctx)
 
   const data = await ctx.db(async (tx) => {
-    // 15B-3C-4B: `journalScopeWhere` now resolves Project Scope, which needs a
-    // transaction. This predicate's only consumer is the `.where(...)` below, which
-    // already runs inside this `ctx.db`, so the construction moved in here and
-    // uses that existing `tx`. No transaction is added and this one is unchanged:
-    // same boundary, same lifetime, and `resolveNotificationAudienceEmails` stays
+    // `journalScopeWhere` takes a transaction by signature and does not read it.
+    // This predicate's only consumer is the `.where(...)` below, which already
+    // runs inside this `ctx.db`, so the construction moved in here and uses that
+    // existing `tx`. No transaction is added and this one is unchanged: same
+    // boundary, same lifetime, and `resolveNotificationAudienceEmails` stays
     // inside it. The predicate itself is byte-for-byte the same, so the read
     // authorization it provides (a `journals.read.self` user cannot email another
     // author's journal by id, and soft-deleted entries are never sent) is

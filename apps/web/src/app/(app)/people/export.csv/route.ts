@@ -15,8 +15,6 @@ import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { withRouteErrors } from '@/lib/api/errors'
 import { parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
-import { resolveProjectScopeIn } from '@/lib/project-scope'
-import { projectScopePredicate } from '@/lib/project-scope-predicate'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,25 +44,25 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     : 'active'
   const departmentFilter = pickString(sp.department) ?? null
   const ctx = await requireExportContext()
+  // Two independent capabilities, both required.
+  //
+  // `admin.users.manage` is a MANAGEMENT capability: it says who may export the
+  // roster at all. `people.read.all` is the READ capability the /people list
+  // requires. Requiring both is what makes "a CSV is the same rows as the list"
+  // true for a CUSTOM role that holds one without the other — the export must
+  // never be a way around a screen the caller cannot open.
   assertCan(ctx, 'admin.users.manage')
+  assertCan(ctx, 'people.read.all')
 
   const rows = await ctx.db(async (tx) => {
-    // Project Scope. `people` has no location column, so the binding is the
-    // person column — the same one the /people list uses (`people/page.tsx`).
-    // Resolved inside this transaction so the org tree and assignment reads run
-    // under the same RLS context as the export query.
-    //
-    // `admin.users.manage` is a MANAGEMENT capability: it says who may export the
-    // roster at all. It is NOT a licence to export the whole tenant. Holding it
-    // without a company-wide scope must still yield only the caller's scoped
-    // people, exactly as the list does. An empty scope is a hard `false`, so a
-    // caller with no assignment exports an empty file rather than the company.
-    const projectScope = await resolveProjectScopeIn(ctx, tx)
-    const scopeWhere = projectScopePredicate(projectScope, { personCol: people.id })
-
+    // The same boundary the /people list applies, so the CSV can never be a way
+    // around the screen. `admin.users.manage` is a MANAGEMENT capability and
+    // `people.read.all` is the read capability the list requires; both holders of
+    // the former are in the latter's audience, and RLS bounds the query to the
+    // tenant. `people` declares no site or owner column, so there is no narrower
+    // native tier to apply.
     const primaryTitleName = primaryPersonTitleName(people.id, people.tenantId)
     const filters: SQL<unknown>[] = [isNull(people.deletedAt)]
-    if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
       const term = `%${params.q}%`
       const cond = or(

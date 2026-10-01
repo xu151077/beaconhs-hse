@@ -48,7 +48,7 @@ import {
 import { attachmentUrl } from '@/lib/attachment-url'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { formatDate } from '@/lib/datetime'
 import { activityPageForEntity, recordAuditInTransaction } from '@/lib/audit'
 import { assertUploadedDocumentPdf } from '@/lib/document-version-policy'
@@ -441,7 +441,7 @@ export default async function DocumentDetailPage({
     // Scope half of the rule reads the org tree and assignments and must run under
     // the same RLS context as the row it filters.
     const readable = await ctx.db(async (tx) => {
-      const visibility = await documentAuthorizationFilter(ctx, tx)
+      const visibility = documentReadFilter(ctx)
       const probeConds: SQL[] = [eq(documents.id, id), isNull(documents.deletedAt)]
       if (visibility) probeConds.push(visibility)
       const [doc] = await tx

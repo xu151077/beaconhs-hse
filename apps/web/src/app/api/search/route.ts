@@ -24,7 +24,7 @@ import { can } from '@beaconhs/tenant'
 import { getRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,7 +105,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     // page 404s without it, so search must skip the group entirely.
     const canReadDocuments = can(ctx, 'documents.read') || can(ctx, 'documents.manage')
     const documentsVis: SQL<unknown> | undefined = canReadDocuments
-      ? await documentAuthorizationFilter(ctx, tx)
+      ? documentReadFilter(ctx)
       : sql`false`
 
     const [

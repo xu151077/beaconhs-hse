@@ -9,7 +9,7 @@ import { can } from '@beaconhs/tenant'
 import { documentCategories, documentTypes, documents } from '@beaconhs/db/schema'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
-import { documentAuthorizationFilter } from '@/lib/assistant/document-project-scope'
+import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
@@ -78,12 +78,10 @@ export default async function DocumentsPage({
       // everyone else it yields `documents.status = 'published'`. The resulting
       // SQL is unchanged by this delegation — see documents-published-rule test.
       //
-      // 15B-3C: the shared helper is now `documentAuthorizationFilter`, which ANDs
-      // the publication rule with the Project Scope usability gate. The library is
-      // tenant-level, so a `restricted` reader adds no scope constraint; an
-      // `empty`/`unknown` scope adds `false` and this list comes back empty. The
-      // publication half of the rule is untouched.
-      const visibility = await documentAuthorizationFilter(ctx, tx)
+      // The library is tenant-level by design, so that rule is the whole read
+      // boundary: every `documents.read` holder sees the tenant's published
+      // library, and only a document manager sees the rest.
+      const visibility = documentReadFilter(ctx)
       if (visibility) filters.push(visibility)
       if (params.q) {
         const term = `%${params.q}%`

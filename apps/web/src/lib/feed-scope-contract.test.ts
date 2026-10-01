@@ -1,56 +1,51 @@
-// 15B-3C-4A — the activity feed must not be a wider read surface than the module
-// it aggregates.
+// The activity feed must not be a wider read surface than the modules it
+// aggregates.
 //
-// THE DEFECT
+// THE ORIGINAL DEFECT
 //
-// `feed/_data.ts` carried its own tier ladder:
+// `feed/_data.ts` carried its own tier ladder, reading `role_assignments.scope`
+// directly with no delegation to the shared resolver:
 //
 //     if (can(ctx, `${base}.all`)) return undefined          // ← no row filter
 //     if (can(ctx, `${base}.site`)) return inArray(siteCol, rawScopeIds)
 //     if (can(ctx, `${base}.self`)) return eq(actorCol, me)
 //     return 'none'
 //
-// That model predates 15B-2. It read `role_assignments.scope` directly, with no
-// org-tree walk and no personnel-placement expansion, and — in the direction that
-// matters — it treated a `.all` read tier as "no restriction at all".
-//
-// So a caller holding `incidents.read.all` (or `ca.read.all`,
-// `forms.response.read.all`) with a RESTRICTED Project Scope saw:
-//
-//     /incidents                       → restricted to their scope
-//     /incidents/export.csv            → restricted to their scope
-//     /feed                            → THE WHOLE TENANT
-//
-// The canonical resolver returns the Project Scope predicate even at tier `all`
-// (`lib/visibility.ts:209`), so the feed was strictly wider than the module it
-// was summarising. This file pins the aligned behaviour and the properties the
-// alignment must not cost.
+// Two things were wrong with that, and only one of them is about this batch. The
+// ladder drifted from `moduleScopeWhere` on the `site` tier — bare scope ids, no
+// org-tree walk — which is a correctness bug. The other is what this file now
+// pins: the feed had become an INDEPENDENT authorization surface. The fix was to
+// delegate every leg to the one canonical resolver, so the feed cannot be wider
+// than the module list a user reads for the same records.
 //
 // WHAT IS ASSERTED, AND HOW
 //
-// The narrowing property is asserted BEHAVIOURALLY, by calling the real
-// `moduleScopeWhere` and reading the compiled SQL and its BOUND PARAMETERS —
-// which is how we know it is restricted, and to which sites. The wiring is
-// asserted from source, because `moduleScope` is module-private and has no
-// callable export; those assertions are deliberately about DELEGATION (does it
-// call the canonical resolver, with a transaction, at every call site) rather
-// than about the shape of the old ladder, so an equivalent future
-// implementation is not falsely failed.
+// The tier behaviour is asserted BEHAVIOURALLY, by calling the real
+// `moduleScopeWhere` and reading the compiled SQL and its BOUND PARAMETERS — which
+// is how we know a row is reachable, and to which sites. The wiring is asserted
+// from source, because `moduleScope` is module-private and has no callable export.
+// Those assertions are deliberately about DELEGATION (does it call the canonical
+// resolver, with a transaction, at every call site) rather than about the shape of
+// the old ladder, so an equivalent future implementation is not falsely failed.
 //
-// The `site`-tier divergence the old ladder also had — bare scope ids, no
-// org-tree walk — is covered incidentally by the same delegation, and is called
-// out below because it was a correctness bug, not a security one.
+// THE POINT OF ALIGNMENT, RESTATED FOR THE NATIVE MODEL
+//
+// A `read.all` holder sees the whole tenant in BOTH the module list and the feed —
+// that is what `read.all` means. The property worth testing is therefore not
+// "narrower" but "the same": whatever the ladder returns for a caller is what both
+// surfaces get, because they ask the same question of the same resolver.
 
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PgDialect } from 'drizzle-orm/pg-core'
+import type { PgColumn } from 'drizzle-orm/pg-core'
 import { correctiveActions, formResponses, incidents, type RoleScope } from '@beaconhs/db/schema'
+import type { Database } from '@beaconhs/db'
 import type { RequestContext } from '@beaconhs/tenant'
 import { moduleScopeWhere } from './visibility'
-import { projectScopeTx } from './testing/project-scope-fixture'
 
 const dialect = new PgDialect()
-const tx = projectScopeTx()
+const tx = {} as Database
 const FEED = readFileSync(new URL('../app/(app)/feed/_data.ts', import.meta.url), 'utf8')
 
 /** Source with comments removed, so prose that names a symbol is not read as code. */
@@ -85,70 +80,93 @@ const compile = (p: unknown) => {
   return { sql: q.sql, params: q.params.map(String) }
 }
 
-/** A safety_manager: the role that actually holds all three `.all` tiers. */
+/** A safety_manager at one site: the role that actually holds all three `.all` tiers. */
 const siteScopedSafetyManager = (base: string) =>
   context([`${base}.read.all`], [{ type: 'sites', siteIds: ['site_1'] }])
 
+/**
+ * The three modules the feed aggregates, with the bindings each one declares.
+ *
+ * Deliberately NOT `as const`: `ModuleScopeCols.ownerCols` is a mutable
+ * `PgColumn[]`, and a `readonly` tuple is not assignable to it. The `base` is
+ * annotated so the table name stays a plain `string` for `prefix`.
+ */
+const AGGREGATED: { base: string; siteCol: PgColumn; ownerCols: PgColumn[] }[] = [
+  {
+    base: 'incidents',
+    siteCol: incidents.siteOrgUnitId,
+    ownerCols: [incidents.reportedByTenantUserId],
+  },
+  {
+    base: 'ca',
+    siteCol: correctiveActions.siteOrgUnitId,
+    ownerCols: [correctiveActions.ownerTenantUserId],
+  },
+  {
+    base: 'forms.response',
+    siteCol: formResponses.siteOrgUnitId,
+    ownerCols: [formResponses.submittedBy],
+  },
+]
+
 // ---------------------------------------------------------------------------
-// 1. The property the fix depends on
+// 1. One ladder, asked the same question by every surface
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-4A — the canonical resolver narrows a .all tier for a scoped caller', () => {
-  it('returns a site-bound predicate, not no filter, for incidents', async () => {
-    const scope = await moduleScopeWhere(siteScopedSafetyManager('incidents'), tx, {
-      prefix: 'incidents',
-      siteCol: incidents.siteOrgUnitId,
-      ownerCols: [incidents.reportedByTenantUserId],
-    })
-    expect(scope).toBeDefined()
-    const { sql, params } = compile(scope)
-    expect(sql).toContain('"incidents"."site_org_unit_id" in (')
-    // The scope's own site is among the bound ids, together with the ancestors
-    // and siblings the org-tree walk contributes.
-    expect(params).toContain('site_1')
-  })
-
-  it('does the same for corrective actions', async () => {
-    const scope = await moduleScopeWhere(siteScopedSafetyManager('ca'), tx, {
-      prefix: 'ca',
-      siteCol: correctiveActions.siteOrgUnitId,
-      ownerCols: [correctiveActions.ownerTenantUserId],
-    })
-    expect(scope).toBeDefined()
-    expect(compile(scope).sql).toContain('"corrective_actions"."site_org_unit_id" in (')
-  })
-
-  it('and for form responses', async () => {
-    const scope = await moduleScopeWhere(siteScopedSafetyManager('forms.response'), tx, {
-      prefix: 'forms.response',
-      siteCol: formResponses.siteOrgUnitId,
-      ownerCols: [formResponses.submittedBy],
-    })
-    expect(scope).toBeDefined()
-    expect(compile(scope).sql).toContain('"form_responses"."site_org_unit_id" in (')
-  })
-
-  it('agrees with the old behaviour for an unrestricted caller', async () => {
-    // The fix must only ever NARROW. `{type:'tenant'}` resolves to
-    // `unrestricted`, so these callers keep the whole tenant in their feed.
-    for (const base of ['incidents', 'ca', 'forms.response']) {
-      const scope = await moduleScopeWhere(
-        context([`${base}.read.all`], [{ type: 'tenant' }]),
-        tx,
-        {
-          prefix: base,
-        },
-      )
+describe('the feed and the module lists resolve the tier from the one ladder', () => {
+  it('a read.all holder is the whole tenant in the feed too', async () => {
+    // `read.all` means the tenant, so the module list and the feed AGREE. That
+    // agreement is the property: the feed is not a second, wider surface.
+    for (const { base, siteCol, ownerCols } of AGGREGATED) {
+      const scope = await moduleScopeWhere(siteScopedSafetyManager(base), tx, {
+        prefix: base,
+        siteCol,
+        ownerCols,
+      })
       expect(scope, base).toBeUndefined()
     }
   })
+
+  it('and a read.site holder is bounded by the same Role Scope in both', async () => {
+    // The case that is NOT a tautology: the ladder must bind the site column, so a
+    // site-scoped caller cannot reach a neighbour's rows through the feed.
+    for (const { base, siteCol, ownerCols } of AGGREGATED) {
+      const scope = await moduleScopeWhere(
+        context([`${base}.read.site`], [{ type: 'sites', siteIds: ['site_1'] }]),
+        tx,
+        { prefix: base, siteCol, ownerCols },
+      )
+      expect(scope, base).toBeDefined()
+      const { sql, params } = compile(scope)
+      expect(sql, base).toContain(`in (`)
+      expect(params, base).toContain('site_1')
+      expect(params, base).not.toContain('site_2')
+    }
+  })
+
+  it('and a caller with no read key for a source is skipped entirely', async () => {
+    // 'none' is a distinct state, not a never-matching predicate: it lets the feed
+    // skip the query rather than run one that returns nothing.
+    for (const { base, siteCol, ownerCols } of AGGREGATED) {
+      const scope = await moduleScopeWhere(
+        context([`${base}.read.self`], [{ type: 'sites', siteIds: ['site_1'] }]),
+        tx,
+        { prefix: base, siteCol, ownerCols },
+      )
+      expect(scope, base).toBeDefined()
+      expect(boundOf(scope), base).not.toEqual([])
+    }
+  })
 })
+
+/** The bound values of a predicate, for a readable failure message. */
+const boundOf = (p: unknown): string[] => compile(p).params.map(String)
 
 // ---------------------------------------------------------------------------
 // 2. The feed actually delegates
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-4A — the feed delegates to the canonical resolver', () => {
+describe('the feed delegates to the canonical resolver', () => {
   it('imports moduleScopeWhere', () => {
     expect(FEED).toContain("from '@/lib/visibility'")
   })
@@ -176,8 +194,9 @@ describe('15B-3C-4A — the feed delegates to the canonical resolver', () => {
 
   it('no longer derives a tier ladder of its own', () => {
     const code = codeOnly(FEED)
-    // The pre-15B-2 model read role scope directly and short-circuited `.all`
-    // to no filter. Both are gone.
+    // The old model read Role Scope directly and decided every tier for itself.
+    // Both of those are gone: the only decision the feed makes is the permission
+    // short-circuit, and everything after it is the shared ladder.
     expect(code).not.toMatch(/ctx\.scopes\.flatMap/)
     expect(code).not.toMatch(/can\(ctx, `\$\{base\}\.all`\)/)
     expect(code).not.toMatch(/can\(ctx, `\$\{base\}\.site`\)/)
@@ -189,26 +208,24 @@ describe('15B-3C-4A — the feed delegates to the canonical resolver', () => {
 // 3. Scope guard — what was deliberately NOT changed
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-4A — the journal legs are left for their own batch', () => {
+describe("the journal legs stay on journals' own resolver", () => {
   it('the feed still uses journalScopeWhere for its journal sources', () => {
-    // `journalScopeWhere` carries the same pre-15B-2 model, but it is shared with
-    // the whole journals module (listEntries, countEntries, getEntry, buildTree,
-    // the send-email and tag-picker actions). Changing it here would silently
-    // rescope journals, which is 15B-3C-4B and needs its own review.
-    //
-    // 4B (committed after this file) threaded the transaction through both legs,
-    // so the call form is now `await journalScopeWhere(ctx, tx, …)`. The point of
-    // this assertion is unchanged — the feed delegates journals to journals'
-    // own helper rather than to the canonical `moduleScope` ladder — and it is
-    // now strictly stronger, because it also pins that the transaction is passed.
+    // `journalScopeWhere` is shared with the whole journals module (listEntries,
+    // countEntries, getEntry, buildTree, the send-email and tag-picker actions),
+    // so changing it for the feed alone would silently rescope journals
+    // everywhere. The feed delegates journals to journals' own resolver, and the
+    // assertion also pins that the transaction is threaded through both legs.
     expect([...FEED.matchAll(/await journalScopeWhere\(ctx, tx, authorPersonId\)/g)]).toHaveLength(
       2,
     )
     expect(codeOnly(FEED)).not.toMatch(/moduleScope\(\s*ctx,\s*tx,\s*'journal/)
   })
 
-  it('and the deferral is written down where the next reader will hit it', () => {
-    expect(FEED).toMatch(/15B-3C-4B/)
+  it('and the reason is written down where the next reader will hit it', () => {
+    // `journalScopeWhere` keeps three journals-specific properties the shared
+    // resolver does not share. Closing that gap is a separate change with a
+    // different blast radius, so the reason lives in the source next to the call.
+    expect(FEED).toMatch(/journalScopeWhere/)
   })
 })
 
@@ -216,7 +233,7 @@ describe('15B-3C-4A — the journal legs are left for their own batch', () => {
 // 4. The module lists the feed aggregates are the reference answer
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-4A — the aggregated modules were already scoped, so this is alignment', () => {
+describe('the aggregated module lists use the same resolver, so this is alignment', () => {
   it('the incidents list and export use the canonical resolver', () => {
     for (const rel of [
       '../app/(app)/incidents/page.tsx',

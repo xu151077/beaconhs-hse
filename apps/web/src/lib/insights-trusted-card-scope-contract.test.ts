@@ -110,7 +110,7 @@ describe('15B-3C — the tenant-wide grant does not spread to form responses', (
     //   Insights trusted KPI               -> DENIED without read.all
     //
     // Only `canReadAppResponses` is narrowed by this decision.
-    // `moduleScopeWhere` and `projectScopePredicate` are untouched, so a
+    // `moduleScopeWhere` and `documentReadFilter` are untouched, so a
     // `read.site` holder is still narrowed on the records themselves — the
     // analytics suite asserts that half against the same underlying table.
     expect(canReadAppResponses(ctx(READ_SITE))).toBe(false)

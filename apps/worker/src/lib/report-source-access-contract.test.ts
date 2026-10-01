@@ -24,14 +24,22 @@ describe('scheduled report source authorization contract', () => {
     expect(workerSource).toContain('scopeReportSourcesForRunAs(')
   })
 
-  it('resolves and passes the run-as member Project Scope', () => {
-    // 15B-3B. Two restrictions now apply to a scheduled run, not one: the read
-    // tier AND the personnel placement. The scope must be resolved from the same
-    // resolver the web app uses, inside the run's own tenant transaction, and
-    // passed in — omitting it fails closed and would silently return no rows.
-    expect(workerSource).toContain('resolveProjectScopeIn')
-    expect(workerSource).toContain('await resolveProjectScopeIn(requestCtx, tx)')
-    // The worker must not reach into the web app for it.
+  it('takes every authorization input from the run-as context, with nothing to omit', () => {
+    // The run's whole read boundary is `requestCtx`: the permission set, the
+    // `{type:'sites'}` Role Scope, the person and the membership. There is no
+    // second dimension to resolve and therefore nothing a caller can forget to
+    // pass — which is the fail-open failure mode this replaced.
+    const call = workerSource.slice(
+      workerSource.indexOf('scopeReportSourcesForRunAs('),
+      workerSource.indexOf(')', workerSource.indexOf('scopeReportSourcesForRunAs(')) + 1,
+    )
+    expect(call).toContain('requestCtx')
+    expect(call).toContain('discovered')
+    // No scope resolution on this path at all.
+    expect(workerSource).not.toContain('resolveProjectScopeIn')
+    expect(workerSource).not.toContain('ProjectScope')
+    expect(workerSource).not.toContain('projectScope')
+    // The worker must not reach into the web app for authorization either.
     expect(workerSource).not.toMatch(/from '@\/lib\/|from ['"]\.\.\/\.\.\/apps\/web/)
   })
 })

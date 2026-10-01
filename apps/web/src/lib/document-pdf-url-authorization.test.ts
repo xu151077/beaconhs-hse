@@ -106,7 +106,7 @@ describe('15B-3C-3H-1 — a reader reaches published documents only', () => {
   })
 
   it('the published rule is a delegated equality, not a restatement', () => {
-    expect(ACTIONS).toContain('documentAuthorizationFilter(ctx, tx)')
+    expect(ACTIONS).toContain('documentReadFilter(ctx)')
     expect(compile(documentReadFilter(reader())!).sql).toBe('"documents"."status" = $1')
     // The old inline comparison must be gone from this action.
     expect(ACTIONS).not.toMatch(/status !== 'published'/)
@@ -224,9 +224,7 @@ describe('15B-3C-3H-1 — opts.draft stays a manager-only, publication-agnostic 
       'return { ok: true, url: `/documents/${documentId}/pdf',
       draftBranch,
     )
-    const readerRule = ACTIONS.indexOf(
-      'const visibility = await documentAuthorizationFilter(ctx, tx)',
-    )
+    const readerRule = ACTIONS.indexOf('const visibility = documentReadFilter(ctx)')
     expect(draftBranch).toBeGreaterThan(-1)
     expect(draftReturn).toBeGreaterThan(draftBranch)
     expect(readerRule).toBeGreaterThan(draftReturn)

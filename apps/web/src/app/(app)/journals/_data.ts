@@ -122,10 +122,10 @@ async function entryWhere(
 ): Promise<SQL | undefined> {
   // Soft-deleted entries are invisible everywhere (list, tree, counts, export).
   const conds: SQL[] = [isNull(journalEntries.deletedAt)]
-  // 15B-3C-4B: the two browsing helpers resolve Project Scope inside `tx`, so they
-  // are awaited here and the transaction is threaded in. `journalSelfScopeWhere`
-  // stays synchronous — the personal compose workspace is deliberately not
-  // scope-bound. Nothing else below this line is changed.
+  // The two browsing helpers are async, so they are awaited here. `journalScopeWhere`
+  // takes a transaction by signature and does not read it;
+  // `journalSelfScopeWhere` stays synchronous — the personal compose workspace is
+  // deliberately not tier-bound. Nothing else below this line is changed.
   const scope = targetAuthor
     ? await journalAuthorScopeWhere(ctx, tx, authorPersonId, targetAuthor)
     : selfOnly
@@ -287,10 +287,10 @@ export async function countEntries(ctx: RequestContext, filters: JournalFilters)
 export async function listRecordsFacets(ctx: RequestContext): Promise<JournalRecordsFacets> {
   const authorPersonId = await getAuthorPersonId(ctx)
   return ctx.db(async (tx) => {
-    // 15B-3C-4B: the scope resolves Project Scope, which needs a transaction, so
-    // this one statement moved inside the `ctx.db` block that immediately
-    // consumes it. The transaction itself — its lifetime, its boundary and every
-    // query in it — is unchanged; only the statement's position moved.
+    // `journalScopeWhere` is async, so this one statement moved inside the
+    // `ctx.db` block that immediately consumes it. The transaction itself — its
+    // lifetime, its boundary and every query in it — is unchanged; only the
+    // statement's position moved.
     const scope = and(
       isNull(journalEntries.deletedAt),
       await journalScopeWhere(ctx, tx, authorPersonId),
@@ -462,10 +462,9 @@ export async function buildTree(
       : undefined
 
   const pageRows = await ctx.db(async (tx) => {
-    // 15B-3C-4B: `entryWhere` now resolves Project Scope, which needs a
-    // transaction. This one statement moved inside the `ctx.db` block that is
-    // its only consumer (`.where(...)` below); the transaction itself and every
-    // query in it are unchanged.
+    // `entryWhere` is async, so this one statement moved inside the `ctx.db` block
+    // that is its only consumer (`.where(...)` below); the transaction itself and
+    // every query in it are unchanged.
     const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly, targetAuthor)
     const base = await tx
       .select({
@@ -696,17 +695,16 @@ export async function getWorkspaceData(
 ): Promise<WorkspaceData> {
   const authorPersonId = await getAuthorPersonId(ctx)
   const selfOnly = !targetAuthor
-  // 15B-3C-4B: `journalAuthorScopeWhere` now resolves Project Scope inside a
-  // transaction, so it needs a `tx`. This predicate has no transaction of its own
+  // `journalAuthorScopeWhere` is async. This predicate has no transaction of its own
   // to live in — it is consumed by `heatmap` / `onThisDay` / `listTagSuggestions`,
   // each of which opens its OWN transaction and which are all started by the
-  // `Promise.all` below. So scope resolution gets a short, dedicated
-  // `ctx.db` transaction that ends the moment the predicate is returned. The
+  // `Promise.all` below. So the call gets a short, dedicated `ctx.db` transaction
+  // that ends the moment the predicate is returned. The
   // transaction is the same shape as the `getAuthorPersonId(ctx)` call two lines
   // above: no new client, no shared state, no data query inside it. The three
   // consumers, their transactions and the `Promise.all` are untouched.
   // The `journalSelfScopeWhere` branch stays synchronous — the personal compose
-  // workspace is deliberately not scope-bound.
+  // workspace is deliberately not tier-bound.
   const scopeOnly = and(
     isNull(journalEntries.deletedAt),
     targetAuthor
@@ -720,10 +718,9 @@ export async function getWorkspaceData(
     onThisDay(ctx, scopeOnly),
     listTagSuggestions(ctx, scopeOnly),
     ctx.db(async (tx) => {
-      // 15B-3C-4B: `entryWhere` now resolves Project Scope, which needs a
-      // transaction. This one statement moved inside the `ctx.db` block that is
-      // its only consumer (`.where(...)` below); the transaction itself and every
-      // query in it are unchanged.
+      // `entryWhere` is async, so this one statement moved inside the `ctx.db`
+      // block that is its only consumer (`.where(...)` below); the transaction
+      // itself and every query in it are unchanged.
       const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly, targetAuthor)
       const [row] = await tx
         .select({

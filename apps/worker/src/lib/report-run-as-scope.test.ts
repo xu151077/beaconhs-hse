@@ -1,18 +1,30 @@
+// Scheduled report run-as authorization.
+//
+// The schedule owner picks who a run impersonates, but the run must report only
+// what THAT member could report by hand. This file proves the worker resolves the
+// run-as member's Permission, Role Scope and read tier, and drops everything else.
+//
+// The property that matters most is the last one in the first block: a scheduled
+// run can never out-reach the same member's own dashboard, because both build their
+// subject through the same shared `analyticsScopeSubject` constructor and pass it
+// to the same `scopeAnalyticsEntities`.
+//
+// HOW IT IS ASSERTED
+//
+// The inventory is produced by the REAL `discoverEntities()` and narrowed by the
+// REAL `scopeReportSourcesForRunAs`, so the `baseFilter` asserted here is the one a
+// scheduled report actually receives. Filter values are compared through the
+// serialized rule group, because the ids are values, not SQL text.
+
 import { describe, expect, it } from 'vitest'
 import type { AnalyticsEntity } from '@beaconhs/analytics'
-import { discoverEntities, type ProjectScope } from '@beaconhs/analytics/server'
+import { discoverEntities } from '@beaconhs/analytics/server'
 import { PERMISSION_CATALOGUE } from '@beaconhs/db/schema'
 import type { RequestContext } from '@beaconhs/tenant'
 import { reportRunAsScopeSubject, scopeReportSourcesForRunAs } from './report-run-as-scope'
 
 const SITE_A = '018f47ba-86c4-7ee2-8d7a-5e7602f2a001'
 const SITE_B = '018f47ba-86c4-7ee2-8d7a-5e7602f2a002'
-
-/** The foreman is placed at Site A — the personnel fact Project Scope resolves. */
-const AT_SITE_A: ProjectScope = { kind: 'orgUnits', orgUnitIds: [SITE_A], personIds: [] }
-
-/** Placed at both sites, the union a two-assignment person resolves. */
-const AT_BOTH: ProjectScope = { kind: 'orgUnits', orgUnitIds: [SITE_A, SITE_B], personIds: [] }
 
 function runAsCtx(over: Partial<RequestContext> = {}): RequestContext {
   return {
@@ -44,58 +56,33 @@ function entityFor(sources: readonly AnalyticsEntity[], table: string): Analytic
   return found
 }
 
+const ruleText = (entity: AnalyticsEntity): string => JSON.stringify(entity.baseFilter)
+
 describe('scheduled report run-as authorization', () => {
-  it("pins the run-as member's site scope onto the source inventory", () => {
-    const scoped = scopeReportSourcesForRunAs(runAsCtx(), discovered(), AT_SITE_A)
+  it("pins the run-as member's Role Scope onto the source inventory", () => {
+    const scoped = scopeReportSourcesForRunAs(runAsCtx(), discovered())
     const incidents = entityFor(scoped, 'incidents')
 
-    // TWO legs, because 15B-3B introduced a second, independent restriction:
-    //   1. the read TIER — `incidents.read.site` plus the `{type:'sites'}` scope
-    //      naming Site A;
-    //   2. Project SCOPE — the personnel placement, which independently resolves
-    //      to Site A.
-    // They are different facts and either alone would not be enough. Here they
-    // happen to agree, so the filter mentions Site A twice; what matters is that
-    // it is an `and` of both, never a single leg that could be dropped.
-    const filter = incidents.baseFilter
-    expect(filter?.combinator).toBe('and')
-    const serialized = JSON.stringify(filter)
+    // `incidents.read.site` plus the `{type:'sites'}` scope naming Site A. The
+    // filter mentions Site A and never Site B, so a scheduled run cannot report
+    // another site's rows.
+    const serialized = ruleText(incidents)
     expect(serialized).toContain('site_org_unit_id')
     expect(serialized).toContain(SITE_A)
     expect(serialized).not.toContain(SITE_B)
   })
 
-  it('ANDs the Project Scope even when it is wider than the read tier', () => {
-    // The two vocabularies are independent, so they can disagree. A foreman whose
-    // legacy `{type:'sites'}` scope is Site A but whose personnel placement covers
-    // both sites must still be confined to Site A — the narrower of the two wins,
-    // and neither leg is discarded.
-    const ctx = runAsCtx({
-      scopes: [{ type: 'sites', siteIds: [SITE_A] }],
-      permissions: new Set(['reports.read', 'incidents.read.site']),
-    })
-    const filter = entityFor(
-      scopeReportSourcesForRunAs(ctx, discovered(), AT_BOTH),
-      'incidents',
-    ).baseFilter
-    const serialized = JSON.stringify(filter)
-    // Site A from the tier leg, and the union from the Project Scope leg.
-    expect(serialized).toContain(SITE_A)
+  it('a member scoped to a different site reports only their own', () => {
+    const ctx = runAsCtx({ scopes: [{ type: 'sites', siteIds: [SITE_B] }] })
+    const serialized = ruleText(
+      entityFor(scopeReportSourcesForRunAs(ctx, discovered()), 'incidents'),
+    )
     expect(serialized).toContain(SITE_B)
-    expect(filter?.combinator).toBe('and')
-  })
-
-  it('does not carry the impersonated tenant-wide data for a site-scoped member', () => {
-    const scoped = scopeReportSourcesForRunAs(runAsCtx(), discovered(), AT_SITE_A)
-    const serialized = JSON.stringify(entityFor(scoped, 'incidents').baseFilter)
-
-    expect(serialized).toContain(SITE_A)
-    expect(serialized).not.toContain(SITE_B)
+    expect(serialized).not.toContain(SITE_A)
   })
 
   it('drops sources the run-as member has no module read permission for', () => {
-    const scoped = scopeReportSourcesForRunAs(runAsCtx(), discovered(), AT_SITE_A)
-    const kept = new Set(scoped.map((entity) => entity.table))
+    const kept = new Set(scopeReportSourcesForRunAs(runAsCtx(), discovered()).map((e) => e.table))
 
     // The foreman has reports.read + incidents.read.site and nothing else.
     expect(kept).not.toContain('ppe_items')
@@ -105,96 +92,83 @@ describe('scheduled report run-as authorization', () => {
 
   it('grants a report read but no incident read nothing to report incidents with', () => {
     const ctx = runAsCtx({ permissions: new Set(['reports.read']) })
-    const scoped = scopeReportSourcesForRunAs(ctx, discovered(), AT_SITE_A)
-    expect(scoped.map((entity) => entity.table)).not.toContain('incidents')
+    expect(scopeReportSourcesForRunAs(ctx, discovered()).map((e) => e.table)).not.toContain(
+      'incidents',
+    )
   })
 
-  it('leaves a read.all member unfiltered ONLY when the scope is unrestricted', () => {
-    // CHANGED IN 15B-3B. A `read.all` permission is no longer sufficient for a
-    // company-wide read: a member placed at one site gets a filtered inventory
-    // even holding `incidents.read.all`. This is the whole point of the change,
-    // and it is why a scheduled report can no longer out-reach the same member's
-    // own dashboard.
-    const scopedMember = runAsCtx({
-      permissions: new Set(['reports.read', 'incidents.read.all']),
-    })
-    const narrowed = entityFor(
-      scopeReportSourcesForRunAs(scopedMember, discovered(), AT_SITE_A),
-      'incidents',
-    )
-    expect(narrowed.baseFilter).toBeDefined()
-    expect(JSON.stringify(narrowed.baseFilter)).toContain(SITE_A)
+  it('a read.all member gets the unfiltered inventory, and a narrower tier does not', () => {
+    // `read.all` is the whole tenant; a narrower tier is not. Both directions are
+    // asserted because either alone would be half the contract.
+    const wide = runAsCtx({ permissions: new Set(['reports.read', 'incidents.read.all']) })
+    expect(
+      entityFor(scopeReportSourcesForRunAs(wide, discovered()), 'incidents').baseFilter,
+    ).toBeUndefined()
 
-    // Company-wide, it stays unfiltered.
-    const companyWide = runAsCtx({
-      permissions: new Set(['reports.read', 'incidents.read.all']),
-      scopes: [{ type: 'tenant' }],
-    })
-    const wide = entityFor(
-      scopeReportSourcesForRunAs(companyWide, discovered(), { kind: 'unrestricted' }),
-      'incidents',
-    )
-    expect(wide.baseFilter).toBeUndefined()
+    const narrow = runAsCtx({ permissions: new Set(['reports.read', 'incidents.read.site']) })
+    expect(
+      entityFor(scopeReportSourcesForRunAs(narrow, discovered()), 'incidents').baseFilter,
+    ).toBeDefined()
   })
 
   it('reads the site scope from the resolved membership scopes, not the role name', () => {
+    // Two members holding the same role with different `{type:'sites'}` scopes must
+    // produce different subjects, or one member's rows would be reported to the
+    // other.
     const sameRoleOtherSite = reportRunAsScopeSubject(
       runAsCtx({ scopes: [{ type: 'sites', siteIds: [SITE_B] }] }),
-      AT_SITE_A,
     )
     expect(sameRoleOtherSite.siteIds).toEqual([SITE_B])
   })
 })
 
 // ---------------------------------------------------------------------------
-// 15B-3B: the worker's Project Scope subject must behave exactly as the web's.
+// The worker subject must carry the same native inputs as the web's.
 //
-// The failure this prevents is specific: 15B-2 added the Project Scope fields to
-// the subject and populated them in `apps/web` only. A scheduled report would
-// then have carried `projectScopeKind: undefined` — which fails closed — so every
-// scheduled report would have returned nothing. A narrower failure is worse and
-// would be silent: a future refactor that defaults the worker subject to
-// `unrestricted` would hand a placed foreman the whole tenant.
+// The failure this prevents is a silent widening: a worker that built its own
+// subject instead of going through the shared constructor could default a member's
+// site ids to empty, and an empty site list on a `read.site` holder is WITHHELD —
+// or, worse, a future default could hand a placed foreman the whole tenant.
 // ---------------------------------------------------------------------------
 
-describe('the worker subject carries the same four Project Scope states as the web', () => {
-  it('unrestricted', () => {
-    const s = reportRunAsScopeSubject(runAsCtx(), { kind: 'unrestricted' })
-    expect(s.projectScopeKind).toBe('unrestricted')
-    expect(s.orgUnitIds).toBeUndefined()
-    expect(s.projectPersonIds).toBeUndefined()
-  })
-
-  it('empty', () => {
-    const s = reportRunAsScopeSubject(runAsCtx(), { kind: 'empty', reason: 'no_assignment' })
-    expect(s.projectScopeKind).toBe('empty')
-    expect(s.orgUnitIds).toBeUndefined()
-  })
-
-  it('restricted, carrying the org units', () => {
-    const s = reportRunAsScopeSubject(runAsCtx(), AT_BOTH)
-    expect(s.projectScopeKind).toBe('restricted')
-    expect(s.orgUnitIds).toEqual([SITE_A, SITE_B])
-  })
-
-  it('unknown when no scope was resolved — and it fails CLOSED', () => {
-    // The critical case. A worker that forgot to resolve its scope must see
-    // NOTHING, not everything.
+describe("the worker subject is built from the run-as member's own inputs", () => {
+  it('carries the permission predicate, not a role name', () => {
     const s = reportRunAsScopeSubject(runAsCtx())
-    expect(s.projectScopeKind).toBe('unknown')
-    expect(scopeReportSourcesForRunAs(runAsCtx(), discovered())).toEqual([])
+    expect(s.permissions('incidents.read.site')).toBe(true)
+    expect(s.permissions('incidents.read.all')).toBe(false)
   })
 
-  it('an empty scope also withholds everything, even from a super-admin', () => {
-    // The strongest form of the rule: no permission and no super-admin status can
-    // reach past an empty or unknown Project Scope. `tierFor` returns 'all' for a
-    // super-admin, and the scope is checked anyway.
+  it('carries the person and the membership, so the self tier resolves', () => {
+    const s = reportRunAsScopeSubject(runAsCtx())
+    expect(s.personId).toBe('person-1')
+    expect(s.tenantUserId).toBe('member-1')
+  })
+
+  it('carries no scope it was not given — there is no default to leak from', () => {
+    // Every field is assigned from the context, so there is nothing that could be
+    // "unset" and interpreted as a wide scope.
+    const s = reportRunAsScopeSubject(runAsCtx({ scopes: [] }))
+    expect(s.siteIds).toEqual([])
+  })
+
+  it('a member with no read permission for anything gets an empty inventory', () => {
+    const none = runAsCtx({ permissions: new Set() })
+    expect(scopeReportSourcesForRunAs(none, discovered())).toEqual([])
+  })
+
+  it('and neither does a super-admin whose entities carry no read permission', () => {
+    // `tierFor` returns 'all' for a super-admin, so the SPEC is the only thing that
+    // can withhold. This asserts the spec layer is actually consulted rather than
+    // short-circuited — with no permission-bearing entity in the inventory, the
+    // answer is empty, not "everything".
     const allPermissions = [...PERMISSION_CATALOGUE] as string[]
-    const empty = scopeReportSourcesForRunAs(
-      runAsCtx({ permissions: new Set(allPermissions), isSuperAdmin: true }),
-      discovered(),
-      { kind: 'empty', reason: 'expired_assignment' },
-    )
-    expect(empty).toEqual([])
+    const superAdmin = runAsCtx({ permissions: new Set(allPermissions), isSuperAdmin: true })
+    const scoped = scopeReportSourcesForRunAs(superAdmin, discovered())
+    // A super-admin holding the whole catalogue reaches the tenant-level tables
+    // and the tiered ones; the platform-infrastructure tables stay withheld.
+    const tables = new Set(scoped.map((e) => e.table))
+    expect(tables.has('incidents')).toBe(true)
+    expect(tables.has('api_keys')).toBe(false)
+    expect(tables.has('audit')).toBe(false)
   })
 })

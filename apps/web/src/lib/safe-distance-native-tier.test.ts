@@ -381,11 +381,12 @@ describe('Safe Distance read tier — catalogue', () => {
     expect(SAFE_DISTANCE_SCOPE_COLUMNS.personCol.name).toBe('operator_person_id')
   })
 
-  it('opts out of the Project Scope conjunct rather than running a second ladder', () => {
-    // The opt-out is one conjunct on the SHARED resolver. If it were replaced by a
-    // module-specific predicate helper, this would fail and the phase's "no custom
-    // ACL" rule would be broken.
-    expect(SAFE_DISTANCE_SCOPE_COLUMNS.applyProjectScope).toBe(false)
+  it('declares no flag, scope type or predicate helper of its own', () => {
+    // Safe Distance's boundary is the shared ladder plus the two columns, nothing
+    // else. A module-specific predicate helper, or a flag on the shared resolver,
+    // would be a second ladder — and the flag this file once asserted is gone.
+    const keys = Object.keys(SAFE_DISTANCE_SCOPE_COLUMNS).sort()
+    expect(keys).toEqual(['personCol', 'prefix', 'siteCol'])
   })
 })
 
