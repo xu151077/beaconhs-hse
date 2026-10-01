@@ -820,3 +820,250 @@ describe('15B-3B — Project Scope applied to analytics resolutions', () => {
     })
   })
 })
+
+// ===========================================================================
+// 15B-3E — the Project Scope DEFINITION DOMAIN
+//
+// `org_units` defines the tree every scope is expressed in; `departments`,
+// `crews` and `trades` are grouping catalogs drawn from it. 15B-3B made them
+// fail CLOSED, which removed a scoped administrator's ability to group a report
+// by location or crew. 15B-3E resolves the TODO(15B-3E) with option (c): an
+// explicit, named `tenant-level-definition` exemption.
+//
+// The safety argument these tests exist to hold:
+//
+//   The exemption skips the Project Scope ROW PREDICATE only. It does NOT grant a
+//   read permission, and it is NOT the `tier === 'all' -> undefined` fail-open
+//   that 15B-3B fixed. Case D pins the permission boundary and Case H pins the
+//   fail-closed boundary for every OTHER unbindable table.
+// ===========================================================================
+
+/** The four definition-domain tables, as the discovery layer would expose them. */
+const DEFINITION_DOMAIN_TABLES = ['org_units', 'departments', 'crews', 'trades'] as const
+
+const defCols = (keys: string[]) =>
+  keys.map((key) => ({ key, label: key, kind: 'uuid' })) as AnalyticsEntity['columns']
+
+const definitionEntity = (table: string) =>
+  entity({
+    table,
+    // A definitional table's real shape: identifiers, tenant, the definition and
+    // timestamps. `org_units` also carries the tree definition itself. None of
+    // them has a person, owner or placement column — that is the whole argument,
+    // and `runScopeSpecValidation` re-checks it against the schema transcription.
+    columns: defCols(
+      table === 'org_units'
+        ? ['id', 'tenant_id', 'parent_id', 'level', 'name', 'code']
+        : table === 'departments'
+          ? ['id', 'tenant_id', 'name', 'code', 'description']
+          : table === 'trades'
+            ? ['id', 'tenant_id', 'name', 'code']
+            : ['id', 'tenant_id', 'name'],
+    ),
+  })
+
+const scopedOrgAdmin = () =>
+  subject({
+    permissions: (k) => k === 'admin.org.manage',
+    projectScopeKind: 'restricted',
+    orgUnitIds: [SITE_A],
+    projectPersonIds: [],
+  })
+
+describe('15B-3E — the Project Scope definition domain is exempt, by name', () => {
+  // --- Case A: restricted scope + the read permission ---------------------
+  it('Case A: a restricted administrator reads all four, with no row predicate', () => {
+    for (const table of DEFINITION_DOMAIN_TABLES) {
+      const out = scopeAnalyticsEntities(scopedOrgAdmin(), [definitionEntity(table)])
+      expect(out, table).toHaveLength(1)
+      // Definition data, not records: there is nothing to narrow on, so no filter.
+      expect(out[0]?.baseFilter, table).toBeUndefined()
+    }
+  })
+
+  it('Case A: the exemption is the reason, not the missing columns', () => {
+    // A table that is unbindable for the SAME reason (no columns) but is NOT
+    // exempt stays withheld. If this ever passes with a filter, the four tables
+    // would be visible by accident rather than by decision.
+    const out = scopeAnalyticsEntities(
+      subject({
+        permissions: (k) => k === 'equipment.read.all',
+        projectScopeKind: 'restricted',
+        orgUnitIds: [SITE_A],
+        projectPersonIds: [],
+      }),
+      [entity({ table: 'equipment_categories', columns: defCols(['id', 'name']) })],
+    )
+    expect(out).toEqual([])
+  })
+
+  // --- Case B: empty / unknown Project Scope -------------------------------
+  it('Case B: an unusable scope still withholds — the exemption does not rescue it', () => {
+    // This is the direction that matters. An exemption says "Project Scope does
+    // not apply to this table"; it does NOT say "an absent scope is a wide one".
+    // If it did, a caller whose scope failed to resolve would be handed the
+    // whole org tree — the fail-open 15B-3B removed.
+    for (const kind of ['empty', 'unknown'] as const) {
+      for (const table of DEFINITION_DOMAIN_TABLES) {
+        const out = scopeAnalyticsEntities(
+          subject({
+            permissions: (k) => k === 'admin.org.manage',
+            projectScopeKind: kind,
+          }),
+          [definitionEntity(table)],
+        )
+        expect(out, `${table}/${kind}`).toEqual([])
+      }
+    }
+  })
+
+  // --- Case C: unrestricted -----------------------------------------------
+  it('Case C: an unrestricted caller keeps the existing tenant-level behaviour', () => {
+    for (const table of DEFINITION_DOMAIN_TABLES) {
+      const out = scopeAnalyticsEntities(
+        subject({
+          permissions: (k) => k === 'admin.org.manage',
+          projectScopeKind: 'unrestricted',
+        }),
+        [definitionEntity(table)],
+      )
+      expect(out, table).toHaveLength(1)
+      expect(out[0]?.baseFilter, table).toBeUndefined()
+    }
+  })
+
+  // --- Case D: the exemption never grants a permission --------------------
+  it('Case D: without admin.org.manage all four stay invisible', () => {
+    // The exemption skips the row predicate, not the read tier. `tierFor` runs
+    // first and withholds on `none`, so a restricted caller holding only, say,
+    // `incidents.read.all` still sees nothing here.
+    for (const table of DEFINITION_DOMAIN_TABLES) {
+      for (const perms of [[], ['incidents.read.all'], ['admin.users.manage']]) {
+        const out = scopeAnalyticsEntities(
+          subject({
+            permissions: (k) => perms.includes(k),
+            projectScopeKind: 'restricted',
+            orgUnitIds: [SITE_A],
+            projectPersonIds: [],
+          }),
+          [definitionEntity(table)],
+        )
+        expect(out, `${table}/${perms.join('|') || 'none'}`).toEqual([])
+      }
+    }
+  })
+
+  // --- Case E/F: validation still refuses the two bad shapes --------------
+  it('Case E: tenant-level-definition plus a scope column is still rejected', () => {
+    const errors = validateScopeSpecs([
+      {
+        match: 'bad_table',
+        spec: {
+          read: { key: 'admin.org.manage' },
+          siteCols: ['site_org_unit_id'],
+          projectScopeExempt: 'tenant-level-definition',
+        },
+      },
+    ])
+    expect(errors.join('\n')).toContain('bad_table')
+    expect(errors.join('\n')).toContain('licence to skip a bindable entity')
+  })
+
+  it('Case E: it is rejected for every column kind, not just site columns', () => {
+    // A person- or owner-keyed exemption would be the actual leak, so the guard
+    // must not be sidable by choosing a different column list.
+    for (const cols of [
+      { personCols: ['person_id'] },
+      { userCols: ['owner_tenant_user_id'] },
+      { orgUnitCols: ['org_unit_id'] },
+    ]) {
+      const errors = validateScopeSpecs([
+        {
+          match: 'x',
+          spec: { read: { key: 'k' }, ...cols, projectScopeExempt: 'tenant-level-definition' },
+        },
+      ])
+      expect(errors.join('\n'), JSON.stringify(cols)).toContain('licence to skip a bindable entity')
+    }
+  })
+
+  it('Case F: an unknown exemption reason is still rejected', () => {
+    const errors = validateScopeSpecs([
+      {
+        match: 'mystery',
+        spec: { read: { key: 'x.read' }, projectScopeExempt: 'something-else' as never },
+      },
+    ])
+    expect(errors.join('\n')).toContain('unrecognised projectScopeExempt')
+  })
+
+  it('the real spec table is structurally valid with the new exemption', () => {
+    expect(runScopeSpecValidation().errors).toEqual([])
+  })
+
+  // --- Case G: the pre-existing exemption is untouched --------------------
+  it('Case G: vehicle_log_settings keeps tenant-level-setting and still works', () => {
+    const setting = entity({
+      table: 'vehicle_log_settings',
+      columns: defCols(['id', 'enabled_modes', 'default_mode']),
+    })
+    const out = scopeAnalyticsEntities(
+      subject({
+        permissions: (k) => k === 'equipment.read.all',
+        projectScopeKind: 'restricted',
+        orgUnitIds: [SITE_A],
+        projectPersonIds: [],
+      }),
+      [setting],
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]?.baseFilter).toBeUndefined()
+  })
+
+  // --- Case H: anti-fail-open ---------------------------------------------
+  it('Case H: a read.all holder with no columns and NO exemption is still withheld', () => {
+    // This is the 15B-3B security boundary, and 15B-3E must not have moved it.
+    // `tier === 'all'` alone is never an exemption: if this returns a row, the
+    // fail-open is back and every unbindable table is tenant-wide again.
+    const unbound = entity({ table: 'some_future_catalog', columns: defCols(['id', 'name']) })
+    const out = scopeAnalyticsEntities(
+      subject({
+        permissions: (k) => k === 'some.future.read.all',
+        projectScopeKind: 'restricted',
+        orgUnitIds: [SITE_A],
+        projectPersonIds: [],
+      }),
+      [unbound],
+    )
+    expect(out).toEqual([])
+  })
+
+  it('Case H: a super-admin is unaffected — tier all with no scope is tenant-wide', () => {
+    // The exemption is not what makes an unrestricted caller unrestricted; that
+    // is `projectScopeKind: 'unrestricted'`. This keeps the two paths distinct.
+    // `people` is used because it HAS a spec (`admin.users.manage`, no scope
+    // columns), so this isolates the scope rule rather than the allowlist: a table
+    // with no spec at all is withheld for everyone, super-admin included.
+    const out = scopeAnalyticsEntities(
+      subject({
+        isSuperAdmin: true,
+        projectScopeKind: 'unrestricted',
+      }),
+      [entity({ table: 'people', columns: defCols(['id', 'user_id']) })],
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]?.baseFilter).toBeUndefined()
+  })
+
+  it('Case H: a table with no spec is withheld even for a super-admin', () => {
+    // The allowlist half of the same boundary: 15B-3B turned the previous
+    // blocklist into an allowlist, so a newly registered table stops being
+    // tenant-wide-readable on arrival. 15B-3E adds exemptions to four NAMED
+    // tables and does not reopen this.
+    const out = scopeAnalyticsEntities(
+      subject({ isSuperAdmin: true, projectScopeKind: 'unrestricted' }),
+      [entity({ table: 'some_future_catalog', columns: defCols(['id', 'name']) })],
+    )
+    expect(out).toEqual([])
+  })
+})

@@ -916,3 +916,145 @@ Recorded because every proposed fix is judged against them:
 - **no `IN ()`** — an empty id list yields `false`, never an empty predicate
 - **no new permission keys, no schema change** — except the API-key option
   chosen in 15B-3E
+
+---
+
+## 14. 15B-3C-3E — Project Scope definition-domain exemption
+
+**Status: IMPLEMENTED.**
+
+> **Naming note.** The `TODO(15B-3E)` in `packages/analytics/src/server/scope.ts`
+> refers to _this_ decision — the org definition domain. It is **not** the
+> `15B-3E — API-key semantics` in §12 above, which is a separate and still-undecided
+> item. Both labels are load-bearing in their own file; this section does not
+> resolve §9.
+
+### Decision
+
+An explicit, named exemption, not a binding and not a restoration of tenant-wide
+access. `ProjectScopeExemption` gains a second member:
+
+```ts
+export type ProjectScopeExemption = 'tenant-level-setting' | 'tenant-level-definition'
+```
+
+`tenant-level-definition` means: the table contains tenant-level organizational
+definition/configuration data rather than per-person, per-project, or
+project-scoped business records. It is intentionally visible to authorized tenant
+administrators regardless of the caller's Project Scope.
+
+### Affected entities
+
+| table         | read key           | exemption                 |
+| ------------- | ------------------ | ------------------------- |
+| `org_units`   | `admin.org.manage` | `tenant-level-definition` |
+| `departments` | `admin.org.manage` | `tenant-level-definition` |
+| `crews`       | `admin.org.manage` | `tenant-level-definition` |
+| `trades`      | `admin.org.manage` | `tenant-level-definition` |
+
+### Why these entities are exempt
+
+They are the vocabulary every scope is expressed in. `org_units` **defines** the
+tree; `departments` / `crews` / `trades` are grouping catalogs drawn from it.
+
+A binding was rejected because none exists that is not circular: `org_units.parent_id`
+points at another org unit, so restricting the org tree by the org tree uses the
+rows being filtered as their own scope. The other three are name/code catalogs
+with no relationship to any record. 15B-3B deliberately did not invent a column
+for this, and neither does 15B-3E — no `org_unit_id` / `site_org_unit_id` was added
+to any of the four.
+
+Withholding (the 15B-3B fail-closed default) was rejected because it removed a
+scoped administrator's ability to group a report by location, department, crew or
+trade while holding the very permission that administers them. These are
+definitional, not business facts.
+
+### Why an exemption is not tenant-wide business-data access
+
+The exemption skips the Project Scope **row predicate** only. It never grants a
+read permission:
+
+- `tierFor` runs **first** and independently. A caller without `admin.org.manage`
+  is withheld by `tier === 'none'` before the scope is consulted at all.
+- The four tables hold no per-person, per-site or per-project rows, so there is
+  nothing in them to leak.
+- `validateScopeSpecs` refuses any spec that both exempts itself and declares a
+  scope column, so an exemption can never become a licence to skip a bindable
+  entity.
+- `runScopeSpecValidation` re-asserts each table's actual column list against a
+  transcription of `packages/db/src/schema/org.ts`, so a future person-, site- or
+  project-keyed column fails the check rather than inheriting the exemption.
+
+> **The exemption is explicit and named. It is not inferred from
+> `tier === 'all'`, absence of scope columns, or administrator permission.**
+
+This is **not** a restoration of the fail-open 15B-3B fixed. That path made
+_every_ unbindable table tenant-wide for a `read.all` holder; this names four
+tables, is enforced structurally, and leaves every other unbindable entity
+withheld. That boundary is pinned by an explicit anti-fail-open test.
+
+An exemption also does **not** rescue an unusable scope: `empty` and `unknown`
+still deny before the exemption is consulted, because an absent scope is not
+evidence of a wide one.
+
+### Why `locations/export.csv` remains deferred
+
+`locations/export.csv` is **not** covered by this decision and must not be assumed
+exempt because the four tables are.
+
+> `locations/export.csv` remains deferred to a separate 3E decision. Its exported
+> columns and business semantics must be verified before deciding whether it is a
+> definition-domain exemption or requires Project Scope binding.
+
+It is recorded in §6 as a scope-definition-domain concern and in §12 item 5 as an
+open question. Deciding it from the four-table exemption would extend a decision
+that was never made about it.
+
+### Validation guarantees
+
+| Guarantee                                       | Mechanism                                             |
+| ----------------------------------------------- | ----------------------------------------------------- |
+| exemption + any scope column → error            | `validateScopeSpecs` (site / orgUnit / person / user) |
+| unrecognised exemption string → error           | `validateScopeSpecs` vs `PROJECT_SCOPE_EXEMPTIONS`    |
+| the four real specs are valid                   | `runScopeSpecValidation`                              |
+| each exempt table's shape is still definitional | `runScopeSpecValidation` vs the schema transcription  |
+| exemption grants no permission                  | read tier resolved before scope                       |
+| exemption does not rescue `empty`/`unknown`     | `scopeContribution` order                             |
+| no other unbindable entity became visible       | anti-fail-open + allowlist tests                      |
+
+### Tests performed
+
+Added to the **existing** `packages/analytics/src/server/scope.test.ts` — no new
+test file and no parallel harness.
+
+| Case | Assertion                                                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------- |
+| A    | restricted + `admin.org.manage` → all four `visible`, `filter` undefined; and an un-exempted unbindable table stays withheld |
+| B    | `empty` and `unknown` scope → all four still withheld                                                                        |
+| C    | `unrestricted` → all four visible, no filter (existing behaviour)                                                            |
+| D    | without `admin.org.manage` (incl. other modules' keys) → all four invisible                                                  |
+| E    | `tenant-level-definition` + each of site / orgUnit / person / user columns → validation error                                |
+| F    | unknown exemption string → validation error                                                                                  |
+| G    | `vehicle_log_settings` keeps `tenant-level-setting` and still resolves                                                       |
+| H    | `read.all` + no columns + no exemption → still withheld; super-admin unaffected; a spec-less table withheld for everyone     |
+
+Result: `scope.test.ts` 61 passed, `scope-report-views.test.ts` 19 passed, full
+analytics package **105 passed**.
+
+Mutation-checked — each mutation was applied to `scope.ts`, the suite confirmed to
+fail, and the file restored to an identical hash:
+
+| Mutation                                              | Result               |
+| ----------------------------------------------------- | -------------------- |
+| drop the exemption from all four tables               | **caught**           |
+| restore the 15B-3B fail-open (`tier all` ⇒ no filter) | **caught** (9 tests) |
+| make the exemption bypass the read tier               | **caught**           |
+| let the exemption rescue `empty`/`unknown`            | **caught**           |
+| accept any exemption string (validation disabled)     | **caught**           |
+
+### Schema / migration
+
+**Unchanged.** No schema edit, no migration, no `db:generate` / `migrate` / `push`.
+No column was added to any of the four tables. Drizzle journal remains at 41
+entries, last idx 40. The exemption is a resolver-level fact about how a table is
+read, expressed in the scope specification — not a data-model change.

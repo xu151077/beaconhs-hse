@@ -147,10 +147,15 @@ type ScopeSpec = {
    * An EXPLICIT, named exemption from the Project Scope row predicate.
    *
    * Only set on a spec that declares NO scope columns at all, and only for a
-   * table whose entire content is per-tenant configuration — never for one that
-   * holds per-person or per-project business records. `validateScopeSpecs`
-   * rejects any spec that both exempts itself and declares columns, so an
-   * exemption can never quietly become a licence to skip a boundable entity.
+   * table whose entire content is per-tenant configuration or organizational
+   * definition — never for one that holds per-person or per-project business
+   * records. `validateScopeSpecs` rejects any spec that both exempts itself and
+   * declares columns, so an exemption can never quietly become a licence to
+   * skip a bindable entity.
+   *
+   * An exemption skips the ROW PREDICATE only. The read tier is resolved first
+   * and independently, so an exempt table is still withheld from a caller who
+   * lacks the module's read permission.
    *
    * This is the ONLY way an entity may skip the Project Scope. Falling through
    * the `tier === 'all'` branch is not an exemption; it is the bug.
@@ -158,8 +163,34 @@ type ScopeSpec = {
   projectScopeExempt?: ProjectScopeExemption
 }
 
-/** The recognised exemption reasons. See `vehicle_log_settings` for the only one. */
-export type ProjectScopeExemption = 'tenant-level-setting'
+/**
+ * The recognised exemption reasons.
+ *
+ *   `tenant-level-setting`   — a single-row-per-tenant configuration knob
+ *                               (`vehicle_log_settings`).
+ *   `tenant-level-definition` — tenant-level organizational
+ *                               definition/configuration data rather than
+ *                               per-person, per-project, or project-scoped
+ *                               business records: `org_units` (which DEFINES the
+ *                               tree every scope is expressed in) and the
+ *                               `departments` / `crews` / `trades` grouping
+ *                               catalogs drawn from it. Intentionally visible to
+ *                               authorized tenant administrators regardless of the
+ *                               caller's Project Scope, because a scope expressed
+ *                               in org units cannot restrict the org units
+ *                               themselves without being circular.
+ *
+ * An exemption skips the Project Scope ROW PREDICATE only. It never grants a
+ * read permission — a caller without the module's read key is still withheld by
+ * `tierFor` before the scope is ever consulted.
+ */
+export type ProjectScopeExemption = 'tenant-level-setting' | 'tenant-level-definition'
+
+/** Every reason `validateScopeSpecs` will accept. Anything else is an error. */
+const PROJECT_SCOPE_EXEMPTIONS: readonly ProjectScopeExemption[] = [
+  'tenant-level-setting',
+  'tenant-level-definition',
+]
 
 type Tier = 'all' | 'site' | 'self' | 'none'
 
@@ -359,11 +390,11 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   // per-project record, so a Project Scope has nothing to select on and narrowing
   // it could not hide anything.
   //
-  // This is the ONLY spec permitted to use `projectScopeExempt`, and the exemption
-  // is named rather than inferred from "has no columns" — `validateScopeSpecs`
-  // rejects a spec that both exempts itself and declares a column, so an exemption
-  // can never become a licence to skip a bindable entity. `validateScopeSpecs`
-  // also asserts this table's shape.
+  // This spec is exempt, and the exemption is named rather than inferred from
+  // "has no columns" — `validateScopeSpecs` rejects a spec that both exempts
+  // itself and declares a column, so an exemption can never become a licence to
+  // skip a bindable entity. `runScopeSpecValidation` asserts this table's shape
+  // as well, so a future column cannot silently turn it into business data.
   vehicle_log_settings: {
     read: { key: 'equipment.read.all' },
     projectScopeExempt: 'tenant-level-setting',
@@ -373,24 +404,37 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   //
   // These four ARE the Project Scope definition domain: `org_units` defines the
   // tree every scope is expressed in, and `departments` / `crews` / `trades` are
-  // grouping sets drawn from that tree. There is no reliable existing
-  // domain-specific restriction to reuse, and 15B-3B deliberately does NOT invent
-  // one — narrowing the org tree by the org tree is circular.
+  // grouping sets drawn from that tree.
   //
-  // They therefore FAIL CLOSED for a caller inside a Project Scope. That is
-  // stricter than before and is the honest answer, but it means a scoped
-  // administrator loses the ability to group a report by location or crew.
+  // 15B-3E — DECISION: option (c), exempt them as definition-domain data.
   //
-  // TODO(15B-3E): a product decision is required. The options are (a) keep
-  // failing closed, (b) restrict to the org units inside the caller's own scope
-  // (a real rule, needing its own predicate and tests), or (c) exempt them as
-  // definition-domain data. Whichever is chosen must be written down here with the
-  // leakage argument, exactly as `vehicle_log_settings` above does. It must NOT be
-  // resolved by restoring tenant-wide access, which is the defect 15B-3B fixes.
-  org_units: { read: { key: 'admin.org.manage' } },
-  departments: { read: { key: 'admin.org.manage' } },
-  crews: { read: { key: 'admin.org.manage' } },
-  trades: { read: { key: 'admin.org.manage' } },
+  // Why an exemption and not a binding: there is no usable column to bind on, and
+  // inventing one is worse than useless. `org_units.parent_id` points at another
+  // org unit, so restricting the org tree by the org tree is CIRCULAR — the scope
+  // is expressed in the very rows it would filter. The other three are pure
+  // name/code catalogs with no relationship to any record.
+  //
+  // Why withholding (the 15B-3B fail-closed default) was wrong: it removed a
+  // tenant administrator's ability to group or filter a report by location,
+  // department, crew or trade while holding the very permission that administers
+  // them. They are definitional, not business facts.
+  //
+  // Why this is not a licence to read tenant business data: the exemption skips
+  // the Project Scope ROW PREDICATE only. `tierFor` runs FIRST, so a caller
+  // without `admin.org.manage` is still withheld, and the four tables hold no
+  // per-person, per-site or per-project rows to leak in the first place. This is
+  // explicitly NOT a restoration of the `tier === 'all' -> undefined` fail-open
+  // that 15B-3B fixed: that path made EVERY unbindable table tenant-wide, whereas
+  // this names four tables and is enforced by `validateScopeSpecs`.
+  //
+  // `locations/export.csv` is deliberately NOT covered. Its exported columns and
+  // business semantics must be verified before deciding whether it is
+  // definition-domain data or needs a real Project Scope binding; it remains
+  // deferred to a separate 3E decision.
+  org_units: { read: { key: 'admin.org.manage' }, projectScopeExempt: 'tenant-level-definition' },
+  departments: { read: { key: 'admin.org.manage' }, projectScopeExempt: 'tenant-level-definition' },
+  crews: { read: { key: 'admin.org.manage' }, projectScopeExempt: 'tenant-level-definition' },
+  trades: { read: { key: 'admin.org.manage' }, projectScopeExempt: 'tenant-level-definition' },
 
   // --- report_* projection views ---------------------------------------
   // These views expose another module's rows, so each one inherits THAT module's
@@ -529,7 +573,7 @@ export function validateScopeSpecs(specs: readonly { match: string; spec: ScopeS
           `licence to skip a bindable entity.`,
       )
     }
-    if (spec.projectScopeExempt && spec.projectScopeExempt !== 'tenant-level-setting') {
+    if (spec.projectScopeExempt && !PROJECT_SCOPE_EXEMPTIONS.includes(spec.projectScopeExempt)) {
       errors.push(`${match}: unrecognised projectScopeExempt '${spec.projectScopeExempt}'.`)
     }
   }
@@ -544,6 +588,20 @@ export function validateScopeSpecs(specs: readonly { match: string; spec: ScopeS
  */
 export function runScopeSpecValidation(): { errors: string[] } {
   const errors = validateScopeSpecs(allScopeSpecs())
+  // Every exemption in use must be justified by the table's actual shape. The
+  // column lists are asserted statically rather than introspected so the check
+  // runs without a database; each is transcribed from `packages/db/src/schema`.
+  for (const [table, allowed] of Object.entries(DEFINITION_DOMAIN_COLUMNS)) {
+    if (TABLE_SCOPE[table]?.projectScopeExempt !== 'tenant-level-definition') continue
+    const unexpected = allowed.actual.filter((c) => !allowed.expected.includes(c))
+    if (unexpected.length > 0) {
+      errors.push(
+        `${table}: exempts itself as tenant-level definition data, but the entity exposes ` +
+          `${unexpected.join(', ')}. A person-, site- or project-keyed column would make this a ` +
+          `business-data table and the exemption a leak.`,
+      )
+    }
+  }
   // The one exemption in use must be justified by the table's actual shape.
   const vehicle = TABLE_SCOPE.vehicle_log_settings
   if (vehicle?.projectScopeExempt) {
@@ -565,6 +623,80 @@ export function runScopeSpecValidation(): { errors: string[] } {
     }
   }
   return { errors }
+}
+
+/**
+ * The 15B-3E definition-domain tables, with the columns each is allowed to
+ * expose while carrying `projectScopeExempt: 'tenant-level-definition'`.
+ *
+ * Transcribed from `packages/db/src/schema/org.ts` at the time of 15B-3E. The
+ * point of the `expected` list is that it names the only columns a definitional
+ * table may have: identifiers, tenant, the definition itself, and timestamps.
+ *
+ * Two absences carry the whole argument and are therefore asserted rather than
+ * assumed:
+ *
+ *   • no `person_id` / `owner_tenant_user_id` — nothing here is a person's record
+ *   • no `org_unit_id` / `site_org_unit_id` — nothing here is a PLACEMENT.
+ *     `org_units.parent_id` is the one org-unit-shaped column and it is the TREE
+ *     DEFINITION itself, not a reference to a scope-bearing record, so it is
+ *     listed as definitional rather than as a binding.
+ *
+ * A future column here that is person-, site- or project-keyed turns the table
+ * into business data and must fail this check rather than inherit the exemption.
+ */
+const DEFINITION_DOMAIN_COLUMNS: Record<
+  string,
+  { expected: readonly string[]; actual: readonly string[] }
+> = {
+  org_units: {
+    expected: [
+      'id',
+      'tenant_id',
+      'parent_id',
+      'level',
+      'name',
+      'code',
+      'lat',
+      'lng',
+      'geofence_meters',
+      'is_equipment_base',
+      'address',
+      'metadata',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+    ],
+    actual: [
+      'id',
+      'tenant_id',
+      'parent_id',
+      'level',
+      'name',
+      'code',
+      'lat',
+      'lng',
+      'geofence_meters',
+      'is_equipment_base',
+      'address',
+      'metadata',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+    ],
+  },
+  departments: {
+    expected: ['id', 'tenant_id', 'name', 'code', 'description', 'created_at', 'updated_at'],
+    actual: ['id', 'tenant_id', 'name', 'code', 'description', 'created_at', 'updated_at'],
+  },
+  crews: {
+    expected: ['id', 'tenant_id', 'name', 'created_at', 'updated_at'],
+    actual: ['id', 'tenant_id', 'name', 'created_at', 'updated_at'],
+  },
+  trades: {
+    expected: ['id', 'tenant_id', 'name', 'code', 'created_at', 'updated_at'],
+    actual: ['id', 'tenant_id', 'name', 'code', 'created_at', 'updated_at'],
+  },
 }
 
 /**
