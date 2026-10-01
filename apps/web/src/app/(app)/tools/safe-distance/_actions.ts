@@ -20,7 +20,7 @@ import { assertCan, type RequestContext } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { nextReference } from '@/lib/reference'
 import { isUuid } from '@/lib/list-params'
-import { SAFE_DISTANCE_PERMISSION } from '@/lib/safe-distance-access'
+import { SAFE_DISTANCE_PERMISSION, canSeeSafeDistanceRecord } from '@/lib/safe-distance-access'
 import { segmentVolumeM3 } from './_lib'
 import { MAX_SAFE_DISTANCE_FORM_SEGMENTS_BYTES } from './_constraints'
 import {
@@ -33,6 +33,9 @@ export type ActionResult =
   { ok: true; version?: string } | { ok: false; error: string; reason?: 'locked' | 'conflict' }
 
 type SafeDistanceAuditEvent = Omit<AuditEvent, 'tenantId' | 'actorUserId'>
+
+/** The stored row, as loaded by `loadMutableRecord`. */
+type SafeDistanceRow = typeof safeDistanceRecords.$inferSelect
 
 async function auditInTransaction(
   tx: Database,
@@ -106,6 +109,36 @@ function requireSafeDistance(ctx: RequestContext): void {
   assertCan(ctx, SAFE_DISTANCE_PERMISSION)
 }
 
+/**
+ * Load one record for mutation, or `null` when it does not exist OR the caller's
+ * read tier withholds it.
+ *
+ * The read tier is enforced here rather than trusted to the page, because a
+ * server action is its own entry point: it is reachable without rendering the
+ * list or the detail page, so a UI-level filter is not a control. Every action
+ * that takes a record id calls this INSIDE the same transaction, before the row
+ * is locked, so a caller cannot save, lock or delete an assessment outside their
+ * read tier.
+ *
+ * Both refusals return `null` and the callers report the same
+ * "Assessment not found." — deliberately the same message, so a caller who is
+ * denied cannot use the response to learn that the record exists.
+ */
+async function loadMutableRecord(
+  ctx: RequestContext,
+  tx: Database,
+  id: string,
+): Promise<SafeDistanceRow | null> {
+  const [row] = await tx
+    .select()
+    .from(safeDistanceRecords)
+    .where(and(eq(safeDistanceRecords.id, id), isNull(safeDistanceRecords.deletedAt)))
+    .limit(1)
+  if (!row) return null
+  const visible = await canSeeSafeDistanceRecord(ctx, tx, row)
+  return visible ? row : null
+}
+
 // ---------- Create ------------------------------------------------------
 
 /** Create a canonical blank draft, then redirect into the calculator. */
@@ -154,20 +187,26 @@ async function saveSafeDistanceRecord(
   const value = parsed.value
 
   const outcome = await ctx.db(async (tx) => {
-    const [record] = await tx
+    const record = await loadMutableRecord(ctx, tx, value.id)
+    if (!record) return { ok: false as const, error: 'Assessment not found.' }
+
+    // Re-read under the row lock so the version check and the write are
+    // serialized against a concurrent editor, exactly as before — the read-tier
+    // guard above already ran against the same row.
+    const [locked] = await tx
       .select()
       .from(safeDistanceRecords)
       .where(and(eq(safeDistanceRecords.id, value.id), isNull(safeDistanceRecords.deletedAt)))
       .for('update')
       .limit(1)
-    if (!record) return { ok: false as const, error: 'Assessment not found.' }
+    if (!locked) return { ok: false as const, error: 'Assessment not found.' }
 
-    const state = evaluateSafeDistanceState(record, value.version, { kind: 'save' })
+    const state = evaluateSafeDistanceState(locked, value.version, { kind: 'save' })
     if (!state.ok) return state
 
     const referenceError = await validateReferences(tx, value)
     if (referenceError) return { ok: false as const, error: referenceError }
-    const nextUpdatedAt = new Date(Math.max(Date.now(), record.updatedAt.getTime() + 1))
+    const nextUpdatedAt = new Date(Math.max(Date.now(), locked.updatedAt.getTime() + 1))
 
     const [updated] = await tx
       .update(safeDistanceRecords)
@@ -213,11 +252,11 @@ async function saveSafeDistanceRecord(
       action: 'update',
       summary: `Updated calculation (${value.segments.length} segment${value.segments.length === 1 ? '' : 's'})`,
       before: {
-        name: record.name,
-        method: record.method,
-        unit: record.unit,
-        testPressure: record.testPressure,
-        totalVolume: record.totalVolume,
+        name: locked.name,
+        method: locked.method,
+        unit: locked.unit,
+        testPressure: locked.testPressure,
+        totalVolume: locked.totalVolume,
       },
       after: {
         name: value.name,
@@ -252,6 +291,10 @@ async function setSafeDistanceLock(raw: unknown, desiredLocked: boolean): Promis
   const { id, version } = parsed.value
 
   const outcome = await ctx.db(async (tx) => {
+    if (!(await loadMutableRecord(ctx, tx, id))) {
+      return { ok: false as const, error: 'Assessment not found.' }
+    }
+
     const [record] = await tx
       .select()
       .from(safeDistanceRecords)
@@ -308,6 +351,10 @@ async function deleteSafeDistanceRecord(id: string, version: string): Promise<Ac
   if (!parsed.ok) return parsed
 
   const outcome = await ctx.db(async (tx) => {
+    if (!(await loadMutableRecord(ctx, tx, parsed.value.id))) {
+      return { ok: false as const, error: 'Assessment not found.' }
+    }
+
     const [record] = await tx
       .select()
       .from(safeDistanceRecords)

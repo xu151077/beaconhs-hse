@@ -511,21 +511,25 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
 })
 
 /**
- * 15B-3C-2A — `safe_distance_records.operator_person_id` as a person binding.
+ * Phase 1 — `safe_distance_records` on the NATIVE read tier.
  *
- * Before this change the `safe_distance` spec declared `personCols: PERSON_COLUMNS`
- * but `operator_person_id` was not in that list, so the analytics layer could bind
- * ONLY the site leg while the list and the CSV export bound site OR operator. The
- * three surfaces answered different questions about the same table.
+ * The spec's read rule changed from the flat key `tools.safe-distance.use` to the
+ * tiered prefix `tools.safe-distance`, so `tierFor` now resolves a real tier from
+ * `tools.safe-distance.read.{all,site,self}` and `resolveEntity` applies the
+ * ordinary site/self branches. Two consequences are asserted here.
  *
- * The column is APPENDED to the candidate list, never inserted. `pickColumn`
- * returns the first candidate the entity actually has, so appending can only
- * affect an entity that has none of the earlier names — verified against the live
- * schema to be `safe_distance_records` and nothing else. These tests pin that
- * property so a future edit cannot quietly re-order the list and steal a binding
- * from another module.
+ * 1. The tier actually narrows. With the flat key, `tierFor` returned 'all' for
+ *    every holder of the operate capability, so a report could read every pressure
+ *    test in the tenant. That was the defect; these tests are the fix's contract.
+ *
+ * 2. `operator_person_id` remains in `PERSON_COLUMNS`, APPENDED and never
+ *    inserted. `pickColumn` returns the first candidate the entity actually has, so
+ *    appending can only affect an entity with none of the earlier names — verified
+ *    against the live schema to be `safe_distance_records` and nothing else. The
+ *    self tier has no other person column to bind, so removing it would withhold
+ *    the table from every self-tier holder.
  */
-describe('15B-3C-2A — safe_distance binds the operator leg', () => {
+describe('Phase 1 — safe_distance reads through the native tier', () => {
   const OPERATOR_A = '9a000000-0000-4000-8000-0000000000a1'
   const OPERATOR_B = '9a000000-0000-4000-8000-0000000000b1'
 
@@ -540,73 +544,79 @@ describe('15B-3C-2A — safe_distance binds the operator leg', () => {
     'supervisor_tenant_user_id',
   ])
 
-  /** Holds only the flat `tools.safe-distance.use` key, with a chosen scope. */
-  const safeDistanceUser = (scope: Partial<AnalyticsScopeSubject> = {}): AnalyticsScopeSubject => ({
+  /** Holds exactly the named Safe Distance permission; scope comes from `siteIds`. */
+  const sdUser = (
+    permission: string,
+    over: Partial<AnalyticsScopeSubject> = {},
+  ): AnalyticsScopeSubject => ({
     tenantUserId: 'tu_operator',
     personId: OPERATOR_A,
     isSuperAdmin: false,
-    permissions: (key) => key === 'tools.safe-distance.use',
+    permissions: (key) => key === permission,
     siteIds: [],
-    projectScopeKind: 'restricted',
+    projectScopeKind: 'unrestricted',
     orgUnitIds: [],
-    projectPersonIds: [OPERATOR_A],
-    ...scope,
+    projectPersonIds: [],
+    ...over,
   })
 
-  it('picks operator_person_id for the person leg when there is no site id', () => {
-    const visible = scopeAnalyticsEntities(safeDistanceUser(), [safeDistance])
+  it('read.all is unrestricted: no baseFilter, RLS alone bounds the tenant', () => {
+    const visible = scopeAnalyticsEntities(sdUser('tools.safe-distance.read.all'), [safeDistance])
     expect(visible).toHaveLength(1)
-    expect(filterFor(visible[0]?.baseFilter, 'operator_person_id')?.value).toEqual([OPERATOR_A])
+    expect(visible[0]?.baseFilter).toBeUndefined()
   })
 
-  it('binds the matching operator, and never the nonmatching one', () => {
-    const visible = scopeAnalyticsEntities(safeDistanceUser({ projectPersonIds: [OPERATOR_B] }), [
-      safeDistance,
-    ])
-    const values = filterFor(visible[0]?.baseFilter, 'operator_person_id')?.value as string[]
+  it('read.site + site A binds site_org_unit_id to site A only', () => {
+    const visible = scopeAnalyticsEntities(
+      sdUser('tools.safe-distance.read.site', { siteIds: [SITE_A] }),
+      [safeDistance],
+    )
+    expect(visible).toHaveLength(1)
+    const values = filterFor(visible[0]?.baseFilter, 'site_org_unit_id')?.value as string[]
+    expect(values).toEqual([SITE_A])
+    expect(values).not.toContain(SITE_B)
+  })
+
+  it('read.site with no site ids is WITHHELD, not widened to the tenant', () => {
+    // The analytics half of the pre-existing `read.site` divergence: the web ladder
+    // falls through to own-only, analytics withholds. Asserted so it stays
+    // deliberate rather than accidental. What must never happen is tenant-wide.
+    const visible = scopeAnalyticsEntities(sdUser('tools.safe-distance.read.site'), [safeDistance])
+    expect(visible).toEqual([])
+  })
+
+  it('read.self binds operator_person_id to the caller, never to another operator', () => {
+    const mine = scopeAnalyticsEntities(sdUser('tools.safe-distance.read.self'), [safeDistance])
+    expect(mine).toHaveLength(1)
+    expect(filterFor(mine[0]?.baseFilter, 'operator_person_id')?.value).toEqual([OPERATOR_A])
+
+    const theirs = scopeAnalyticsEntities(
+      sdUser('tools.safe-distance.read.self', { personId: OPERATOR_B }),
+      [safeDistance],
+    )
+    const values = filterFor(theirs[0]?.baseFilter, 'operator_person_id')?.value as string[]
     expect(values).toEqual([OPERATOR_B])
     expect(values).not.toContain(OPERATOR_A)
   })
 
-  it('unions the site leg and the operator leg', () => {
-    // The existing OR design: a record is in scope if its place is in the scope OR
-    // its operator is. This is the same `or(...)` the web SQL adapter builds, and
-    // the reason the list, the CSV and analytics can agree.
-    const visible = scopeAnalyticsEntities(
-      safeDistanceUser({ orgUnitIds: [SITE_A], projectPersonIds: [OPERATOR_A] }),
-      [safeDistance],
-    )
-    const filter = visible[0]?.baseFilter
-    expect(filter?.combinator).toBe('or')
-    expect(filterFor(filter, 'site_org_unit_id')?.value).toEqual([SITE_A])
-    expect(filterFor(filter, 'operator_person_id')?.value).toEqual([OPERATOR_A])
+  it('the operate capability ALONE no longer grants tenant-wide rows', () => {
+    // The regression this phase exists to close. `tools.safe-distance.use` is held
+    // by all four built-in roles, so a flat-key spec let a field worker read every
+    // pressure test in the tenant through a saved report.
+    const visible = scopeAnalyticsEntities(sdUser('tools.safe-distance.use'), [safeDistance])
+    expect(visible).toEqual([])
   })
 
-  it('keeps the two legs independent when only one carries ids', () => {
-    // Site only: no operator value is invented, so a record whose operator is
-    // someone else but whose site matches is still reachable, and vice versa.
-    const siteOnly = scopeAnalyticsEntities(
-      safeDistanceUser({ orgUnitIds: [SITE_A], projectPersonIds: [] }),
-      [safeDistance],
-    )[0]
-    expect(filterFor(siteOnly?.baseFilter, 'site_org_unit_id')?.value).toEqual([SITE_A])
-    expect(filterFor(siteOnly?.baseFilter, 'operator_person_id')).toBeUndefined()
+  it('a caller with no Safe Distance permission sees nothing at all', () => {
+    expect(scopeAnalyticsEntities(sdUser('incidents.read.all'), [safeDistance])).toEqual([])
   })
 
-  it('withholds for an empty or unresolved scope rather than going tenant-wide', () => {
-    for (const kind of ['empty', 'unknown'] as const) {
-      const visible = scopeAnalyticsEntities(safeDistanceUser({ projectScopeKind: kind }), [
-        safeDistance,
-      ])
-      expect(visible, kind).toEqual([])
-    }
-    // A restricted scope with neither leg carries ids cannot be expressed, so the
-    // table is withheld by omission — the fail-closed path.
-    expect(
-      scopeAnalyticsEntities(safeDistanceUser({ orgUnitIds: [], projectPersonIds: [] }), [
-        safeDistance,
-      ]),
-    ).toEqual([])
+  it('a super-admin is unrestricted', () => {
+    const visible = scopeAnalyticsEntities(sdUser('incidents.read.all', { isSuperAdmin: true }), [
+      safeDistance,
+    ])
+    expect(visible).toHaveLength(1)
+    expect(visible[0]?.baseFilter).toBeUndefined()
   })
 
   it('leaves every earlier person candidate in priority, so no other module is stolen', () => {
@@ -625,25 +635,18 @@ describe('15B-3C-2A — safe_distance binds the operator leg', () => {
         later,
         'site_org_unit_id',
       ])
-      const visible = scopeAnalyticsEntities(
-        safeDistanceUser({ orgUnitIds: [], projectPersonIds: [OPERATOR_A] }),
-        [both],
-      )
+      const visible = scopeAnalyticsEntities(sdUser('tools.safe-distance.read.self'), [both])
       expect(filterFor(visible[0]?.baseFilter, earlier)?.value, earlier).toEqual([OPERATOR_A])
       expect(filterFor(visible[0]?.baseFilter, later), earlier).toBeUndefined()
     }
   })
 
-  it('leaves a company-wide caller unrestricted', () => {
-    const companyWide = scopeAnalyticsEntities(
-      safeDistanceUser({
-        projectScopeKind: 'unrestricted',
-        orgUnitIds: [SITE_A, SITE_B],
-        projectPersonIds: [OPERATOR_A, OPERATOR_B],
-      }),
-      [safeDistance],
-    )
-    expect(companyWide).toHaveLength(1)
-    expect(companyWide[0]?.baseFilter).toBeUndefined()
+  it('the three tier keys exist in the catalogue for the four built-in roles', () => {
+    for (const key of ['all', 'site', 'self'] as const) {
+      expect(PERMISSION_CATALOGUE).toContain(`tools.safe-distance.read.${key}`)
+    }
+    expect(BUILTIN_ROLES.worker?.permissions).toContain('tools.safe-distance.read.self')
+    expect(BUILTIN_ROLES.foreman?.permissions).toContain('tools.safe-distance.read.site')
+    expect(BUILTIN_ROLES.safety_manager?.permissions).toContain('tools.safe-distance.read.all')
   })
 })

@@ -19,7 +19,7 @@ import { safeDistanceRecords, safeDistanceSegments } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
 import { recentActivityForEntity } from '@/lib/audit'
 import { isUuid, pickString } from '@/lib/list-params'
-import { canUseSafeDistance } from '@/lib/safe-distance-access'
+import { canSeeSafeDistanceRecord, canUseSafeDistance } from '@/lib/safe-distance-access'
 import { ActivityFeed } from '@/components/activity-feed'
 import { DetailPageLayout } from '@/components/page-layout'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
@@ -61,6 +61,15 @@ export default async function SafeDistanceDetailPage({
       .where(and(eq(safeDistanceRecords.id, id), isNull(safeDistanceRecords.deletedAt)))
       .limit(1)
     if (!row) return null
+    // The record-level half of the read tier. `canUseSafeDistance` above says the
+    // caller may OPERATE the tool; this says whether this particular record is
+    // theirs to read. Without it the page was a read-by-id bypass: any holder of
+    // the operate capability could load any tenant's pressure test by guessing the
+    // URL, including one at a site outside their Role Scope.
+    //
+    // It is the same `canSeeRecord` ladder the list filters with, bound to the
+    // same two native columns, so a row the list withholds is not reachable here.
+    if (!(await canSeeSafeDistanceRecord(ctx, tx, row))) return null
     const segments = await tx
       .select()
       .from(safeDistanceSegments)

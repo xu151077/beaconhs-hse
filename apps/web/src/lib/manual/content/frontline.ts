@@ -766,6 +766,10 @@ Your company can build its own tools and publish them here. Those appear as extr
     keywords: [
       'safe distance',
       'pressure test',
+      'who can see',
+      'visibility',
+      'missing assessment',
+      'another site',
       'pneumatic test',
       'stand off',
       'standoff',
@@ -802,6 +806,21 @@ If somebody changes or locks the assessment while you have it open, refresh the 
 Open the assessment and tap **Print / PDF**. Use your browser's print window to print it or save it as a PDF. Past assessments remain in the Safe Distance list.
 
 ${CSV_EXPORT_LIMIT_GUIDANCE}
+
+## Which assessments you can see
+
+The list, the assessment page, the print view and **Export CSV** all show you the
+same records. What you see depends on your role:
+
+- Your own assessments are always yours to see.
+- A **supervisor** also sees the assessments recorded at the sites they are assigned
+  to.
+- A **safety manager** sees every assessment in the workspace.
+- If an assessment is missing, it is either at another site or it belongs to
+  somebody else. Ask your supervisor if you think you should have it.
+
+An assessment with no location and no named operator is only visible to a safety
+manager.
 
 ## Tips
 

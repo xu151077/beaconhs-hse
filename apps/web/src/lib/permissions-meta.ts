@@ -122,6 +122,9 @@ const PERMISSION_LABELS: Record<string, string> = {
   'insights.create': 'Build insights',
   'insights.publish': 'Publish to library',
   'tools.safe-distance.use': 'Use Safe Distance',
+  'tools.safe-distance.read.all': 'View all pressure tests',
+  'tools.safe-distance.read.site': 'View pressure tests at their sites',
+  'tools.safe-distance.read.self': 'View own pressure tests',
 
   'assistant.use': 'Use the assistant',
   'assistant.write': 'Draft changes with the assistant',

@@ -12,9 +12,7 @@ import {
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { parseListParams, pickString } from '@/lib/list-params'
-import { SAFE_DISTANCE_PERMISSION } from '@/lib/safe-distance-access'
-import { resolveProjectScopeIn } from '@/lib/project-scope'
-import { projectScopePredicate } from '@/lib/project-scope-predicate'
+import { SAFE_DISTANCE_PERMISSION, safeDistanceScopeWhere } from '@/lib/safe-distance-access'
 import {
   pressureUnitLabel,
   SAFE_DISTANCE_METHOD_LABELS,
@@ -45,25 +43,19 @@ export async function GET(req: NextRequest) {
 
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(safeDistanceRecords.deletedAt)]
-    // Project Scope. `tools.safe-distance.use` is a FLAT key — there is no
-    // `tools.safe-distance.read.all` / `.site` / `.self` — so `moduleScopeWhere`
-    // cannot be used here: it resolves a tier from `<prefix>.read.*`, and a flat
-    // key would silently degrade to the `self` tier. The Project Scope is
-    // therefore applied directly, through the same resolver and adapter the
-    // people list uses.
+    // The SAME native read tier the list applies, through the same shared helper
+    // and the same two native columns. The CSV is a second rendering of the
+    // screen, so it must not be able to reach a row the list withholds — nor may
+    // it be narrowed independently of the list.
     //
-    // The bindings are the two columns `safe_distance_records` already carries —
-    // `site_org_unit_id` and `operator_person_id` — and they are the same two the
-    // analytics spec declares for this table (the `safe_distance` entry in
-    // `packages/analytics/src/server/scope.ts`), so this CSV and a saved report
-    // agree with each other.
-    //
-    // An empty scope is a hard `false`: no assignment means an empty file.
-    const projectScope = await resolveProjectScopeIn(ctx, tx)
-    const scopeWhere = projectScopePredicate(projectScope, {
-      orgUnitCol: safeDistanceRecords.siteOrgUnitId,
-      personCol: safeDistanceRecords.operatorPersonId,
-    })
+    // `tools.safe-distance.read.{all,site,self}` now exists, so this route no
+    // longer needs a bespoke adapter: the tier resolves from the caller's own
+    // permission plus their `{type:'sites'}` Role Scope, and a caller with no
+    // read key falls back to `self` (their own operated checks) rather than to
+    // the whole tenant. `safe_distance_records` carries both `site_org_unit_id`
+    // and `operator_person_id`, and the analytics `safe_distance` spec binds the
+    // same two, so this file and a saved report agree with each other.
+    const scopeWhere = await safeDistanceScopeWhere(ctx, tx)
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
       const term = `%${params.q}%`

@@ -279,6 +279,23 @@ export const PERMISSION_CATALOGUE = [
   // assessments, so opening, editing, locking, printing, and exporting it all
   // use one explicit capability instead of borrowing a domain permission.
   'tools.safe-distance.use',
+  // The Safe Distance READ tier, resolved by the one canonical ladder
+  // (`resolveVisibilityTier` / `moduleScopeWhere` / `canSeeRecord` in
+  // `lib/visibility.ts`, and `tierFor` in the analytics scope). `use` above is
+  // the OPERATE capability and answers "may this person run the tool"; these
+  // three answer "which of its records may they see", and are a separate axis.
+  //
+  // Named under the existing `tools.safe-distance.` prefix rather than a new
+  // `safe_distance.` one, so the flat key and the tier family share a prefix and
+  // `readTierCovers` widening stays within the module.
+  //
+  // `safe_distance_records` carries both columns the ladder binds:
+  // `site_org_unit_id` for the site tier and `operator_person_id` for the
+  // own/subject leg (the person who performed the check). No Safe Distance
+  // specific ACL, scope type or row-predicate resolver exists or is needed.
+  'tools.safe-distance.read.all',
+  'tools.safe-distance.read.site',
+  'tools.safe-distance.read.self',
   // AI Assistant — the agentic chat assistant (/assistant).
   // `use`  = open the assistant + run READ/SEARCH tools (each tool is further
   //          gated by the underlying module's own read permission + record scope).
@@ -343,6 +360,11 @@ export const BUILTIN_ROLES: Record<
       'journals.update.own',
       'journals.submit',
       'tools.safe-distance.use',
+      // Read tier. Self: a worker reads the pressure tests whose
+      // `operator_person_id` is them, and nothing else in the tenant. Without
+      // this key the ladder falls back to the same self tier, so granting it
+      // explicitly states the intent rather than relying on the default.
+      'tools.safe-distance.read.self',
       'assistant.use',
       'feedback.use',
     ],
@@ -392,6 +414,10 @@ export const BUILTIN_ROLES: Record<
       'dashboards.read',
       'insights.read',
       'tools.safe-distance.use',
+      // Read tier. Site: matches `equipment.read.site` and `ppe.read.site` above —
+      // the foreman reaches the pressure tests recorded at the sites their role
+      // scope names, unioned with the ones they operated themselves.
+      'tools.safe-distance.read.site',
       'assistant.use',
       'assistant.write',
       'feedback.use',
@@ -463,6 +489,10 @@ export const BUILTIN_ROLES: Record<
       'insights.publish',
       'admin.integrations.manage',
       'tools.safe-distance.use',
+      // Read tier. All: a safety manager owns the H&S program, so it reads every
+      // pressure test in the tenant — same tier as its `incidents.read.all` and
+      // `ca.read.all`.
+      'tools.safe-distance.read.all',
       'assistant.use',
       'assistant.write',
       'feedback.use',

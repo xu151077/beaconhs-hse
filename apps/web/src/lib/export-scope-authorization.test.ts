@@ -11,7 +11,11 @@
 //
 //   people            people.id                       (the list's binding)
 //   ppe_items         current_holder_person_id        (the list's binding)
-//   safe_distance_*   site_org_unit_id, operator_person_id
+//
+// Safe Distance was in this set under 15B-3C-1 and left it in Phase 1: its
+// permission is now a tiered family, so it no longer has a Project Scope binding
+// and is asserted through the shared native ladder instead — see the Phase 1
+// block below and `safe-distance-native-tier.test.ts`.
 //
 // The properties asserted are the same four the Project Scope adapter guarantees,
 // applied at the boundary each route owns:
@@ -42,8 +46,6 @@ const PEER_A = '0c000000-0000-4000-8000-0000000000c2'
 const PEER_B = '0c000000-0000-4000-8000-0000000000c3'
 
 const dialect = new PgDialect()
-const render = (p: unknown): string =>
-  p === undefined ? '(no predicate)' : dialect.sqlToQuery(p as never).sql
 
 /**
  * The predicate as SQL text plus its BOUND VALUES, space-joined.
@@ -170,57 +172,52 @@ describe('15B-3C-1 — ppe export is bound by the holder column', () => {
   })
 })
 
-describe('15B-3C-1 — safe-distance export is bound by site and operator', () => {
-  const bind = (scope: ProjectScope) =>
-    projectScopePredicate(scope, {
-      orgUnitCol: safeDistanceRecords.siteOrgUnitId,
-      personCol: safeDistanceRecords.operatorPersonId,
-    })
-
-  it('unrestricted -> no predicate', () => {
-    expect(bind({ kind: 'unrestricted' })).toBeUndefined()
+// Phase 1 — the Safe Distance export reads through the shared native ladder.
+//
+// SUPERSEDES 15B-3C-1. That block asserted the CSV applied the same PROJECT
+// SCOPE as the list, and that the route must NOT use `moduleScopeWhere` because
+// `tools.safe-distance.use` was a flat key with no read tier. Both premises are
+// gone: `tools.safe-distance.read.{all,site,self}` now exists, so the export calls
+// the shared ladder and declares no Project Scope predicate of its own.
+//
+// The properties that mattered are preserved and are now enforced by the tier:
+//   • the export can never return more than the list, because both call the same
+//     helper over the same two columns;
+//   • the operate capability alone still cannot widen to the tenant — it resolves
+//     to the self tier and binds only the caller's own operator id.
+//
+// Row-level tier behaviour is covered in `safe-distance-native-tier.test.ts`.
+describe('Phase 1 — the safe-distance export uses the shared native ladder', () => {
+  it('routes through the one shared helper, not a bespoke predicate', () => {
+    expect(SAFE_DISTANCE_EXPORT).toContain('safeDistanceScopeWhere(ctx, tx)')
+    // No second binding: re-declaring the columns is how the list and the export
+    // drifted apart in 15B-3C-2A.
+    expect(SAFE_DISTANCE_EXPORT).not.toMatch(/orgUnitCol:\s*safeDistanceRecords/)
+    expect(SAFE_DISTANCE_EXPORT).not.toMatch(/personCol:\s*safeDistanceRecords/)
+    expect(SAFE_DISTANCE_EXPORT).not.toMatch(/siteCol:\s*safeDistanceRecords/)
   })
 
-  it('restricted -> matched on the site leg', () => {
-    const out = bind({ kind: 'orgUnits', orgUnitIds: [SITE_A], personIds: [] })
-    const text = renderWithValues(out)
-    expect(text).toContain('"safe_distance_records"."site_org_unit_id"')
-    expect(text).toContain(SITE_A)
-    expect(text).not.toContain(SITE_B)
+  it('carries no Project Scope dependency at all', () => {
+    expect(SAFE_DISTANCE_EXPORT).not.toContain('resolveProjectScopeIn')
+    expect(SAFE_DISTANCE_EXPORT).not.toContain('projectScopePredicate')
+    expect(SAFE_DISTANCE_EXPORT).not.toContain('ProjectScope')
   })
 
-  it('restricted -> matched on the operator leg when the entity has no site', () => {
-    const out = bind({ kind: 'persons', personIds: [PEER_A] })
-    const text = renderWithValues(out)
-    expect(text).toContain('"safe_distance_records"."operator_person_id"')
-    expect(text).toContain(PEER_A)
-  })
-
-  it('both legs union, so a record in either is reachable', () => {
-    const out = bind({ kind: 'peopleAndOrgUnits', orgUnitIds: [SITE_A], personIds: [PEER_B] })
-    const text = render(out)
-    expect(text).toContain('site_org_unit_id')
-    expect(text).toContain('operator_person_id')
-    expect(text.toLowerCase()).toContain(' or ')
-  })
-
-  it('empty -> a hard false', () => {
-    expect(isAlwaysFalse(bind({ kind: 'empty', reason: 'no_scope' }))).toBe(true)
-  })
-
-  it('the route uses the resolver directly, because its permission is a flat key', () => {
-    // `tools.safe-distance.use` has no `read.all` / `.site` / `.self`, so
-    // `moduleScopeWhere` would degrade to the `self` tier. The route must not use
-    // it; it uses the resolver + adapter, as the people export does.
-    expect(SAFE_DISTANCE_EXPORT).toContain('resolveProjectScopeIn(ctx, tx)')
-    expect(SAFE_DISTANCE_EXPORT).toContain('orgUnitCol: safeDistanceRecords.siteOrgUnitId')
-    expect(SAFE_DISTANCE_EXPORT).toContain('personCol: safeDistanceRecords.operatorPersonId')
-    // Not a bare substring: the route's comment explains WHY moduleScopeWhere is
-    // unsuitable, so the import and the call are what must be absent.
-    expect(SAFE_DISTANCE_EXPORT).not.toMatch(/import \{[^}]*moduleScopeWhere/)
-    expect(SAFE_DISTANCE_EXPORT).not.toMatch(/await moduleScopeWhere\(/)
-    // The capability gate is unchanged.
+  it('keeps the operate-capability gate, so read and operate stay separate axes', () => {
     expect(SAFE_DISTANCE_EXPORT).toContain('assertCan(ctx, SAFE_DISTANCE_PERMISSION)')
+  })
+
+  it('ANDs the scope into the existing filters rather than replacing them', () => {
+    // A substitution would drop the soft-delete check and leak deleted records.
+    expect(SAFE_DISTANCE_EXPORT).toMatch(
+      /const filters: SQL<unknown>\[\] = \[isNull\(safeDistanceRecords\.deletedAt\)\]/,
+    )
+    expect(SAFE_DISTANCE_EXPORT).toMatch(/if \(scopeWhere\) filters\.push\(scopeWhere\)/)
+    expect(SAFE_DISTANCE_EXPORT).toContain('const whereClause = and(...filters)')
+  })
+
+  it('still audits the export', () => {
+    expect(SAFE_DISTANCE_EXPORT).toContain('recordAudit')
   })
 })
 

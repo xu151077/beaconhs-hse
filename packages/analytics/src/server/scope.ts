@@ -353,14 +353,21 @@ const PREFIX_SCOPE: [string, ScopeSpec][] = [
   ],
 
   // --- tools -----------------------------------------------------------
-  // `safe_distance_records` really does carry `site_org_unit_id` and
-  // `operator_person_id`, so this spec was unbindable by omission rather than by
-  // data model. 15B-3B declares both so a restricted caller is narrowed rather
-  // than withheld.
+  // `safe_distance_records` carries both `site_org_unit_id` and
+  // `operator_person_id`, so the native tier ladder binds here with no
+  // Safe Distance specific rule of any kind.
+  //
+  // The read spec is the TIERED PREFIX `tools.safe-distance`, not a flat key.
+  // That is what lets `tierFor` resolve a real tier from
+  // `tools.safe-distance.read.{all,site,self}` — the same three keys every other
+  // record module in the catalogue declares — and therefore what lets the list,
+  // the detail page, the print view, the CSV and this spec answer one question
+  // with one ladder. A flat `read: { key: … }` resolves to tier 'all' and would
+  // hand every holder of the operate capability the whole tenant.
   [
     'safe_distance',
     {
-      read: { key: 'tools.safe-distance.use' },
+      read: { prefix: 'tools.safe-distance' },
       siteCols: SITE_COLUMNS,
       personCols: PERSON_COLUMNS,
     },

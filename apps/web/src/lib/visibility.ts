@@ -162,6 +162,22 @@ type ModuleScopeCols = {
   siteCol?: PgColumn
   /** A person column when the viewer can also be the record's SUBJECT. */
   personCol?: PgColumn
+  /**
+   * Whether Project Scope is ANDed on top of the read tier. Defaults to `true`
+   * for every module.
+   *
+   * Set `false` for a module whose visibility is fully described by
+   * Permission + Role Scope + tier + RLS, so its rows are not narrowed a second
+   * time by a dimension that model does not use. This is an OPT-OUT on one
+   * conjunct of the shared ladder — not a second ladder, not a bespoke resolver
+   * and not a new scope type: `resolveVisibilityTier`, the site/self branches and
+   * `canSeeRecord` are unchanged, and the column bindings still come from the
+   * caller's own `{type:'sites'}` Role Scope.
+   *
+   * Used by Safe Distance, which carries `site_org_unit_id` and
+   * `operator_person_id` and therefore has a real native tier of its own.
+   */
+  applyProjectScope?: boolean
 }
 
 /** The "this record is mine" conditions: an owner column equals me, or I'm the subject. */
@@ -190,12 +206,15 @@ export async function moduleScopeWhere(
 
   // Project Scope is resolved ONCE per call and ANDed with the visibility
   // predicate below. It is not an input to the tier decision, and it never
-  // replaces the tier decision.
-  const projectScope = await resolveProjectScopeIn(ctx, tx)
-  const scopeCond = projectScopePredicate(projectScope, {
-    orgUnitCol: cols.siteCol,
-    personCol: cols.personCol,
-  })
+  // replaces the tier decision. A module that opts out resolves nothing and gets
+  // no conjunct, so its rows are bounded by the tier and RLS alone.
+  const scopeCond =
+    cols.applyProjectScope === false
+      ? undefined
+      : projectScopePredicate(await resolveProjectScopeIn(ctx, tx), {
+          orgUnitCol: cols.siteCol,
+          personCol: cols.personCol,
+        })
 
   // Opt-in hazid read of others' assessments. Since 15B-2 this removes only the
   // VISIBILITY restriction (it lets a self-tier holder see other people's rows) —
@@ -233,6 +252,8 @@ type RecordOwnership = {
   siteId?: string | null
   /** person id the record is about, compared to the caller's person. */
   personId?: string | null
+  /** See `ModuleScopeCols.applyProjectScope`. Must match the list filter's choice. */
+  applyProjectScope?: boolean
 }
 
 /**
@@ -250,9 +271,11 @@ export async function canSeeRecord(
   // list filter and this detail guard cannot disagree. A record the SQL filters
   // out is not readable by id, and a record this refuses cannot come back from a
   // list query.
-  const projectScope = await resolveProjectScopeIn(ctx, tx)
-  if (!recordInProjectScope(projectScope, { siteId: rec.siteId, personId: rec.personId })) {
-    return false
+  if (rec.applyProjectScope !== false) {
+    const projectScope = await resolveProjectScopeIn(ctx, tx)
+    if (!recordInProjectScope(projectScope, { siteId: rec.siteId, personId: rec.personId })) {
+      return false
+    }
   }
 
   const tier = resolveVisibilityTier(ctx, rec.prefix)

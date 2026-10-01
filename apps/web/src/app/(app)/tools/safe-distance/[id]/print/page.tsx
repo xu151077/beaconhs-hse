@@ -15,7 +15,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
 import { BrowserPrintButton } from '@/components/browser-print-controls'
 import { isUuid } from '@/lib/list-params'
-import { canUseSafeDistance } from '@/lib/safe-distance-access'
+import { canSeeSafeDistanceRecord, canUseSafeDistance } from '@/lib/safe-distance-access'
 import {
   distanceUnitLabel,
   formatDistance,
@@ -72,6 +72,11 @@ export default async function SafeDistancePrintPage({
       .where(and(eq(safeDistanceRecords.id, id), isNull(safeDistanceRecords.deletedAt)))
       .limit(1)
     if (!row) return null
+    // The record-level half of the read tier, identical to the detail page and
+    // the list. The print view exposes the same content plus the joined site,
+    // supervisor and operator, so leaving it unguarded would make it a strictly
+    // wider read-by-id bypass than the page it is printed from.
+    if (!(await canSeeSafeDistanceRecord(ctx, tx, row.rec))) return null
     const segments = await tx
       .select()
       .from(safeDistanceSegments)

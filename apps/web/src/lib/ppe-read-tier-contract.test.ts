@@ -81,8 +81,10 @@ describe('ppe read-tier catalogue', () => {
     // The catalogue is a curated list; a count change means a key was added or
     // dropped without anyone reading this test. 93 → 96 when the residual audit
     // added `people.read.all`, `compliance.read.all` and `compliance.read.site`.
-    expect(PERMISSION_CATALOGUE.length).toBe(96)
-    expect(new Set(PERMISSION_CATALOGUE).size).toBe(96)
+    // 96 → 99 when Safe Distance moved onto the native read tier
+    // (`tools.safe-distance.read.{all,site,self}`).
+    expect(PERMISSION_CATALOGUE.length).toBe(99)
+    expect(new Set(PERMISSION_CATALOGUE).size).toBe(99)
   })
 
   it('grants a worker own-PPE read', () => {
@@ -107,7 +109,7 @@ describe('ppe read-tier catalogue', () => {
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.site')
     // tenant_admin holds the whole catalogue, so this tracks PERMISSION_CATALOGUE.
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(96)
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(99)
   })
 
   it('widens through readTierCovers so higher tiers satisfy lower ones', () => {
