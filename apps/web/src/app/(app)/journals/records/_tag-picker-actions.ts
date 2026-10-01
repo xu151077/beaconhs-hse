@@ -15,7 +15,15 @@ async function reviewerScope() {
   const ctx = await requireRequestContext()
   if (!journalCanBrowseAll(ctx)) throw new Error('Journal records are not available.')
   const authorPersonId = await getAuthorPersonId(ctx)
-  return { ctx, scope: journalScopeWhere(ctx, authorPersonId) }
+  // 15B-3C-4B: `journalScopeWhere` now resolves Project Scope, which needs a
+  // transaction. This helper runs before each picker's own `ctx.db` opens, so
+  // there is no `tx` to reuse. Scope resolution therefore gets a short dedicated
+  // transaction that ends the moment the predicate is returned — no data query
+  // inside it, and none of the three pickers' transactions is touched or widened.
+  // The gate above, the tenant conditions and the `deletedAt` conditions in each
+  // picker are unchanged.
+  const scope = await ctx.db(async (tx) => journalScopeWhere(ctx, tx, authorPersonId))
+  return { ctx, scope }
 }
 
 /** Search only tags attached to journal records this reviewer may actually open. */

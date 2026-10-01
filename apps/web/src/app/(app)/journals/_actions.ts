@@ -83,7 +83,13 @@ function authorRefFromEntry(entry: JournalEntryDetail): AuthorRef {
 async function scopedWhere(ctx: RequestContext, id: string): Promise<SQL> {
   if (!isUuid(id)) return sql`false`
   const authorPersonId = journalCanReadAll(ctx) ? null : await getAuthorPersonId(ctx)
-  const scope = journalScopeWhere(ctx, authorPersonId)
+  // 15B-3C-4B: `journalScopeWhere` now resolves Project Scope, which needs a
+  // transaction. Both callers (`mutationWhere` below and `applyEntryAi`) build
+  // this predicate before their own `ctx.db` opens, so there is no `tx` to reuse.
+  // Scope resolution therefore gets a short dedicated transaction that ends the
+  // moment the predicate is returned — no data query inside it, and neither
+  // caller's existing transaction is touched, wrapped or widened.
+  const scope = await ctx.db(async (tx) => journalScopeWhere(ctx, tx, authorPersonId))
   return and(eq(journalEntries.id, id), isNull(journalEntries.deletedAt), scope)!
 }
 

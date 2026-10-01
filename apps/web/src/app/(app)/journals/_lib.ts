@@ -6,6 +6,8 @@ import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { journalEntries, people } from '@beaconhs/db/schema'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import type { Database } from '@beaconhs/db'
+import { resolveProjectScopeIn } from '@/lib/project-scope'
+import { projectScopePredicate } from '@/lib/project-scope-predicate'
 export { htmlToText } from '@beaconhs/forms-core'
 import { nextReference } from '@/lib/reference'
 
@@ -21,7 +23,7 @@ export function journalCanBrowseAll(ctx: RequestContext): boolean {
 
 /**
  * Visibility predicate for journal_entries based on the caller's read tier:
- *   read.all  → no extra filter (RLS already bounds to tenant)
+ *   read.all  → the caller's Project Scope (see the note on that branch)
  *   read.site → entries at the caller's scoped sites, UNION their own
  *   read.self → only entries authored by, or created by, the caller (default)
  *
@@ -30,11 +32,39 @@ export function journalCanBrowseAll(ctx: RequestContext): boolean {
  * mirrors the generalised `moduleScopeWhere` (see record-visibility model) so
  * journals behave like every other record module.
  */
-export function journalScopeWhere(
+export async function journalScopeWhere(
   ctx: RequestContext,
+  tx: Database,
   authorPersonId: string | null,
-): SQL | undefined {
-  if (journalCanReadAll(ctx)) return undefined
+): Promise<SQL | undefined> {
+  if (journalCanReadAll(ctx)) {
+    // 15B-3C-4B — Option A. This branch used to `return undefined`, i.e. no row
+    // filter at all. That is the pre-15B-2 model: it read `journals.read.all` as
+    // "you may see the whole tenant". Since 15B-2 a Project Scope is a dimension
+    // ORTHOGONAL to the read tier, and the canonical ladder applies it even at
+    // tier `all` (`lib/visibility.ts`, `if (tier === 'all') return scopeCond`).
+    // A `safety_manager` — the built-in role holding `journals.read.all` —
+    // assigned `{type:'sites'}` was reading every journal in the tenant from all
+    // nine call sites below, while analytics had already narrowed the same table
+    // (`packages/analytics/src/server/scope.ts` declares `siteCols` for
+    // `journal_`) and every other record module had.
+    //
+    // SCOPE OF THIS FIX — deliberately narrow. Only the one branch that actually
+    // escaped Project Scope is touched; the `.site` and `.self` branches below are
+    // unchanged and keep journals' own semantics, which `moduleScopeWhere` does
+    // NOT share:
+    //   • own entries visible at every tier, including outside the caller's sites
+    //   • the `'super-admin'` sentinel guard in `authorTenantUserId`
+    //   • `getAuthorPersonId`'s exclusion of soft-deleted employee rows
+    // A wholesale migration to `moduleScopeWhere` would also close the `.site` /
+    // `.self` under-exposure, but it would bind the own leg to the scope and
+    // break all three of those. That is a product decision, tracked separately.
+    const projectScope = await resolveProjectScopeIn(ctx, tx)
+    return projectScopePredicate(projectScope, {
+      orgUnitCol: journalEntries.siteOrgUnitId,
+      personCol: journalEntries.personId,
+    })
+  }
 
   const own: SQL[] = []
   if (authorPersonId) own.push(eq(journalEntries.personId, authorPersonId))
@@ -69,13 +99,17 @@ function journalByAuthorWhere(personId: string | null, tenantUserId: string | nu
  * own read tier so an admin never sees beyond their scope (read.all → all of the
  * author's; read.site → the author's at the viewer's sites).
  */
-export function journalAuthorScopeWhere(
+export async function journalAuthorScopeWhere(
   ctx: RequestContext,
+  tx: Database,
   viewerPersonId: string | null,
   target: { personId: string | null; tenantUserId: string | null },
-): SQL {
+): Promise<SQL> {
   const byAuthor = journalByAuthorWhere(target.personId, target.tenantUserId)
-  const viewer = journalScopeWhere(ctx, viewerPersonId)
+  // 15B-3C-4B: `journalScopeWhere` now resolves Project Scope inside `tx`, so it is
+  // awaited and the transaction threaded through. `journalByAuthorWhere` is
+  // unchanged, so the author filter and its `false` fallback behave as before.
+  const viewer = await journalScopeWhere(ctx, tx, viewerPersonId)
   return viewer ? and(byAuthor, viewer)! : byAuthor
 }
 

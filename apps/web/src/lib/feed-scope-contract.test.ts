@@ -195,7 +195,16 @@ describe('15B-3C-4A — the journal legs are left for their own batch', () => {
     // the whole journals module (listEntries, countEntries, getEntry, buildTree,
     // the send-email and tag-picker actions). Changing it here would silently
     // rescope journals, which is 15B-3C-4B and needs its own review.
-    expect(FEED).toContain('journalScopeWhere(ctx, authorPersonId)')
+    //
+    // 4B (committed after this file) threaded the transaction through both legs,
+    // so the call form is now `await journalScopeWhere(ctx, tx, …)`. The point of
+    // this assertion is unchanged — the feed delegates journals to journals'
+    // own helper rather than to the canonical `moduleScope` ladder — and it is
+    // now strictly stronger, because it also pins that the transaction is passed.
+    expect([...FEED.matchAll(/await journalScopeWhere\(ctx, tx, authorPersonId\)/g)]).toHaveLength(
+      2,
+    )
+    expect(codeOnly(FEED)).not.toMatch(/moduleScope\(\s*ctx,\s*tx,\s*'journal/)
   })
 
   it('and the deferral is written down where the next reader will hit it', () => {

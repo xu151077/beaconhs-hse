@@ -151,7 +151,7 @@ export async function getFeed(
           whereAll(
             eq(journalEntries.status, 'submitted'),
             isNull(journalEntries.deletedAt),
-            journalScopeWhere(ctx, authorPersonId),
+            await journalScopeWhere(ctx, tx, authorPersonId),
             cursor
               ? sql`coalesce(${journalEntries.submittedAt}, ${journalEntries.createdAt}) < ${cursor.toISOString()}::timestamptz`
               : undefined,
@@ -433,7 +433,7 @@ export async function getFeedSummary(ctx: RequestContext): Promise<FeedSummary> 
           whereAll(
             eq(journalEntries.status, 'submitted'),
             isNull(journalEntries.deletedAt),
-            journalScopeWhere(ctx, authorPersonId),
+            await journalScopeWhere(ctx, tx, authorPersonId),
             sql`${journalAt} >= ${week.toISOString()}::timestamptz`,
           ),
         )

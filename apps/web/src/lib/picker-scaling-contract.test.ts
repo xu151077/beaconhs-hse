@@ -233,7 +233,15 @@ describe('production-scale picker contract', () => {
 
     const journalActions = source('../app/(app)/journals/records/_tag-picker-actions.ts')
     expect(journalActions).toContain('journalCanBrowseAll(ctx)')
-    expect(journalActions).toContain('journalScopeWhere(ctx, authorPersonId)')
+    // 15B-3C-4B made `journalScopeWhere` resolve Project Scope, which needs a
+    // transaction. `reviewerScope` runs before each picker's own `ctx.db` opens,
+    // so scope resolution gets a short dedicated one and the `tx` is threaded in.
+    // The intent here is unchanged — the picker still scopes by journal read
+    // visibility rather than by a facet cap — and the assertion is now stricter,
+    // because it also pins that the transaction is awaited and passed.
+    expect(journalActions).toContain(
+      'await ctx.db(async (tx) => journalScopeWhere(ctx, tx, authorPersonId))',
+    )
     expect(journalActions.match(/\.limit\(PICKER_RESULT_LIMIT \+ 1\)/g)).toHaveLength(3)
 
     const journalPage = source('../app/(app)/journals/records/page.tsx')
