@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { isFormResponseParentLockedError, lockFormResponseForMutation } from '@beaconhs/db'
 import {
@@ -258,6 +258,8 @@ export async function persistDraft(
           status: formResponses.status,
           locked: formResponses.locked,
           submittedBy: formResponses.submittedBy,
+          templateId: formResponses.templateId,
+          draftData: formResponses.draftData,
           draftData: formResponses.draftData,
           draftUpdatedAt: formResponses.draftUpdatedAt,
           schema: formTemplateVersions.schema,
@@ -733,6 +735,22 @@ export async function draftSketchDiagram(args: {
  *
  * Guarded exactly like any other response writer: `canFillResponse` for access,
  * the shared parent-first lock, and `canEditResponsePayload` for edit rights.
+ *
+ * The location lives in TWO places and this action writes both:
+ *
+ *   1. `form_responses.site_org_unit_id` — the column the
+ *      `forms.response.read.site` ladder and every site-scoped query filter on.
+ *   2. the `site` field of the response payload, but only IF the template's
+ *      published schema declares a field whose id is `site` (any org-unit
+ *      picker; `entityAttrPickerTypeForField` keys every one of them off that
+ *      field id).
+ *
+ * Without (2) a required Site field could never be satisfied from this control,
+ * because `validateResponse` reads only the JSON payload and cannot see the
+ * column — so Finalize bounced with `finalizeError=1` on every attempt and the
+ * record could never leave `in_progress`. The wizard's own `site_picker` field
+ * write covered (2) alone; this header control covered (1) alone. Keeping both
+ * in step is the whole point of routing them through one action.
  */
 export async function setResponseLocation(input: {
   responseId: string
@@ -772,6 +790,30 @@ export async function setResponseLocation(input: {
         return { ok: false as const, error: 'You do not have permission to edit this record' }
       }
 
+      // Does the template's published schema declare a payload field keyed on the
+      // org unit? Same lookup `fetchEntityAttrs` uses, so the header Location
+      // control and the wizard's `site_picker` field agree on one field id.
+      const [version] = await tx
+        .select({ schema: formTemplateVersions.schema })
+        .from(formTemplateVersions)
+        .innerJoin(formTemplates, eq(formTemplates.id, formTemplateVersions.templateId))
+        .where(
+          and(
+            eq(formTemplateVersions.templateId, row.templateId),
+            eq(formTemplateVersions.tenantId, ctx.tenantId),
+            eq(formTemplates.tenantId, ctx.tenantId),
+            eq(formTemplates.status, 'published'),
+            isNull(formTemplates.deletedAt),
+            isNotNull(formTemplateVersions.publishedAt),
+          ),
+        )
+        .orderBy(desc(formTemplateVersions.version))
+        .limit(1)
+      const parsedSchema = version ? formSchemaV1.safeParse(version.schema) : null
+      const schemaHasSiteField =
+        parsedSchema?.success === true &&
+        parsedSchema.data.sections.some((section) => section.fields.some((f) => f.id === 'site'))
+
       // Same org-unit scope the wizard's own Location control writes through, so
       // a location can never point at another tenant's org unit.
       if (parsed.data.siteOrgUnitId) {
@@ -788,9 +830,28 @@ export async function setResponseLocation(input: {
           .limit(1)
         if (!org) return { ok: false as const, error: 'Location not found' }
       }
+      // Mirror the org unit into the payload's `site` field when the template
+      // declares one, so `validateResponse` sees the same value this header
+      // control just wrote to the column. A schema with no `site` field is left
+      // alone: there the column is the single source of truth.
+      const siteValue = parsed.data.siteOrgUnitId
+        ? sql`${JSON.stringify(parsed.data.siteOrgUnitId)}::jsonb`
+        : sql`'null'::jsonb`
+      const patch: { siteOrgUnitId: string | null; data?: SQL; draftData?: SQL } = {
+        siteOrgUnitId: parsed.data.siteOrgUnitId,
+      }
+      if (schemaHasSiteField) {
+        patch.data = sql`jsonb_set(coalesce(${formResponses.data}, '{}'::jsonb), ARRAY['site']::text[], ${siteValue}, true)`
+        // `responsePayload` spreads draft values over `data`, so a live draft
+        // shadows the mirrored copy. Without updating it too, the previous value
+        // would keep winning at submit time.
+        if (row.draftData) {
+          patch.draftData = sql`jsonb_set(jsonb_set(coalesce(${formResponses.draftData}, '{}'::jsonb), ARRAY['values']::text[], coalesce(${formResponses.draftData}->'values', '{}'::jsonb), true), ARRAY['values','site']::text[], ${siteValue}, true)`
+        }
+      }
       await tx
         .update(formResponses)
-        .set({ siteOrgUnitId: parsed.data.siteOrgUnitId })
+        .set(patch)
         .where(
           and(
             eq(formResponses.id, parsed.data.responseId),

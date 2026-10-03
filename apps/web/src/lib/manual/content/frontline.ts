@@ -812,6 +812,133 @@ Your answers save as you go, so you can stop and come back before finalizing.
 ${CSV_EXPORT_LIMIT_GUIDANCE}`,
   },
   {
+    slug: 'environmental-monitoring',
+    title: 'Environmental monitoring log',
+    group: 'Everyday tasks',
+    iconKey: 'gauge',
+    summary: 'Record one line for every air, water, waste or noise measurement you take.',
+    requiredAnyPermission: [
+      'forms.response.read.all',
+      'forms.response.read.site',
+      'forms.response.read.self',
+    ],
+    keywords: [
+      'environment',
+      'environmental',
+      'monitoring',
+      'emissions',
+      'effluent',
+      'noise',
+      'pollution',
+      'spill',
+      'reading',
+      'sample',
+      'lab',
+      'limit',
+      'discharge',
+      'water',
+      'air quality',
+      'waste',
+    ],
+    body: `An **Environmental Monitoring Log** is a table where you write down one line for every measurement you take: what you measured, what the number was, and whether it was inside the limit.
+
+Use it for air, water, waste, noise, soil and spill checks. It is a log, not a form you fill once.
+
+## Adding a reading
+
+1. Open **Apps** and choose **Environmental Monitoring Log**. If your company has pinned it, it is also in the left menu.
+2. Tap **New entry**.
+3. In the **Location** box at the top, choose the site the sample came from. This is what decides who can see the entry, so set it first.
+4. Set the **Monitoring date and time**.
+5. Choose the **Monitoring category**: air, water, waste, noise, soil, or spill.
+6. Type the **Parameter measured**, for example pH, particulate, VOC or dB(A).
+7. Type the **Reading** and the **Unit**. The unit matters, so always write it, for example mg/L or ppm.
+8. If there is a legal limit, type it in **Permitted limit**.
+9. Choose the **Result**: within limits, limit exceeded, not taken, or investigation required.
+10. Choose **Monitored by**, attach the lab report in **Evidence** if you have one, and add anything worth remembering in **Notes**.
+11. Tap **Finalize**.
+
+Your answers save as you go, so you can stop and come back before finalizing.
+
+## When a reading is over the limit
+
+1. Open the entry and change the **Result** to **Limit exceeded**.
+2. Raise a corrective action from the entry so someone owns fixing it.
+3. Record the follow-up reading as a new line in the log. Do not edit the old line — the history has to stay true.
+
+## Finding a reading
+
+- **Apps** → **Environmental Monitoring Log** opens the list of every reading you are allowed to see. Readings at sites you are not assigned to are not shown.
+- Use the search box to search the parameter and the notes, and the filter to narrow the list by date.
+
+${CSV_EXPORT_LIMIT_GUIDANCE}`,
+  },
+  {
+    slug: 'statutory-register',
+    title: 'Statutory compliance register',
+    group: 'Everyday tasks',
+    iconKey: 'scroll',
+    summary:
+      'List the laws and permits a site must follow, who owns each one, and when it is due for review.',
+    requiredAnyPermission: [
+      'forms.response.read.all',
+      'forms.response.read.site',
+      'forms.response.read.self',
+    ],
+    keywords: [
+      'statutory',
+      'register',
+      'legal',
+      'law',
+      'licence',
+      'license',
+      'permit',
+      'regulation',
+      'compliance',
+      'renewal',
+      'renew',
+      'review date',
+      'expiry',
+      'obligation',
+      'clause',
+      'authority',
+    ],
+    body: `A **Statutory Compliance Register** is a table of the laws, permits and licences your site has to follow. Each line says what the rule requires, who owns it, and when it must be renewed.
+
+The rule itself is kept as a document. This register is the line that says the rule applies to a particular site.
+
+## Adding a requirement
+
+1. Open **Apps** and choose **Statutory Compliance Register**. If your company has pinned it, it is also in the left menu.
+2. Tap **New entry**.
+3. In the **Location** box at the top, choose the site the requirement applies to. This is what decides who can see the entry, so set it first.
+4. Write the **Requirement / legal item** in plain words. Name the clause if you can.
+5. Type the **Permit, licence or instrument reference**, for example a licence number.
+6. Type the **Issuing authority**.
+7. Choose the **Responsible person**. This is the person who answers for the requirement.
+8. Set the **Applicable from** date, and the **Review / expiry date**. The review date is what drives the reminder, so set it to the real renewal date.
+9. Choose the **Status**: compliant, action required, not applicable, or superseded.
+10. Attach the certificate or permit copy in **Evidence**, and add anything useful in **Notes**.
+11. Tap **Finalize**.
+
+Your answers save as you go, so you can stop and come back before finalizing.
+
+## Keeping the register up to date
+
+- When a requirement is renewed, add a new line. Keep the old line as it was, so the history stays true.
+- When a law changes, update the **Requirement / legal item** and move the **Review / expiry date** forward.
+- Change the **Status** to **Action required** when something is outstanding, and back to **Compliant** when it is done.
+- The review date drives the same reminders you get for training and permits, so a register line that is about to expire will warn you like any other requirement.
+
+## Finding a requirement
+
+- **Apps** → **Statutory Compliance Register** opens the list of every entry you are allowed to see. Entries for sites you are not assigned to are not shown.
+- Use the search box to search the requirement and the instrument reference, and the filter to narrow the list.
+- The **Statutory** category in **Documents** is where the signed licences and permits themselves are filed.
+
+${CSV_EXPORT_LIMIT_GUIDANCE}`,
+  },
+  {
     slug: 'compliance',
     title: 'My compliance',
     group: 'Everyday tasks',

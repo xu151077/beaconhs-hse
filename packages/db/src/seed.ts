@@ -94,6 +94,9 @@ import type { FormSchemaV1 } from './schema'
 import { CANONICAL_TEMPLATES } from './canonical-templates'
 import { seedHazardAssessmentAppTemplates } from './seed/hazard-assessment-app-templates'
 import { seedWorkPermitTemplate } from './seed/work-permit-template'
+import { seedPhase11EEquipment } from './seed/phase11e-equipment'
+import { seedPhase11EDocumentCategories } from './seed/phase11e-document-categories'
+import { seedPhase11ERegisterApps } from './seed/phase11e-register-apps'
 import { seedLiftPlanTemplate } from './seed/lift-plan-template'
 import { seedFormPdfTemplates, seedPdfTemplates } from './seed/pdf-templates'
 import { BEACON_REPORT_SEEDS } from './seed/report-definitions'
@@ -1575,6 +1578,23 @@ async function main() {
     const all = await tx.select({ id: tenants.id }).from(tenants)
     for (const t of all) {
       await seedWorkPermitTemplate(tx as never, t.id)
+    }
+  })
+
+  // Phase 11-E — Fire / Environment / Calibration / Statutory Register.
+  //
+  // Seed DATA ONLY, inside the same per-tenant-every-run stage as the permit
+  // above and NOT inside the first-run-only demo bootstrap. Every row lands in a
+  // table the platform already owns: no new table, enum, migration, permission,
+  // RoleScope variant or nav module is introduced. Calibration and Fire are
+  // equipment categories/types plus equipment inspection types and criteria;
+  // Environment and Statutory are two register-kind Builder Apps.
+  await db.transaction(async (tx) => {
+    const all = await tx.select({ id: tenants.id }).from(tenants)
+    for (const t of all) {
+      await seedPhase11EEquipment(tx as never, t.id)
+      await seedPhase11EDocumentCategories(tx as never, t.id)
+      await seedPhase11ERegisterApps(tx as never, t.id)
     }
   })
 

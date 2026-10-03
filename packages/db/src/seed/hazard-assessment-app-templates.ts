@@ -399,6 +399,13 @@ export async function ensureTemplate(
     schema: FormSchemaV1
     /** `form_templates.category`. Defaults to `jsha` (branded "Hazard Assessment"). */
     category?: string
+    /**
+     * `form_templates.kind`. Defaults to `wizard`, which is what the three
+     * embedded HazID apps have always been. A standalone built-in that is an
+     * append-and-browse log passes `register`; `form_template_kind` already has
+     * that member and the Builder already offers it in its app-type picker.
+     */
+    kind?: 'form' | 'wizard' | 'checklist' | 'register' | 'mini_app'
     iconKey?: string
     changelog?: string
     /** Automation graph seeded as `form_automations` row for this template. */
@@ -426,7 +433,7 @@ export async function ensureTemplate(
       // this tag, so it only mislabelled them as hazard-module-bound.
       description: args.description,
       status: 'published' as const,
-      kind: 'wizard' as const,
+      kind: args.kind ?? ('wizard' as const),
       iconKey: args.iconKey ?? (args.key.includes('arc') ? 'zap' : 'badge-alert'),
       createdBy: null,
     })
