@@ -22,6 +22,7 @@ import {
   sql,
 } from 'drizzle-orm'
 import type { Database } from '@beaconhs/db'
+import { entryClassWhere } from '@beaconhs/db/journal-class'
 import {
   complianceObligations,
   correctiveActions,
@@ -474,6 +475,11 @@ async function evalJournal(
         lte(journalEntries.entryDate, window.periodEnd),
         inArray(journalEntries.status, ['submitted', 'archived']),
         isNull(journalEntries.deletedAt),
+        // A journal-cadence obligation is satisfied by a DAILY JOURNAL. Safety
+        // observations live in the same table under a different `definition`, and a
+        // submitted observation is not a day's log — counting one would let a worker
+        // pass a journal obligation by filing observations instead.
+        entryClassWhere('journal'),
       ),
     )
     .groupBy(journalEntries.personId)

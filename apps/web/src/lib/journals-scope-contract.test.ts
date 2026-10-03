@@ -390,8 +390,11 @@ describe('the write ladder is independent of the read ladder', () => {
     expect(body).toMatch(/journalSelfScopeWhere\(ctx, authorPersonId\)/)
     expect(body).toMatch(/return sql`false`/)
     // `read_scope` still delegates to the READ ladder — the only coupling, and it
-    // was already there.
-    expect(body).toMatch(/if \(scope === 'read_scope'\) return scopedWhere\(ctx, id\)/)
+    // was already there. The class is threaded through both branches, so a write
+    // can never reach a record of the other class (a safety observation is written
+    // only from the observations surface, and a daily journal only from journals).
+    expect(body).toMatch(/if \(scope === 'read_scope'\) return scopedWhere\(ctx, id, entryClass\)/)
+    expect(body).toMatch(/entryClassWhere\(entryClass\)/)
   })
 
   it('scopedWhere threads the transaction into the read ladder', () => {
@@ -441,7 +444,15 @@ describe('emailing still goes through the read ladder', () => {
   it('and the caller still gates on canEmailJournal before calling it', () => {
     const body = bodyOf(JOURNALS_ACTIONS, /export async function emailEntry\(/)
     expect(body).toMatch(/if \(!canEmailJournal\(ctx\)\)/)
-    expect(body).toMatch(/const where = await mutationWhere\(ctx, id, 'submit'\)/)
+    // `entryClass` is the class-pinned default, so the journals route keeps its
+    // exact prior meaning: email a daily journal, never an observation. The
+    // default lives on the signature, so it is asserted there, not in the body.
+    expect(body).toMatch(/const where = await mutationWhere\(ctx, id, 'submit', entryClass\)/)
+    const signature = JOURNALS_ACTIONS.slice(
+      JOURNALS_ACTIONS.indexOf('export async function emailEntry('),
+      JOURNALS_ACTIONS.indexOf('export async function emailEntry(') + 200,
+    )
+    expect(signature).toMatch(/entryClass: EntryClass = 'journal'/)
   })
 
   it('canEmailJournal is the documented permission set, unchanged', () => {

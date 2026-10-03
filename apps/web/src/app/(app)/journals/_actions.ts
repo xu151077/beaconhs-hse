@@ -30,15 +30,19 @@ import {
 import { recordAudit, recordAuditInTransaction } from '@/lib/audit'
 import { journalEntrySubmittedEvent } from '@beaconhs/integrations'
 import { moduleFlowCommand, recordDomainEvent, recordModuleFlowEvent } from '@beaconhs/events'
+import { definitionForClass, entryClassWhere, type EntryClass } from '@beaconhs/db/journal-class'
 import {
+  authorTenantUserId,
   getAuthorPersonId,
   htmlToText,
   journalCanBrowseAll,
   journalCanReadAll,
   journalSelfScopeWhere,
   journalScopeWhere,
+  nextJournalReference,
 } from './_lib'
 import { buildTree, getEntry, getOrCreateEntryForDate, getWorkspaceData } from './_data'
+import { isObservationDefinition, type ObservationDefinition } from '@beaconhs/db/schema'
 import { sendJournalEntryEmail } from './_send-email'
 import type {
   AuthorRef,
@@ -79,8 +83,14 @@ function authorRefFromEntry(entry: JournalEntryDetail): AuthorRef {
 }
 
 /** Visibility-scoped WHERE for a single live entry (tenant + author/site/self).
- *  Always excludes soft-deleted entries — a deleted journal is not editable. */
-async function scopedWhere(ctx: RequestContext, id: string): Promise<SQL> {
+ *  Always excludes soft-deleted entries — a deleted journal is not editable.
+ *  `entryClass` pins the business class, so an id from the other surface is
+ *  unmutable here rather than silently rewritten. */
+async function scopedWhere(
+  ctx: RequestContext,
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<SQL> {
   if (!isUuid(id)) return sql`false`
   const authorPersonId = journalCanReadAll(ctx) ? null : await getAuthorPersonId(ctx)
   // `journalScopeWhere` takes a transaction by signature and does not read it, so
@@ -90,7 +100,12 @@ async function scopedWhere(ctx: RequestContext, id: string): Promise<SQL> {
   // query inside it, and neither caller's existing transaction is touched,
   // wrapped or widened.
   const scope = await ctx.db(async (tx) => journalScopeWhere(ctx, tx, authorPersonId))
-  return and(eq(journalEntries.id, id), isNull(journalEntries.deletedAt), scope)!
+  return and(
+    eq(journalEntries.id, id),
+    isNull(journalEntries.deletedAt),
+    entryClassWhere(entryClass),
+    scope,
+  )!
 }
 
 /**
@@ -103,15 +118,17 @@ async function mutationWhere(
   ctx: RequestContext,
   id: string,
   mutation: JournalMutation,
+  entryClass: EntryClass = 'journal',
 ): Promise<SQL> {
   if (!isUuid(id)) return sql`false`
   const scope = journalMutationScope(ctx, mutation)
-  if (scope === 'read_scope') return scopedWhere(ctx, id)
+  if (scope === 'read_scope') return scopedWhere(ctx, id, entryClass)
   if (scope === 'none') return sql`false`
   const authorPersonId = await getAuthorPersonId(ctx)
   return and(
     eq(journalEntries.id, id),
     isNull(journalEntries.deletedAt),
+    entryClassWhere(entryClass),
     journalSelfScopeWhere(ctx, authorPersonId),
   )!
 }
@@ -148,11 +165,113 @@ export async function createEntryForDate(
   return { ok: true, id }
 }
 
+/**
+ * Create a Safety Observation as a fresh draft journal entry.
+ *
+ * A safety observation is a CLASSIFICATION of a journal entry, not a second
+ * table, so this delegates to the same `getOrCreateEntryForDate` writer the daily
+ * journal uses with an observation `definition`. It mints its OWN reference from
+ * the shared JRN series and is therefore always a new record — an observation is
+ * a discrete observed condition, not a day's log, so there is deliberately no
+ * get-or-reuse step: two observations on the same day are two records.
+ *
+ * Authorization is the journals ladder unchanged: `journals.create` to write,
+ * `journalScopeWhere()` to read, `journals.submit` to submit, `journals.assign`
+ * to write across the read scope. No new permission, no new RoleScope, no second
+ * resolver.
+ */
+export async function createObservation(input: {
+  observedAt: string
+  definition: ObservationDefinition
+  siteOrgUnitId?: string | null
+  supervisorPersonId?: string | null
+  title?: string
+}): Promise<ActionOk<{ id: string; reference: string }> | ActionErr> {
+  const ctx = await requireRequestContext()
+  if (!canCreateJournal(ctx)) return { ok: false, error: 'You cannot create observations.' }
+  const raw = actionRecord(input)
+  const definition = raw.definition
+  if (!isObservationDefinition(definition)) {
+    return { ok: false, error: 'Choose positive or negative.' }
+  }
+  const observedAt = typeof raw.observedAt === 'string' ? raw.observedAt : ''
+  if (!validDate(observedAt)) return { ok: false, error: 'Choose a valid observation date.' }
+  // `raw` values are `unknown`, so narrow to a string BEFORE the uuid check: an
+  // object or a number must be refused, not handed to the validator.
+  const siteOrgUnitId = typeof raw.siteOrgUnitId === 'string' ? raw.siteOrgUnitId : null
+  if (siteOrgUnitId && !isUuid(siteOrgUnitId)) {
+    return { ok: false, error: 'Invalid site.' }
+  }
+  const supervisorPersonId =
+    typeof raw.supervisorPersonId === 'string' ? raw.supervisorPersonId : null
+  if (supervisorPersonId && !isUuid(supervisorPersonId)) {
+    return { ok: false, error: 'Invalid supervisor.' }
+  }
+  const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, 300) : null
+
+  const authorPersonId = await getAuthorPersonId(ctx)
+  const tenantUserId = authorTenantUserId(ctx)
+  // An observation is an attributable record: its own tier leg is
+  // `createdByTenantUserId`, so a caller with no identity to own it would create
+  // a row nobody can see and nobody can edit. Refuse rather than write an orphan.
+  if (!authorPersonId && !tenantUserId) return { ok: false, error: NO_AUTHOR_IDENTITY }
+
+  const row = await ctx.db(async (tx) => {
+    if (siteOrgUnitId) {
+      const [site] = await tx
+        .select({ id: orgUnits.id })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.id, siteOrgUnitId), isNull(orgUnits.deletedAt)))
+        .limit(1)
+      if (!site) return null
+    }
+    if (supervisorPersonId) {
+      const [supervisor] = await tx
+        .select({ id: people.id })
+        .from(people)
+        .where(and(eq(people.id, supervisorPersonId), isNull(people.deletedAt)))
+        .limit(1)
+      if (!supervisor) return null
+    }
+    const reference = await nextJournalReference(tx, ctx.tenantId, Number(observedAt.slice(0, 4)))
+    const [inserted] = await tx
+      .insert(journalEntries)
+      .values({
+        tenantId: ctx.tenantId,
+        reference,
+        personId: authorPersonId,
+        createdByTenantUserId: tenantUserId,
+        entryDate: observedAt,
+        siteOrgUnitId,
+        supervisorPersonId,
+        definition,
+        title: title || null,
+        status: 'draft',
+        metadata: { kind: 'safety_observation' },
+      })
+      .returning({ id: journalEntries.id, reference: journalEntries.reference })
+    return inserted ?? null
+  })
+  if (!row) return { ok: false, error: 'Observation could not be created.' }
+
+  await recordAudit(ctx, {
+    entityType: 'journal_entry',
+    entityId: row.id,
+    action: 'create',
+    summary: `Created observation ${row.reference}`,
+    metadata: { kind: 'safety_observation', definition, observedAt },
+  })
+  revalidatePath('/observations')
+  return { ok: true, id: row.id, reference: row.reference }
+}
+
 // ---- update (autosave) ------------------------------------------------------
 
 export async function updateEntry(input: {
   id: string
   patch: EntryPatch
+  /** Business class of the surface calling this. Defaults to the daily journal. */
+  entryClass?: EntryClass
 }): Promise<ActionOk<{ updatedAt: string }> | ActionErr> {
   const ctx = await requireRequestContext()
   if (
@@ -165,6 +284,7 @@ export async function updateEntry(input: {
     return { ok: false, error: 'Invalid journal update.' }
   }
   const { id, patch } = input
+  const entryClass = input.entryClass ?? 'journal'
 
   const values: Record<string, unknown> = {}
   let cleanTags: string[] | undefined
@@ -179,8 +299,18 @@ export async function updateEntry(input: {
     values.bodyHtml = clean
     values.bodyText = htmlToText(clean)
   }
+  if (patch.title !== undefined) {
+    if (typeof patch.title !== 'string' || patch.title.length > 300) {
+      return { ok: false, error: 'Invalid journal title.' }
+    }
+    values.title = patch.title.trim() || null
+  }
   if (patch.definition !== undefined) {
-    if (patch.definition !== 'worker' && patch.definition !== 'supervisor') {
+    // A patch may only move WITHIN its own class. Without this, `journals.update.own`
+    // on a journal could rewrite `definition` to `negative_observation` and hand
+    // the record to the observations surface — and the reverse — so the class
+    // partition would rest on the client instead of on the server.
+    if (definitionForClass(patch.definition, entryClass) === null) {
       return { ok: false, error: 'Invalid journal definition.' }
     }
     values.definition = patch.definition
@@ -266,9 +396,12 @@ export async function updateEntry(input: {
   return { ok: true, updatedAt: row.updatedAt.toISOString() }
 }
 
-export async function submitEntry(id: string): Promise<ActionOk | ActionErr> {
+export async function submitEntry(
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<ActionOk | ActionErr> {
   const ctx = await requireRequestContext()
-  const where = await mutationWhere(ctx, id, 'submit')
+  const where = await mutationWhere(ctx, id, 'submit', entryClass)
   const submittedAt = new Date()
   // Draft guard: re-submitting (double-click, replayed request) must not reset
   // submittedAt or re-fire flows / integrations / AI for the same submission.
@@ -325,7 +458,10 @@ export async function submitEntry(id: string): Promise<ActionOk | ActionErr> {
   // and tag the submitted entry so logs stay organised without the worker doing
   // it. Best-effort — never block a submit on AI.
   try {
-    if (await getTenantAutoJournalAi(ctx)) await applyEntryAi(ctx, id)
+    // The class is threaded through: without it `applyEntryAi`'s `scopedWhere`
+    // would default to the journal class and never see the observation, so a
+    // submitted observation would silently skip AI summarisation/tagging.
+    if (await getTenantAutoJournalAi(ctx)) await applyEntryAi(ctx, id, entryClass)
   } catch {
     /* ignore AI failures on submit */
   }
@@ -341,9 +477,12 @@ export async function submitEntry(id: string): Promise<ActionOk | ActionErr> {
   return { ok: true }
 }
 
-export async function deleteEntry(id: string): Promise<ActionOk | ActionErr> {
+export async function deleteEntry(
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<ActionOk | ActionErr> {
   const ctx = await requireRequestContext()
-  const where = await mutationWhere(ctx, id, 'edit')
+  const where = await mutationWhere(ctx, id, 'edit', entryClass)
   const [row] = await ctx.db(async (tx) => {
     const rows = await tx
       .update(journalEntries)
@@ -382,11 +521,15 @@ export async function deleteEntry(id: string): Promise<ActionOk | ActionErr> {
  * AI-sourced tags. Returns the meta, or null when AI is unconfigured / the entry
  * is empty or missing. Shared by the manual action and the auto-on-submit path.
  */
-async function applyEntryAi(ctx: RequestContext, id: string): Promise<EntryMetaResult | null> {
+async function applyEntryAi(
+  ctx: RequestContext,
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<EntryMetaResult | null> {
   const aiConfig = await getTenantAiConfig(ctx)
   if (!aiConfig) return null
 
-  const where = await scopedWhere(ctx, id)
+  const where = await scopedWhere(ctx, id, entryClass)
   const [entry] = await ctx.db((tx) =>
     tx.select({ bodyText: journalEntries.bodyText }).from(journalEntries).where(where).limit(1),
   )
@@ -438,6 +581,7 @@ async function applyEntryAi(ctx: RequestContext, id: string): Promise<EntryMetaR
 export async function attachJournalPhotos(input: {
   entryId: string
   attachmentIds: string[]
+  entryClass?: EntryClass
 }): Promise<ActionOk<{ photoIds: string[] }> | ActionErr> {
   const ctx = await requireRequestContext()
   if (
@@ -452,7 +596,7 @@ export async function attachJournalPhotos(input: {
   }
   const attachmentIds = Array.from(new Set(input.attachmentIds))
   if (attachmentIds.length === 0) return { ok: true, photoIds: [] }
-  const where = await mutationWhere(ctx, input.entryId, 'edit')
+  const where = await mutationWhere(ctx, input.entryId, 'edit', input.entryClass ?? 'journal')
 
   const ids = await ctx.db(async (tx) => {
     const [e] = await tx
@@ -496,7 +640,10 @@ export async function attachJournalPhotos(input: {
   return { ok: true, photoIds: ids }
 }
 
-export async function removeJournalPhoto(photoId: string): Promise<ActionOk | ActionErr> {
+export async function removeJournalPhoto(
+  photoId: string,
+  entryClass: EntryClass = 'journal',
+): Promise<ActionOk | ActionErr> {
   const ctx = await requireRequestContext()
   if (!isUuid(photoId)) return { ok: false, error: 'Photo not found.' }
   const photo = await ctx.db(async (tx) => {
@@ -511,7 +658,7 @@ export async function removeJournalPhoto(photoId: string): Promise<ActionOk | Ac
 
   // Visibility check on the parent entry — a photo id alone must never allow
   // mutating another user's journal.
-  const where = await mutationWhere(ctx, photo.entryId, 'edit')
+  const where = await mutationWhere(ctx, photo.entryId, 'edit', entryClass)
   const done = await ctx.db(async (tx) => {
     const [e] = await tx
       .select({ id: journalEntries.id })
@@ -537,6 +684,7 @@ export async function removeJournalPhoto(photoId: string): Promise<ActionOk | Ac
 export async function reorderJournalPhotos(
   entryId: string,
   photoIds: string[],
+  entryClass: EntryClass = 'journal',
 ): Promise<ActionOk | ActionErr> {
   const ctx = await requireRequestContext()
   if (
@@ -547,7 +695,7 @@ export async function reorderJournalPhotos(
   ) {
     return { ok: false, error: 'Photo order is invalid.' }
   }
-  const where = await mutationWhere(ctx, entryId, 'edit')
+  const where = await mutationWhere(ctx, entryId, 'edit', entryClass)
   const changed = await ctx.db(async (tx) => {
     const [entry] = await tx
       .select({ id: journalEntries.id })
@@ -606,6 +754,7 @@ export async function reorderJournalPhotos(
 export async function updateJournalPhoto(
   photoId: string,
   input: unknown,
+  entryClass: EntryClass = 'journal',
 ): Promise<ActionOk | ActionErr> {
   const ctx = await requireRequestContext()
   if (!isUuid(photoId)) return { ok: false, error: 'Photo not found.' }
@@ -619,7 +768,7 @@ export async function updateJournalPhoto(
     return photo ?? null
   })
   if (!photoHead) return { ok: false, error: 'Photo not found.' }
-  const where = await mutationWhere(ctx, photoHead.entryId, 'edit')
+  const where = await mutationWhere(ctx, photoHead.entryId, 'edit', entryClass)
   const changed = await ctx.db(async (tx) => {
     const [photo] = await tx
       .select({
@@ -667,6 +816,7 @@ export async function updateJournalPhoto(
 
 export async function describeJournalPhoto(
   photoId: string,
+  entryClass: EntryClass = 'journal',
 ): Promise<ActionOk<{ caption: string }> | ActionErr> {
   const ctx = await requireRequestContext()
   if (!isUuid(photoId)) return { ok: false, error: 'Photo not found.' }
@@ -695,7 +845,7 @@ export async function describeJournalPhoto(
 
   // Visibility check on the parent entry before mutating it (or spending AI
   // budget) — mirrors attachJournalPhotos / removeJournalPhoto.
-  const where = await mutationWhere(ctx, photo.entryId, 'edit')
+  const where = await mutationWhere(ctx, photo.entryId, 'edit', entryClass)
   const visible = await ctx.db(async (tx) => {
     const [e] = await tx
       .select({ id: journalEntries.id })
@@ -771,9 +921,12 @@ export async function fetchTree(input: unknown): Promise<TreePage> {
   )
 }
 
-export async function fetchEntry(id: string): Promise<JournalEntryDetail | null> {
+export async function fetchEntry(
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<JournalEntryDetail | null> {
   const ctx = await requireRequestContext()
-  return getEntry(ctx, id)
+  return getEntry(ctx, id, entryClass)
 }
 
 // ---- author workspace (records "Open full entry" flyout) --------------------
@@ -831,12 +984,15 @@ export async function fetchAuthorTree(input: unknown): Promise<TreePage> {
   )
 }
 
-export async function emailEntry(id: string): Promise<ActionOk<{ sent: number }> | ActionErr> {
+export async function emailEntry(
+  id: string,
+  entryClass: EntryClass = 'journal',
+): Promise<ActionOk<{ sent: number }> | ActionErr> {
   const ctx = await requireRequestContext()
   if (!canEmailJournal(ctx)) {
     return { ok: false, error: 'You cannot email journal entries.' }
   }
-  const where = await mutationWhere(ctx, id, 'submit')
+  const where = await mutationWhere(ctx, id, 'submit', entryClass)
   const [visible] = await ctx.db((tx) =>
     tx.select({ id: journalEntries.id }).from(journalEntries).where(where).limit(1),
   )

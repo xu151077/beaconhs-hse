@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@beaconhs/ui'
 import { formResponses, formTemplates, tenantUsers, users as user } from '@beaconhs/db/schema'
+import { permitWindowEndedExpr, permitWindowOpen } from '@beaconhs/db/work-permit'
 import { requireRequestContext } from '@/lib/auth'
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
 import { moduleScopeWhere } from '@/lib/visibility'
@@ -96,7 +97,15 @@ export default async function MonitoredSessionsPage({
       templateAccessWhere(ctx, effectiveRoleKeys, 'browse-records'),
     ]
     if (vis) filters.push(vis)
-    if (statusFilter) filters.push(eq(formResponses.monitorStatus, statusFilter))
+    if (statusFilter) {
+      filters.push(eq(formResponses.monitorStatus, statusFilter))
+      // Safety-critical: "Active" must mean inside its validity window RIGHT NOW,
+      // not merely "the cron hasn't closed it yet". A work permit whose approved
+      // window has passed is not an active permit, whatever `monitor_status` still
+      // says — the worker scan is a minute-granularity backstop, this is the rule.
+      // Applies to every session with a window, not just permits.
+      if (statusFilter === 'active') filters.push(permitWindowOpen(new Date()))
+    }
     if (searchQuery) {
       const term = `%${searchQuery}%`
       const search = or(
@@ -154,6 +163,10 @@ export default async function MonitoredSessionsPage({
         worker: tenantUsers.displayName,
         workerAccount: user.name,
         isOverdue: sql<boolean>`${formResponses.monitorStatus} = 'active' and ${formResponses.nextCheckinDueAt} < now()`,
+        // Derived, not stored: the worker may not have closed the session yet, so
+        // the list shows Expired the moment the window passes rather than implying
+        // a live permit. `form_monitor_status` has no 'expired' value and none is added.
+        windowEnded: permitWindowEndedExpr(new Date()),
       })
       .from(formResponses)
       .innerJoin(formTemplates, eq(formTemplates.id, formResponses.templateId))
@@ -236,10 +249,16 @@ export default async function MonitoredSessionsPage({
                 <TableBody>
                   <GeneratedValue
                     value={rows.map((r) => {
-                      const badge = STATUS_BADGE[r.monitorStatus ?? ''] ?? {
-                        label: r.monitorStatus ?? '—',
-                        variant: 'outline' as const,
-                      }
+                      // A window-ended session still sitting on 'active' is shown as Expired, not
+                      // Active: the approved window is the authority, and a stale
+                      // 'active' must never read as a live permit.
+                      const badge =
+                        r.windowEnded && r.monitorStatus === 'active'
+                          ? { label: 'Expired', variant: 'destructive' as const }
+                          : (STATUS_BADGE[r.monitorStatus ?? ''] ?? {
+                              label: r.monitorStatus ?? '—',
+                              variant: 'outline' as const,
+                            })
                       return (
                         <TableRow key={r.id}>
                           <TableCell>

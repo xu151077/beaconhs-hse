@@ -34,6 +34,10 @@ export async function GET(req: NextRequest) {
     to: get('to'),
   }
 
+  // `listEntries` defaults to the journal class, so this route exports DAILY
+  // JOURNALS only. Safety observations live in the same table under a different
+  // `definition` and have their own audited route at /observations/export.csv —
+  // one export must never silently contain both classes.
   const rows = await listEntries(ctx, filters, { limit: CSV_EXPORT_QUERY_LIMIT })
 
   const overflow = csvExportOverflowResponse(rows.length)

@@ -30,6 +30,7 @@ import { getTenantAiConfig } from '@/lib/ai-config'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import type { Database } from '@beaconhs/db'
+import { entryClassWhere, type EntryClass } from '@beaconhs/db/journal-class'
 import {
   authorTenantUserId,
   getAuthorPersonId,
@@ -48,6 +49,7 @@ import { CSV_EXPORT_QUERY_LIMIT } from '@/lib/csv'
 import type {
   AuthorRef,
   GroupBy,
+  JournalDefinition,
   HeatmapCell,
   JournalEntryDetail,
   JournalFilters,
@@ -111,6 +113,14 @@ function treeSnippet(body: string | null | undefined): string {
  * by the personal compose workspace; the Records browser leaves it false.
  * `targetAuthor` (records "Open full entry" workspace) scopes to ONE author's
  * entries, viewer-bounded — it takes precedence over `selfOnly`.
+ *
+ * `entryClass` partitions the one table into its two business classes. It
+ * defaults to `'journal'` so EVERY pre-existing call site — the workspace, the
+ * records browser, the tree, the export route — keeps returning daily journals
+ * only, and a caller must opt in to seeing safety observations. The partition is
+ * applied before every other leg, so a class filter can never be widened away by
+ * a user-supplied `definition` filter: the two are AND'd, and an observation
+ * definition simply matches no journal row.
  */
 async function entryWhere(
   ctx: RequestContext,
@@ -119,9 +129,10 @@ async function entryWhere(
   authorPersonId: string | null,
   selfOnly = false,
   targetAuthor?: AuthorRef | null,
+  entryClass: EntryClass = 'journal',
 ): Promise<SQL | undefined> {
   // Soft-deleted entries are invisible everywhere (list, tree, counts, export).
-  const conds: SQL[] = [isNull(journalEntries.deletedAt)]
+  const conds: SQL[] = [isNull(journalEntries.deletedAt), entryClassWhere(entryClass)]
   // The two browsing helpers are async, so they are awaited here. `journalScopeWhere`
   // takes a transaction by signature and does not read it;
   // `journalSelfScopeWhere` stays synchronous — the personal compose workspace is
@@ -212,6 +223,7 @@ export async function listEntries(
   filters: JournalFilters,
   paging: { limit?: number; offset?: number; sort?: JournalSort; dir?: 'asc' | 'desc' } = {},
   selfOnly = false,
+  entryClass: EntryClass = 'journal',
 ): Promise<JournalListItem[]> {
   const authorPersonId = await getAuthorPersonId(ctx)
   const limit = Math.min(paging.limit ?? 50, CSV_EXPORT_QUERY_LIMIT)
@@ -229,7 +241,7 @@ export async function listEntries(
             : [dir(journalEntries.entryDate), desc(journalEntries.updatedAt)]
 
   return ctx.db(async (tx) => {
-    const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly)
+    const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly, null, entryClass)
     const rows = await tx
       .select({
         e: journalEntries,
@@ -268,10 +280,14 @@ export async function listEntries(
 }
 
 /** Total entries matching the filters (for the records browser's count + paging). */
-export async function countEntries(ctx: RequestContext, filters: JournalFilters): Promise<number> {
+export async function countEntries(
+  ctx: RequestContext,
+  filters: JournalFilters,
+  entryClass: EntryClass = 'journal',
+): Promise<number> {
   const authorPersonId = await getAuthorPersonId(ctx)
   return ctx.db(async (tx) => {
-    const where = await entryWhere(ctx, tx, filters, authorPersonId)
+    const where = await entryWhere(ctx, tx, filters, authorPersonId, false, null, entryClass)
     const [row] = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(journalEntries)
@@ -284,7 +300,10 @@ export async function countEntries(ctx: RequestContext, filters: JournalFilters)
  * Scoped status counts for the records list. Site and author options use
  * purpose-specific remote searches so no valid facet is hidden by a fixed cap.
  */
-export async function listRecordsFacets(ctx: RequestContext): Promise<JournalRecordsFacets> {
+export async function listRecordsFacets(
+  ctx: RequestContext,
+  entryClass: EntryClass = 'journal',
+): Promise<JournalRecordsFacets> {
   const authorPersonId = await getAuthorPersonId(ctx)
   return ctx.db(async (tx) => {
     // `journalScopeWhere` is async, so this one statement moved inside the
@@ -293,6 +312,7 @@ export async function listRecordsFacets(ctx: RequestContext): Promise<JournalRec
     // statement's position moved.
     const scope = and(
       isNull(journalEntries.deletedAt),
+      entryClassWhere(entryClass),
       await journalScopeWhere(ctx, tx, authorPersonId),
     )
     const statusRows = await tx
@@ -341,10 +361,18 @@ async function photoCountsByEntry(
   return Object.fromEntries(rows.map((r) => [r.entryId, Number(r.c)]))
 }
 
-/** Full entry for the editor pane. */
+/**
+ * Full entry for the editor pane.
+ *
+ * `entryClass` is part of the AUTHORIZATION, not a display filter: it is AND-ed
+ * into the same WHERE as the visibility scope, so an id belonging to the other
+ * class returns `null` rather than the row. That is what makes a detail page
+ * safe to build on this reader — there is no "load then decide" path.
+ */
 export async function getEntry(
   ctx: RequestContext,
   id: string,
+  entryClass: EntryClass = 'journal',
 ): Promise<JournalEntryDetail | null> {
   if (!isUuid(id)) return null
   const authorPersonId = await getAuthorPersonId(ctx)
@@ -360,7 +388,14 @@ export async function getEntry(
       .from(journalEntries)
       .leftJoin(orgUnits, eq(orgUnits.id, journalEntries.siteOrgUnitId))
       .leftJoin(authorPerson, eq(authorPerson.id, journalEntries.personId))
-      .where(and(eq(journalEntries.id, id), isNull(journalEntries.deletedAt), scope))
+      .where(
+        and(
+          eq(journalEntries.id, id),
+          isNull(journalEntries.deletedAt),
+          entryClassWhere(entryClass),
+          scope,
+        ),
+      )
       .limit(1)
     if (!row) return null
 
@@ -441,6 +476,7 @@ export async function buildTree(
   selfOnly = false,
   targetAuthor?: AuthorRef | null,
   cursor: TreeCursor | null = null,
+  entryClass: EntryClass = 'journal',
 ): Promise<TreePage> {
   const authorPersonId = await getAuthorPersonId(ctx)
   const pageAsOf = cursor ? new Date(cursor.asOf) : new Date()
@@ -465,7 +501,15 @@ export async function buildTree(
     // `entryWhere` is async, so this one statement moved inside the `ctx.db` block
     // that is its only consumer (`.where(...)` below); the transaction itself and
     // every query in it are unchanged.
-    const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly, targetAuthor)
+    const where = await entryWhere(
+      ctx,
+      tx,
+      filters,
+      authorPersonId,
+      selfOnly,
+      targetAuthor,
+      entryClass,
+    )
     const base = await tx
       .select({
         id: journalEntries.id,
@@ -692,6 +736,7 @@ export async function getWorkspaceData(
   groupBy: GroupBy,
   filters: JournalFilters,
   targetAuthor?: AuthorRef | null,
+  entryClass: EntryClass = 'journal',
 ): Promise<WorkspaceData> {
   const authorPersonId = await getAuthorPersonId(ctx)
   const selfOnly = !targetAuthor
@@ -707,13 +752,14 @@ export async function getWorkspaceData(
   // workspace is deliberately not tier-bound.
   const scopeOnly = and(
     isNull(journalEntries.deletedAt),
+    entryClassWhere(entryClass),
     targetAuthor
       ? await ctx.db(async (tx) => journalAuthorScopeWhere(ctx, tx, authorPersonId, targetAuthor))
       : journalSelfScopeWhere(ctx, authorPersonId),
   )
 
   const [treePage, hm, otd, tagSuggestions, counts] = await Promise.all([
-    buildTree(ctx, groupBy, filters, selfOnly, targetAuthor),
+    buildTree(ctx, groupBy, filters, selfOnly, targetAuthor, null, entryClass),
     heatmap(ctx, scopeOnly),
     onThisDay(ctx, scopeOnly),
     listTagSuggestions(ctx, scopeOnly),
@@ -721,7 +767,15 @@ export async function getWorkspaceData(
       // `entryWhere` is async, so this one statement moved inside the `ctx.db`
       // block that is its only consumer (`.where(...)` below); the transaction
       // itself and every query in it are unchanged.
-      const where = await entryWhere(ctx, tx, filters, authorPersonId, selfOnly, targetAuthor)
+      const where = await entryWhere(
+        ctx,
+        tx,
+        filters,
+        authorPersonId,
+        selfOnly,
+        targetAuthor,
+        entryClass,
+      )
       const [row] = await tx
         .select({
           total: sql<number>`count(*)::int`,
@@ -752,10 +806,12 @@ export async function getWorkspaceData(
 }
 
 /** Resolve the author's entry for a date (default today in the user's timezone),
- *  creating a draft if none. */
+ *  creating a draft if none. `definition` pins the class, so a daily-journal
+ *  draft can never return an existing safety observation for the same date. */
 export async function getOrCreateEntryForDate(
   ctx: RequestContext,
   dateISO?: string,
+  definition: JournalDefinition = 'worker',
 ): Promise<string | null> {
   const authorPersonId = await getAuthorPersonId(ctx)
   const tenantUserId = authorTenantUserId(ctx)
@@ -776,6 +832,7 @@ export async function getOrCreateEntryForDate(
       .where(
         and(
           eq(journalEntries.entryDate, today),
+          eq(journalEntries.definition, definition),
           isNull(journalEntries.deletedAt),
           ownership.length === 1 ? ownership[0]! : or(...ownership)!,
         ),
@@ -793,6 +850,7 @@ export async function getOrCreateEntryForDate(
         personId: authorPersonId,
         createdByTenantUserId: tenantUserId,
         entryDate: today,
+        definition,
         status: 'draft',
       })
       .returning({ id: journalEntries.id })

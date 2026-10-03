@@ -12,7 +12,7 @@
 >
 > - 在**临时隔离目录**里跑真实 `drizzle-kit generate`（cwd = 临时目录、`--out` 为相对路径），**不加载 repo 的 drizzle.config**、**不需要 `DATABASE_URL`**、**不碰数据库**。
 > - 检测方式为**执行前后 diff 目录内容**，而非依赖 exit code——drizzle-kit 失败时仍返回 0（它把 stack trace 写进 stdout），只信 exit code 会把坏掉的 guard 变成静默 PASS。
-> - 判决四态：`in-sync` / `known-stale`（今天：有新生成但等于已记录指纹）/ `drift`（真实新增 schema 漂移，FAIL）/ `tool-error`（工具失败，FAIL）。
+> - 判决三态：`in-sync`（generate 无产出，PASS）/ `drift`（任何新增提案、迁移丢失或索引冲突，FAIL）/ `tool-error`（工具失败，FAIL）。`known-stale` 已于 §13 移除。
 > - **guard 自证不改仓库**：执行前后对 `packages/db/drizzle` 做整树 hash 比对，不一致即 FAIL。
 >
 > **为什么不用 `snapshots == migrations`**：那是把既有的历史结构当成错误，会要求先做一次 migration 策略判断（重建 chain 还是 squash），属于决策而非缺陷。正确目标是**"generation 是否会产生新东西"**，本 guard 只判这一件事。
@@ -108,25 +108,25 @@ Detection is by **directory diff**, but a diff is only trusted when the generato
 
 The fix inverts the test. `classifyDrift` is **fail-closed**: a verdict of anything other than `tool-error` requires _positive evidence that the generator succeeded_, checked in this order.
 
-| Step | Condition                                        | Result                              |
-| ---- | ------------------------------------------------ | ----------------------------------- |
-| 1    | the process reported failure (`toolFailed`)      | `tool-error`                        |
-| 2    | output was not captured                          | `tool-error`                        |
-| 3    | output contains no recognised **success** marker | `tool-error`                        |
-| 4    | only then is the directory diff trusted          | `in-sync` / `drift` / `known-stale` |
+| Step | Condition                                        | Result              |
+| ---- | ------------------------------------------------ | ------------------- |
+| 1    | the process reported failure (`toolFailed`)      | `tool-error`        |
+| 2    | output was not captured                          | `tool-error`        |
+| 3    | output contains no recognised **success** marker | `tool-error`        |
+| 4    | only then is the directory diff trusted          | `in-sync` / `drift` |
 
 The success markers are the two phrases drizzle-kit prints when, and only when, a run completes: `Your SQL migration file` and `No schema changes`. Both were captured from the real 0.31.10 binary.
 
 `RECOGNISED_ERROR` is still present, but it only chooses the wording of the `detail` field. **No passing verdict depends on it**, so an unlisted failure shape is still caught by step 3 rather than being silently tolerated.
 
-| Verdict       | Meaning                                                                                                                                  | Exit |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| `in-sync`     | generation produced nothing                                                                                                              | 0    |
-| `known-stale` | it re-proposed the **recorded** phantom fingerprint; no new drift. Warns loudly, prints the index collision                              | 0    |
-| `drift`       | it proposed something that is **not** the recorded fingerprint — genuine new schema drift, or a removed migration, or an index collision | 1    |
-| `tool-error`  | generation failed; drift is **undetermined**                                                                                             | 1    |
+| Verdict      | Meaning                                                                                                                                  | Exit |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `in-sync`    | generation produced nothing                                                                                                              | 0    |
+| _(removed)_  | **REMOVED in §13.** Existed only while the snapshot chain was incomplete and re-proposed a phantom.                                      |
+| `drift`      | it proposed something that is **not** the recorded fingerprint — genuine new schema drift, or a removed migration, or an index collision | 1    |
+| `tool-error` | generation failed; drift is **undetermined**                                                                                             | 1    |
 
-`known-stale` is what makes the guard usable today. Without it the gate would be permanently red and would get disabled, which is worse than no guard. It fails the moment the proposal changes.
+`known-stale` was what made the guard usable while the snapshot chain was incomplete. It has since been **removed** — see §13. The guard now passes only on a genuine `in-sync`.
 
 The fingerprint is a content hash, not a filename: drizzle-kit appends a random adjective (`0041_loving_hardball`, `0041_burly_starbolt`, `0041_purple_spiral`, `0041_unusual_hellion`) — verified identical body hash across runs.
 
@@ -211,23 +211,23 @@ Not touched: any migration SQL, `meta/_journal.json`, any snapshot, any schema f
 
 ## 9. Test results
 
-| Gate                            | Result                                  |
-| ------------------------------- | --------------------------------------- |
-| `check:migration-drift.test.ts` | **31 passed** (2 end-to-end, ~6.6s)     |
-| `@beaconhs/db` full suite       | **292 passed** / 292, 52 files          |
-| `@beaconhs/db` typecheck        | exit 0                                  |
-| prettier (both guard files)     | clean                                   |
-| guard run                       | `known-stale`, collision `0041`, exit 0 |
-| `packages/db/drizzle` hash      | identical before and after the run      |
+| Gate                            | Result                                     |
+| ------------------------------- | ------------------------------------------ |
+| `check:migration-drift.test.ts` | **31 passed** (2 end-to-end, ~6.6s)        |
+| `@beaconhs/db` full suite       | **292 passed** / 292, 52 files             |
+| `@beaconhs/db` typecheck        | exit 0                                     |
+| prettier (both guard files)     | clean                                      |
+| guard run                       | `in-sync`, exit 0 (see §13 for the repair) |
+| `packages/db/drizzle` hash      | identical before and after the run         |
 
 ## 10. Limitations
 
-1. **The guard does not repair the chain.** Today it passes only via `known-stale`. Anyone reading CI output as "migrations are healthy" would be misled; the step prints a warning, but a `known-stale` pass is not a clean bill of health.
-2. **The baseline is a golden value.** It must be updated by hand after a deliberate repair, and only after reviewing the proposal. It is not self-updating — that is intentional, so a real drift cannot be absorbed by re-running.
+1. **RESOLVED in §13.** The guard now returns a genuine `in-sync`: the chain is understood, not tolerated.
+2. **RESOLVED in §13.** There is no baseline any more. `KNOWN_STALE_DRIFT_SHA256` was deleted.
 3. **Behaviour is pinned to drizzle-kit 0.31.10.** A version bump can change the generated SQL for the same schema, which reads as `drift`. That is a false positive to be reviewed, not silenced.
 4. **E2E tests need the `drizzle-kit` binary** and take ~5s; they are not hermetic in the sense of being pure.
 5. **No protection against manual journal editing.** A hand-edited journal that stays internally consistent would still be caught only if generation disagrees with the schema.
-6. **`known-stale` masks one class of real change:** a schema edit whose phantom happens to hash to the recorded value. Astronomically unlikely, but the guard is fingerprint-based, not semantic.
+6. **RESOLVED in §13.** With no golden value there is no recorded value for a schema edit to coincidentally match.
 7. **Fail-closed couples the guard to drizzle-kit's success wording.** Step 3 of the verdict requires `Your SQL migration file` or `No schema changes` to appear in the output. If a drizzle-kit upgrade rewords either phrase, the guard reports `tool-error` and CI goes red on a healthy tree. That is the intended direction of failure — a loud false positive rather than a silent false pass — but it is a coupling an upgrade must account for, and the same applies to a schema module that prints its own `No schema changes` text.
 8. **`toolFailed` is the strongest signal but not a complete one.** It catches every non-zero exit and every spawn failure. The exit-0-while-crashing case is covered only by step 3, which infers failure from the absence of a success marker rather than from a positive error signature.
 
@@ -253,3 +253,59 @@ PASS (known stale snapshot chain, no new drift) db:generate would still re-propo
      would reuse committed migration index: 0041
 GUARD_EXIT=0
 ```
+
+## 13. Snapshot-chain repair (2026-10-02)
+
+The recommendation in §11 was carried out, in the least invasive form available.
+
+### Root cause
+
+`meta/` held 25 snapshots against 43 journal entries, the last snapshot being
+`0029_snapshot.json` (added 2026-08-05, the last commit that actually ran
+`db:generate`). drizzle-kit walks **back from the newest journal entry** and diffs
+the schema against the snapshot it finds, so it compared the current schema against
+0029 and re-proposed every change committed as 0030-0043 — a phantom that re-creates
+live objects, written under an index that collides with a committed migration. That
+is why the guard needed a recorded fingerprint to pass at all.
+
+### Fix
+
+Added **`0043_snapshot.json`**, emitted by drizzle-kit itself from
+`src/schema/index.ts`. drizzle-kit does **not** need one snapshot per historical
+entry — it only needs the newest — so a single snapshot for the current migration
+closes the gap without touching history.
+
+`KNOWN_STALE_DRIFT_SHA256`, the `known-stale` verdict, the `baselineSha256` input and
+the `newSqlBodies` plumbing were all **deleted**. There is no longer any state in
+which proposing a migration is expected: a proposal now always fails.
+
+### Evidence it is not fabricated history
+
+1. **No committed migration was modified.** `git status` shows the 41 tracked
+   `drizzle/*.sql` files unchanged; the only new SQL is `0043_companies.sql`. The
+   journal diff is two appended entries.
+2. **It chains correctly.** `0043_snapshot.prevId` equals `0029_snapshot.id`. The
+   `0000`-`0029` snapshots are untouched and still chain by `prevId`.
+3. **It matches the real migrated database.** The local `beaconhs` database was built
+   by executing all 43 migrations in order via `pnpm db:migrate`. Comparing the
+   snapshot against `information_schema` / `pg_enum` on that database gives an exact
+   match: **194 tables, every column, and 108 enums with identical values.**
+4. **`generate` now reports `No schema changes`** for the real schema, so
+   `pnpm db:generate` is usable again instead of emitting a re-creating phantom.
+5. **The guard still bites.** Removing `0043_snapshot.json` → `FAIL` exit 1. Mutating
+   it so it no longer matches the schema → `FAIL` exit 1. Adding a probe table → a
+   correct proposal containing `drift_guard_probe`, verdict `drift`.
+
+### Known, deliberately NOT fixed: the index off-by-one
+
+drizzle-kit names a proposal `NNN` where `NNN = journal.entries.length`. This
+repo's file numbering ran **ahead** of its entry index, because the journal skips
+`0033`: from idx 33 onward, `filename prefix = idx + 1`. So with 43 entries the
+generator proposes `0043_…`, which **collides** with the committed
+`0043_companies.sql`.
+
+This is pre-existing and out of scope here: closing it means renumbering committed
+migrations or inventing a journal entry, and §11.1 reserves that as a separate
+decision. What this change guarantees is that the collision is **surfaced** by the
+guard rather than passed off, and that a pinned test asserts it so the day it is
+fixed the test says so.

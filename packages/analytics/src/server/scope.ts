@@ -323,6 +323,12 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   departments: { read: { key: 'admin.org.manage' } },
   crews: { read: { key: 'admin.org.manage' } },
   trades: { read: { key: 'admin.org.manage' } },
+  // `companies` (contractor / subcontractor employers) is the same kind of
+  // catalogue: a name plus a type, with no location, owner, or person column to
+  // narrow by. `admin.org.manage` is the same flat key that already gates the
+  // People admin pages that maintain it, so a company cannot become a report
+  // source for anyone who cannot already see the Companies list.
+  companies: { read: { key: 'admin.org.manage' } },
 
   // --- report_* projection views ---------------------------------------
   // These views expose another module's rows, so each one inherits THAT module's
@@ -471,6 +477,46 @@ export function validateScopeSpecs(specs: readonly { match: string; spec: ScopeS
 }
 
 /**
+ * A tenant-level table is granted with a flat read key, so `tierFor` resolves
+ * tier `all` and no row predicate is applied. That is the right answer for
+ * per-tenant structure or configuration, and a tenant-wide leak for business
+ * data. Each table below therefore carries the column list transcribed from the
+ * live schema, checked against the allowlist it is allowed to keep: a future
+ * person- or site-keyed column must fail here rather than silently inherit the
+ * flat key.
+ *
+ * Split out for the same reason as {@link validateScopeSpecs} — so the guard can
+ * be tested against a synthetic violation, which is the only way "a tenant-level
+ * table must not quietly grow a person column" is more than an untested claim.
+ */
+export function validateTenantLevelColumns(
+  tables: readonly string[],
+  allowed: Readonly<Record<string, readonly string[]>>,
+  actual: Readonly<Record<string, readonly string[]>>,
+  description: string,
+  readKeys: Readonly<Record<string, { key: string } | null | undefined>>,
+): string[] {
+  const errors: string[] = []
+  for (const table of tables) {
+    const spec = readKeys[table]
+    // `read: null` means the table is withheld from analytics entirely, and a
+    // tiered `prefix` spec gets its row predicate from its own columns. Only a
+    // flat key leaves the tenant-level tables unguarded.
+    if (!spec || !('key' in spec)) continue
+    const allowedColumns = new Set(allowed[table] ?? [])
+    const unexpected = (actual[table] ?? []).filter((c) => !allowedColumns.has(c))
+    if (unexpected.length > 0) {
+      errors.push(
+        `${table}: granted with a flat key as ${description}, but the schema exposes ` +
+          `${unexpected.join(', ')}. A person- or site-keyed column would make this a ` +
+          `business-data table and the flat key a tenant-wide leak.`,
+      )
+    }
+  }
+  return errors
+}
+
+/**
  * Structural invariants on the real spec table.
  *
  * Called from `scope.test.ts` rather than at import time, so a mistake surfaces in
@@ -481,30 +527,22 @@ export function validateScopeSpecs(specs: readonly { match: string; spec: ScopeS
  */
 export function runScopeSpecValidation(): { errors: string[] } {
   const errors = validateScopeSpecs(allScopeSpecs())
-  // A tenant-level table is granted with a flat read key, so `tierFor` resolves
-  // tier `all` and no row predicate is applied. That is the right answer for
-  // per-tenant structure or configuration, and a tenant-wide leak for business
-  // data. Each table below therefore carries the column list transcribed from the
-  // live schema, checked against the allowlist it is allowed to keep: a future
-  // person- or site-keyed column must fail here rather than silently inherit the
-  // flat key.
+  const flatReadKeys: Record<string, { key: string } | null | undefined> = Object.fromEntries(
+    Object.entries(TABLE_SCOPE).map(([table, spec]) => [
+      table,
+      spec.read === null ? null : 'key' in spec.read ? { key: spec.read.key } : undefined,
+    ]),
+  )
   for (const group of TENANT_LEVEL_TABLES) {
-    for (const table of group.tables) {
-      const spec = TABLE_SCOPE[table]
-      // `read: null` means the table is withheld from analytics entirely, and a
-      // tiered `prefix` spec gets its row predicate from its own columns. Only a
-      // flat key leaves the tenant-level tables unguarded.
-      if (!spec || spec.read === null || !('key' in spec.read)) continue
-      const allowed = new Set(group.columns[table] ?? [])
-      const unexpected = (group.actual[table] ?? []).filter((c) => !allowed.has(c))
-      if (unexpected.length > 0) {
-        errors.push(
-          `${table}: granted with a flat key as ${group.description}, but the schema exposes ` +
-            `${unexpected.join(', ')}. A person- or site-keyed column would make this a ` +
-            `business-data table and the flat key a tenant-wide leak.`,
-        )
-      }
-    }
+    errors.push(
+      ...validateTenantLevelColumns(
+        group.tables,
+        group.columns,
+        group.actual,
+        group.description,
+        flatReadKeys,
+      ),
+    )
   }
   return { errors }
 }
@@ -561,7 +599,7 @@ const TENANT_LEVEL_TABLES: readonly {
   actual: Readonly<Record<string, readonly string[]>>
 }[] = [
   {
-    tables: ['org_units', 'departments', 'crews', 'trades'],
+    tables: ['org_units', 'departments', 'crews', 'trades', 'companies'],
     description: 'tenant-level organizational definition data',
     columns: {
       org_units: [
@@ -584,6 +622,7 @@ const TENANT_LEVEL_TABLES: readonly {
       departments: ['id', 'tenant_id', 'name', 'code', 'description', 'created_at', 'updated_at'],
       crews: ['id', 'tenant_id', 'name', 'created_at', 'updated_at'],
       trades: ['id', 'tenant_id', 'name', 'code', 'created_at', 'updated_at'],
+      companies: ['id', 'tenant_id', 'name', 'type', 'created_at', 'updated_at'],
     },
     actual: {
       org_units: [
@@ -606,6 +645,7 @@ const TENANT_LEVEL_TABLES: readonly {
       departments: ['id', 'tenant_id', 'name', 'code', 'description', 'created_at', 'updated_at'],
       crews: ['id', 'tenant_id', 'name', 'created_at', 'updated_at'],
       trades: ['id', 'tenant_id', 'name', 'code', 'created_at', 'updated_at'],
+      companies: ['id', 'tenant_id', 'name', 'type', 'created_at', 'updated_at'],
     },
   },
   {

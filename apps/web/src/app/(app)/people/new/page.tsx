@@ -17,6 +17,7 @@ import {
 import {
   crews,
   departments,
+  companies,
   people,
   personTitleAssignments,
   personTitles,
@@ -49,6 +50,7 @@ async function createPerson(formData: FormData) {
   const phone = String(formData.get('phone') ?? '').trim() || null
   const hireDate = String(formData.get('hireDate') ?? '').trim() || null
   const departmentId = String(formData.get('departmentId') ?? '').trim() || null
+  const companyId = String(formData.get('companyId') ?? '').trim() || null
   const tradeId = String(formData.get('tradeId') ?? '').trim() || null
   const crewId = String(formData.get('crewId') ?? '').trim() || null
   const primaryTitleId = String(formData.get('primaryTitleId') ?? '').trim() || null
@@ -79,6 +81,7 @@ async function createPerson(formData: FormData) {
         phone,
         hireDate,
         departmentId,
+        companyId,
         tradeId,
         crewId,
         titleIds: primaryTitleId ? [primaryTitleId] : [],
@@ -107,6 +110,7 @@ async function createPerson(formData: FormData) {
         email,
         hireDate,
         departmentId,
+        companyId,
         tradeId,
         crewId,
         primaryTitleId,
@@ -124,8 +128,9 @@ async function createPerson(formData: FormData) {
 export default async function NewPersonPage() {
   const tGenerated = await getGeneratedTranslations()
   const ctx = await requireModuleManage('people')
-  const [depts, allTrades, allCrews, allTitles] = await ctx.db(async (tx) => {
+  const [depts, allCompanies, allTrades, allCrews, allTitles] = await ctx.db(async (tx) => {
     const d = await tx.select().from(departments).orderBy(asc(departments.name))
+    const comp = await tx.select().from(companies).orderBy(asc(companies.name))
     const t = await tx.select().from(trades).orderBy(asc(trades.name))
     const c = await tx.select().from(crews).orderBy(asc(crews.name))
     const titles = await tx
@@ -133,7 +138,7 @@ export default async function NewPersonPage() {
       .from(personTitles)
       .where(isNull(personTitles.deletedAt))
       .orderBy(asc(personTitles.name))
-    return [d, t, c, titles] as const
+    return [d, comp, t, c, titles] as const
   })
 
   return (
@@ -181,6 +186,16 @@ export default async function NewPersonPage() {
                     {depts.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={tGenerated('m_05135dcd76ada7')}>
+                  <Select name="companyId" defaultValue="">
+                    <option value="">—</option>
+                    {allCompanies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
                       </option>
                     ))}
                   </Select>

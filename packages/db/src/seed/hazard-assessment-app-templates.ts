@@ -3,8 +3,9 @@
 // while preserving the native assessment as the parent work document.
 
 import { and, eq } from 'drizzle-orm'
+import type { AutomationGraph } from '@beaconhs/forms-core'
 import type { Database } from '../client'
-import { formTemplates, formTemplateVersions } from '../schema'
+import { formAutomations, formTemplates, formTemplateVersions } from '../schema'
 import type { FormSchemaV1 } from '../schema/forms'
 
 const HAZID_CONFINED_SPACE_APP_KEY = 'hazid-confined-space-entry-plan'
@@ -375,9 +376,20 @@ const HAZID_ARC_FLASH_APP_SCHEMA: FormSchemaV1 = {
   workflow: { steps: [submitterStep('submit', 'Submit')] },
 }
 
-type DrizzleTx = Pick<Database, 'select' | 'insert'>
+export type DrizzleTx = Pick<Database, 'select' | 'insert'>
 
-async function ensureTemplate(
+/**
+ * Seed one built-in Builder app: the template row, its version 1 schema, and
+ * optionally the automation graph that gives it a lifecycle (approval gate,
+ * monitored-session timer, overdue alerting).
+ *
+ * `category` / `iconKey` / `changelog` / `flow` are optional and default to the
+ * hazard-assessment behaviour, so the three embedded HazID apps are byte-for-byte
+ * unchanged. Non-HazID built-in apps (the Work Permit) pass their own values
+ * rather than forking a second template engine — `form_templates.category` is free
+ * text, so a new category costs no schema change.
+ */
+export async function ensureTemplate(
   tx: DrizzleTx,
   args: {
     tenantId: string
@@ -385,6 +397,12 @@ async function ensureTemplate(
     name: string
     description: string
     schema: FormSchemaV1
+    /** `form_templates.category`. Defaults to `jsha` (branded "Hazard Assessment"). */
+    category?: string
+    iconKey?: string
+    changelog?: string
+    /** Automation graph seeded as `form_automations` row for this template. */
+    flow?: { name: string; graph: AutomationGraph }
   },
 ) {
   const [existing] = await tx
@@ -400,7 +418,7 @@ async function ensureTemplate(
       tenantId: args.tenantId,
       key: args.key,
       name: args.name,
-      category: 'jsha',
+      category: args.category ?? 'jsha',
       // NO moduleBinding: these are first-class Builder apps that OPTIONALLY attach
       // to a hazard-assessment type via the hazid_assessment_type_apps join — they
       // are NOT owned by the hazard module (each can be filled standalone, or not
@@ -409,7 +427,7 @@ async function ensureTemplate(
       description: args.description,
       status: 'published' as const,
       kind: 'wizard' as const,
-      iconKey: args.key.includes('arc') ? 'zap' : 'badge-alert',
+      iconKey: args.iconKey ?? (args.key.includes('arc') ? 'zap' : 'badge-alert'),
       createdBy: null,
     })
     .onConflictDoNothing({ target: [formTemplates.tenantId, formTemplates.key] })
@@ -431,8 +449,26 @@ async function ensureTemplate(
     schema: args.schema,
     publishedAt: new Date(),
     publishedBy: null,
-    changelog: 'Built-in hazard-assessment embedded app v1',
+    changelog: args.changelog ?? 'Built-in hazard-assessment embedded app v1',
   })
+
+  // The graph lives in `form_automations`, not on the template row. Added only when
+  // asked for, so the three HazID apps seed exactly the rows they did before.
+  if (args.flow) {
+    await tx
+      .insert(formAutomations)
+      .values({
+        tenantId: args.tenantId,
+        subjectType: 'form_template',
+        subjectKey: tmpl.id,
+        templateId: tmpl.id,
+        name: args.flow.name,
+        enabled: true,
+        graph: args.flow.graph,
+      })
+      .onConflictDoNothing()
+  }
+
   return tmpl
 }
 

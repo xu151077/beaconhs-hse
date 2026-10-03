@@ -42,6 +42,7 @@ const NAV_MODULE_MESSAGE_KEYS: Record<string, string> = {
   inspections: 'Nav.modules.inspections',
   hazid: 'Nav.modules.hazid',
   journals: 'Nav.modules.journals',
+  observations: 'Nav.modules.observations',
   incidents: 'Nav.modules.incidents',
   'corrective-actions': 'Nav.modules.correctiveActions',
   tools: 'Nav.modules.tools',
@@ -138,6 +139,13 @@ export const NAV_MODULES: NavModule[] = [
     group: 'Frontline',
   },
   { key: 'journals', href: '/journals', label: 'Journals', iconKey: 'journal', group: 'Frontline' },
+  {
+    key: 'observations',
+    href: '/observations',
+    label: 'Safety observations',
+    iconKey: 'eye',
+    group: 'Frontline',
+  },
   {
     key: 'incidents',
     href: '/incidents',

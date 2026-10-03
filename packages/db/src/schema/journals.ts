@@ -36,8 +36,49 @@ const tsvector = customType<{ data: string }>({
 
 export const journalEntryStatus = pgEnum('journal_entry_status', ['draft', 'submitted', 'archived'])
 
-// Mirrors the legacy "Definition" field (Worker vs Supervisor log).
-export const journalDefinition = pgEnum('journal_definition', ['worker', 'supervisor'])
+// The "Definition" of a journal entry — which KIND of entry this row is.
+//
+//   worker / supervisor        the original daily field-safety log. 'supervisor'
+//                              is the legacy distinction between whose log it is.
+//   positive_observation       a safety observation that recorded GOOD practice.
+//   negative_observation       a safety observation that recorded something to fix.
+//
+// Safety observations are a CLASSIFICATION of a journal entry, not a second table:
+// they reuse journal_entries, journal_entry_tags, journal_entry_photos,
+// attachments, the draft/submitted/archived lifecycle, the JRN reference series,
+// the journals read tiers and `journalScopeWhere`, and the existing
+// `corrective_actions` polymorphic source link (source = 'observation'). See
+// docs/hse-extension-boundary-decision-record.md.
+//
+// The two sets below partition the enum EXHAUSTIVELY. Every query that must
+// return one class and not the other filters on one of them — journals never leak
+// into observations and vice versa.
+export const journalDefinition = pgEnum('journal_definition', [
+  'worker',
+  'supervisor',
+  'positive_observation',
+  'negative_observation',
+])
+
+/** Definitions that make up a daily journal entry — the original two. */
+export const JOURNAL_DEFINITIONS = ['worker', 'supervisor'] as const
+/** Definitions that make up a safety observation. */
+export const OBSERVATION_DEFINITIONS = ['positive_observation', 'negative_observation'] as const
+
+export type JournalDefinitionValue = (typeof JOURNAL_DEFINITIONS)[number]
+export type ObservationDefinition = (typeof OBSERVATION_DEFINITIONS)[number]
+/** Every value the `journal_definition` enum can hold. */
+export type AnyJournalDefinition = JournalDefinitionValue | ObservationDefinition
+
+/** Narrow an untrusted string to a daily-journal definition. */
+export function isJournalDefinition(value: unknown): value is JournalDefinitionValue {
+  return JOURNAL_DEFINITIONS.includes(value as JournalDefinitionValue)
+}
+
+/** Narrow an untrusted string to a safety-observation definition. */
+export function isObservationDefinition(value: unknown): value is ObservationDefinition {
+  return OBSERVATION_DEFINITIONS.includes(value as ObservationDefinition)
+}
 
 export const journalTagSource = pgEnum('journal_tag_source', ['ai', 'user'])
 

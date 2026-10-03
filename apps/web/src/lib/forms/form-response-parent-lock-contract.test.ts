@@ -98,15 +98,24 @@ describe('generic form-response parent-lock contract', () => {
   })
 
   it('guards every runtime form-response update writer outside the owning HazID action', () => {
+    // Each entry is [writer, .update(formResponses) count, lockFormResponseForMutation
+    // count]. The two must stay in step: an update not preceded by the shared
+    // parent-first lock can deadlock against a locked parent assessment.
     const guardedWriters = [
       [submitLifecycle, 1, 1],
-      [fillActions, 2, 2],
+      // fill/actions.ts claims three times per save: the draft persist, the
+      // single-field update, and the record-location update. All three take the
+      // shared parent-first lock first.
+      [fillActions, 3, 3],
       [lifecycleActions, 4, 4],
       [workflowActions, 4, 3],
       [monitorActions, 2, 2],
       [formFlow, 3, 3],
       [pdfWorker, 1, 1],
-      [scheduledWorker, 1, 1],
+      // scheduled.ts claims twice per tick: the missed check-in escalation
+      // (→ 'escalated') and the validity-window expiry (→ 'completed'). Both take
+      // the shared lock before their conditional update, exactly as before.
+      [scheduledWorker, 2, 2],
     ] as const
 
     for (const [writer, updateCount, guardCount] of guardedWriters) {

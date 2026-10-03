@@ -11,13 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  KNOWN_STALE_DRIFT_SHA256,
-  classifyDrift,
-  indexPrefix,
-  sha256,
-  type DriftInput,
-} from './check-migration-drift'
+import { classifyDrift, indexPrefix, sha256, type DriftInput } from './check-migration-drift'
 
 /**
  * Three layers are tested.
@@ -47,18 +41,9 @@ const base = (over: Partial<DriftInput> = {}): DriftInput => ({
   toolFailed: false,
   removedSql: [],
   newSql: [],
-  newSqlBodies: {},
   seededSql: ['0000_init.sql', '0041_document_book_cover_template.sql'],
-  baselineSha256: KNOWN_STALE_DRIFT_SHA256,
   ...over,
 })
-
-const knownPhantom = (over: Partial<DriftInput> = {}): DriftInput =>
-  base({
-    newSql: ['0041_freezing_the_phantom.sql'],
-    newSqlBodies: { '0041_freezing_the_phantom.sql': 'x' },
-    ...over,
-  })
 
 describe('sha256 and indexPrefix', () => {
   it('hashes content, not filenames', () => {
@@ -85,51 +70,34 @@ describe('classifyDrift — the healthy case', () => {
   })
 })
 
-describe('classifyDrift — the recorded stale chain', () => {
-  it('tolerates exactly the known phantom so CI can pass today', () => {
-    const body = 'CREATE TABLE "x" ();'
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0041_a.sql'],
-        newSqlBodies: { '0041_a.sql': body },
-        baselineSha256: sha256(body),
-      }),
-    )
-    expect(verdict.status).toBe('known-stale')
+describe('classifyDrift — a re-proposed migration is now always drift', () => {
+  // There used to be a `known-stale` verdict that passed a phantom matching a
+  // recorded fingerprint. That verdict is gone: with `0043_snapshot.json` the
+  // generator proposes nothing when the schema matches its migrations, so ANY
+  // proposal means the schema moved without a migration or the snapshot chain
+  // regressed. Both must fail. These tests pin that the old escape hatch is closed.
+
+  it('fails on a single proposed migration that reuses a committed index', () => {
+    const verdict = classifyDrift(base({ newSql: ['0041_a.sql'] }))
+    expect(verdict.status).toBe('drift')
+    expect(verdict.status === 'drift' && verdict.collisions).toEqual(['0041'])
   })
 
-  it('reports the index collision that the stale chain would cause', () => {
-    const body = 'SELECT 1;'
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0041_a.sql'],
-        newSqlBodies: { '0041_a.sql': body },
-        baselineSha256: sha256(body),
-      }),
-    )
-    expect(verdict.status).toBe('known-stale')
-    expect(verdict.status === 'known-stale' && verdict.collisions).toEqual(['0041'])
+  it('has no verdict that tolerates a proposal', () => {
+    // No input can produce a passing verdict while a migration is proposed.
+    const withProposal = classifyDrift(base({ newSql: ['0044_new.sql'] }))
+    expect(withProposal.status).toBe('drift')
   })
 })
 
 describe('classifyDrift — real drift must fail', () => {
-  it('fails on a NEW migration that is not the recorded baseline', () => {
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0042_new_work.sql'],
-        newSqlBodies: { '0042_new_work.sql': 'ALTER TABLE "users" ADD COLUMN "x" int;' },
-      }),
-    )
+  it('fails on a NEW migration the migrations do not describe', () => {
+    const verdict = classifyDrift(base({ newSql: ['0042_new_work.sql'] }))
     expect(verdict.status).toBe('drift')
   })
 
-  it('fails when a new migration reuses a committed index (phantom 0041 case)', () => {
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0041_freezing_the_phantom.sql'],
-        newSqlBodies: { '0041_freezing_the_phantom.sql': 'CREATE TYPE "public"."x" AS ENUM();' },
-      }),
-    )
+  it('fails when a new migration reuses a committed index (the old phantom shape)', () => {
+    const verdict = classifyDrift(base({ newSql: ['0041_freezing_the_phantom.sql'] }))
     expect(verdict.status).toBe('drift')
     expect(verdict.status === 'drift' && verdict.collisions).toEqual(['0041'])
   })
@@ -140,25 +108,7 @@ describe('classifyDrift — real drift must fail', () => {
   })
 
   it('fails if two new migrations collide on one index', () => {
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0042_a.sql', '0042_b.sql'],
-        newSqlBodies: { '0042_a.sql': 'a', '0042_b.sql': 'b' },
-      }),
-    )
-    expect(verdict.status).toBe('drift')
-  })
-
-  it('fails when the phantom grows: baseline plus extra statements', () => {
-    const verdict = classifyDrift(
-      base({
-        newSql: ['0041_a.sql'],
-        newSqlBodies: {
-          '0041_a.sql': 'CREATE TABLE "x" ();\nALTER TABLE "users" ADD COLUMN "y" int;',
-        },
-        baselineSha256: sha256('CREATE TABLE "x" ();'),
-      }),
-    )
+    const verdict = classifyDrift(base({ newSql: ['0042_a.sql', '0042_b.sql'] }))
     expect(verdict.status).toBe('drift')
   })
 })
@@ -250,7 +200,7 @@ describe('classifyDrift — a broken tool must never read as a pass', () => {
   it('keeps a tool error winning even when a new migration exists', () => {
     // A half-written migration from a crashed run must never be classified.
     const verdict = classifyDrift(
-      knownPhantom({ toolFailed: true, newSql: ['0041_freezing_the_phantom.sql'] }),
+      base({ toolFailed: true, newSql: ['0041_freezing_the_phantom.sql'] }),
     )
     expect(verdict.status).toBe('tool-error')
   })
@@ -277,27 +227,8 @@ describe('classifyDrift — fail-closed does not break the healthy verdicts', ()
     expect(verdict.status).toBe('in-sync')
   })
 
-  it('still tolerates the recorded known phantom', () => {
-    const body = 'CREATE TABLE "x" ();'
-    const verdict = classifyDrift(
-      base({
-        toolFailed: false,
-        newSql: ['0041_a.sql'],
-        newSqlBodies: { '0041_a.sql': body },
-        baselineSha256: sha256(body),
-      }),
-    )
-    expect(verdict.status).toBe('known-stale')
-  })
-
   it('still reports drift for a genuine new migration', () => {
-    const verdict = classifyDrift(
-      base({
-        toolFailed: false,
-        newSql: ['0042_new_work.sql'],
-        newSqlBodies: { '0042_new_work.sql': 'ALTER TABLE "users" ADD COLUMN "x" int;' },
-      }),
-    )
+    const verdict = classifyDrift(base({ toolFailed: false, newSql: ['0042_new_work.sql'] }))
     expect(verdict.status).toBe('drift')
   })
 
@@ -306,7 +237,6 @@ describe('classifyDrift — fail-closed does not break the healthy verdicts', ()
       base({
         toolFailed: false,
         newSql: ['0041_freezing_the_phantom.sql'],
-        newSqlBodies: { '0041_freezing_the_phantom.sql': 'CREATE TYPE "public"."x" AS ENUM();' },
       }),
     )
     expect(verdict.status).toBe('drift')
@@ -344,17 +274,24 @@ describe('end-to-end against the real generator', () => {
     }
   }
 
-  it('reproduces the phantom from the real repo schema (documents why the baseline exists)', () => {
-    const { newSql } = generate(SCHEMA, REPO_DRIZZLE)
-    // The stale chain means generate DOES propose a migration today. Asserting
-    // this keeps the recorded baseline honest: if the chain is ever repaired this
-    // test fails and the baseline should be removed, not extended.
-    expect(newSql).toHaveLength(1)
-    expect(indexPrefix(newSql[0]!)).toBe('0041')
+  it('proposes NOTHING for the real repo schema (the chain is understood)', () => {
+    const { newSql, toolOutput } = generate(SCHEMA, REPO_DRIZZLE)
+    // This is the whole point of `0043_snapshot.json`. drizzle-kit walks back from
+    // the newest journal entry, so a snapshot for the CURRENT migration is enough
+    // — it does not need one per historical entry. With it, `generate` reports
+    // "No schema changes" instead of re-proposing everything committed after 0029.
+    //
+    // Asserting this keeps the repair honest. If a future change regresses the
+    // chain, this test fails and the cause must be fixed; re-recording a
+    // fingerprint to make it pass again is exactly the failure mode that was
+    // removed.
+    expect(newSql).toEqual([])
+    expect(toolOutput).toContain('No schema changes')
   }, 120_000)
 
-  it('fails when the schema contains a change the migrations do not have', () => {
-    // A schema ahead of its migrations is exactly the phantom-generation trap.
+  it('still detects a schema that moved ahead of its migrations', () => {
+    // The guard must keep its teeth. Adding a table the migrations do not create
+    // has to be caught, and reported.
     const work = mkdtempSync(join(tmpdir(), 'beaconhs-drift-fixture-'))
     try {
       const schemaDir = join(work, 'schema')
@@ -369,18 +306,33 @@ describe('end-to-end against the real generator', () => {
       writeFileSync(entry, `export * from '${SCHEMA}'\nexport * from './extra'\n`)
 
       const { newSql, bodies, toolOutput } = generate(entry, REPO_DRIZZLE)
+      const seededSql = readdirSync(REPO_DRIZZLE).filter((f) => f.endsWith('.sql'))
       const verdict = classifyDrift({
         toolOutput,
         toolFailed: false,
         removedSql: [],
         newSql,
-        newSqlBodies: bodies,
-        seededSql: readdirSync(REPO_DRIZZLE).filter((f) => f.endsWith('.sql')),
-        baselineSha256: KNOWN_STALE_DRIFT_SHA256,
+        seededSql,
       })
-      // Not 'known-stale': the new table is genuinely absent from the migrations.
+
       expect(verdict.status).toBe('drift')
+      expect(newSql).toHaveLength(1)
       expect(bodies[newSql[0]!]).toContain('drift_guard_probe')
+
+      // The proposal must land on a FREE index, not reuse a committed one.
+      //
+      // drizzle-kit derives the prefix from the last journal entry's `idx` + 1.
+      // This repo's filenames skipped `0033`, so for a while `filename prefix`
+      // ran one ahead of `idx`, and the last entry sat at idx 42 while the
+      // highest committed prefix was 0043 — so the generator proposed `0043_…`
+      // straight on top of `0043_companies.sql`. Setting that entry's idx to 43
+      // moves the proposal to 0044. Both are metadata-only: `readMigrationFiles`
+      // applies by `tag` and keys the ledger by sha256 of the SQL, never by idx.
+      //
+      // So a real drift is now caught WITHOUT a filename collision, and a
+      // contributor never has to hand-rename the generated file.
+      expect(indexPrefix(newSql[0]!)).toBe('0044')
+      expect(verdict.status === 'drift' && verdict.collisions).toEqual([])
     } finally {
       rmSync(work, { recursive: true, force: true })
     }

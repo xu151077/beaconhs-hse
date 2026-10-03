@@ -93,6 +93,7 @@ import {
 import type { FormSchemaV1 } from './schema'
 import { CANONICAL_TEMPLATES } from './canonical-templates'
 import { seedHazardAssessmentAppTemplates } from './seed/hazard-assessment-app-templates'
+import { seedWorkPermitTemplate } from './seed/work-permit-template'
 import { seedLiftPlanTemplate } from './seed/lift-plan-template'
 import { seedFormPdfTemplates, seedPdfTemplates } from './seed/pdf-templates'
 import { BEACON_REPORT_SEEDS } from './seed/report-definitions'
@@ -1557,6 +1558,23 @@ async function main() {
     for (const t of all) {
       await seedPdfTemplates(tx as any, t.id)
       await seedFormPdfTemplates(tx as any, t.id)
+    }
+  })
+
+  // Work Permit — a built-in Builder App in its own `work_permit` category,
+  // carrying the approval gate and validity-window flow that make it a
+  // permit-to-work rather than a plain form. No native module, table or
+  // permission of its own.
+  //
+  // Runs for EVERY tenant on EVERY run, like the PDF templates above, NOT inside
+  // the first-run-only demo bootstrap: a seeded database must still receive the
+  // permit when it is added after that bootstrap already ran. `ensureTemplate`
+  // returns the existing row for a `key` that is already there, so this is
+  // add-only and idempotent and never overwrites a tenant's edits.
+  await db.transaction(async (tx) => {
+    const all = await tx.select({ id: tenants.id }).from(tenants)
+    for (const t of all) {
+      await seedWorkPermitTemplate(tx as never, t.id)
     }
   })
 

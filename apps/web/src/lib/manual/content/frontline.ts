@@ -25,6 +25,16 @@ export const FRONTLINE_ARTICLES: ManualArticle[] = [
       'tags',
       'voice',
       'dictate',
+      'observation',
+      'safety observation',
+      'positive observation',
+      'negative observation',
+      'good practice',
+      'unsafe act',
+      'unsafe condition',
+      'corrective action',
+      'near miss',
+      'observation category',
     ],
     body: `Your journal is a daily record of what happened on the job: work done, hazards spotted, visitors, weather, anything worth remembering.
 
@@ -92,6 +102,114 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
 - A photo of a hazard is worth a paragraph. Add both.
 - If you missed a day, pick that date in the list to create an entry for it.`,
   },
+  {
+    slug: 'observations',
+    title: 'Safety observations',
+    group: 'Everyday tasks',
+    iconKey: 'eye',
+    summary: 'Record good practice or something unsafe, and raise a corrective action.',
+    keywords: [
+      'safety observation',
+      'observation',
+      'positive observation',
+      'negative observation',
+      'good practice',
+      'unsafe act',
+      'unsafe condition',
+      'corrective action',
+      'near miss',
+      'category',
+      'observation report',
+    ],
+    body: `A safety observation is something you saw on site and wrote down. It is either **good practice** worth sharing, or something **unsafe** that needs fixing.
+
+An observation is a short record about one thing. It is not a daily log — that is what [Journals](/journals) is for.
+
+## Why observations matter
+
+Negative observations are how problems get found early, before someone is hurt. Positive observations are how good practice gets repeated instead of being luck.
+
+Anything negative you record can become a **corrective action**: a task with an owner and a due date, tracked until someone verifies the fix.
+
+## Where to find it
+
+Open **Safety observations** in the left menu. You will see every observation you have access to.
+
+## Recording an observation
+
+1. Open [Safety observations](/observations).
+2. Tap **New observation**.
+3. Choose what you saw:
+   - **Good practice noticed** — something done well. Share it.
+   - **Something that needs fixing** — an unsafe act, an unsafe condition, or a near miss.
+4. Choose the date you saw it. It defaults to today.
+5. Set the location if you know it.
+6. Type a short title and describe what you saw in your own words.
+7. Tap **Create observation**. It opens as a draft that only you can see.
+
+## Editing and submitting
+
+1. Open the observation.
+2. Tap **Edit observation** to change the title or description. Your changes save when you tap **Save**.
+3. When you are happy with it, tap **Mark as submitted**.
+4. Submitted observations are shared with the people allowed to see them.
+
+A draft is only visible to you. Nothing is shared until you submit it.
+
+## Categories
+
+Categories are tags. Open an observation, and you will see the categories it carries.
+
+- A manager can add new category names under **Safety observations** then **Categories**.
+- Filtering by a category on the list shows every observation with that category.
+- Categories let you spot a repeated problem — for example the same scaffold problem three weeks running.
+
+## Raising a corrective action
+
+Only a negative observation can raise a corrective action, because there is nothing to correct about good practice.
+
+1. Open the observation.
+2. Under **Linked corrective actions**, describe what needs to be done.
+3. Set a due date if there is one.
+4. Tap **Create**.
+
+The corrective action appears in the list on the observation, and in [Corrective actions](/corrective-actions) for whoever owns it. From there it is assigned, completed and verified like any other corrective action.
+
+An observation can have more than one corrective action.
+
+## When an observation is finished
+
+The corrective action carries the work. When the action is closed and verified, the observation is done.
+
+Tap **Archive observation** to file the observation away. Archived observations stay searchable and are never deleted.
+
+## Who can see your observations
+
+You always see your own observations, whatever site you are scoped to.
+
+If your role covers particular sites, you also see observations other people recorded at those sites. If you are not scoped to a site, you only see your own.
+
+## Finding observations
+
+Use the filters above the list:
+
+- **Status** — draft, submitted, or archived.
+- **Observation type** — positive or negative.
+- **From** and **To** — narrow to a date range.
+- The search box — searches the title and description.
+
+Tap a category on an observation to see everything filed under it.
+
+${CSV_EXPORT_LIMIT_GUIDANCE}
+
+## Tips
+
+- Write one observation per thing. Two problems in one record are hard to close out.
+- Say what you saw, not who was at fault. "Guardrail missing on level 3" is useful; a name is not.
+- Photograph the hazard. A photo makes a corrective action much faster to verify.
+- Recording good practice is not wasted time. It is the example new starters are shown.`,
+  },
+
   {
     slug: 'people-kiosk',
     title: 'People sign-in / sign-out kiosk',
@@ -614,6 +732,84 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
 - Every Builder photo works the same way: tap **Take photo or upload** to use the camera or choose pictures from your phone's photo library. Tap the pencil button to add a caption or draw on a photo, tap the trash button to remove it, and use the arrow buttons to change the order. The editor keeps the photo's original shape while you work. Large camera photos are optimized automatically when they upload. Those edits and the saved order appear in the record PDF. If AI review is available, changing the set or order of photos clears the old review so you can run it again.
 - For a toolbox talk, add everyone who attended before you submit — that is your attendance record.
 - If a form you need is not in your menu, check that you are using the right role, then ask your supervisor. The form may need to be published, allowed for your role, pinned, or assigned to you.`,
+  },
+  {
+    slug: 'work-permits',
+    title: 'Work permits',
+    group: 'Everyday tasks',
+    iconKey: 'clipboard-check',
+    summary: 'Request a permit to work, get it approved, and close it when the job is done.',
+    requiredAnyPermission: [
+      'forms.response.read.all',
+      'forms.response.read.site',
+      'forms.response.read.self',
+    ],
+    keywords: [
+      'permit',
+      'permits',
+      'work permit',
+      'permit to work',
+      'PTW',
+      'hot work',
+      'confined space',
+      'work at height',
+      'excavation',
+      'lifting',
+      'electrical',
+      'lockout',
+      'tagout',
+      'LOTO',
+      'isolation',
+      'approval',
+      'approver',
+      'expire',
+      'expiry',
+      'valid until',
+      'close out',
+    ],
+    body: `A **Work Permit** is the form that says "this job is allowed to happen, at this place, until this time". Hot work, confined space, work at height, excavation, lifting and electrical work all use it.
+
+A permit is not valid until it is approved, and it stops being valid when its time is up. You cannot work on a rejected or expired permit.
+
+## Asking for a permit
+
+1. Open **Apps** and choose **Work Permit**. If your company has pinned it, it is also in the left menu.
+2. Tap **New entry**.
+3. In the **Location** box at the top, choose the site the work happens at. This is what decides who can see the permit, so set it first.
+4. Fill in the **Permit type**, the **Requester**, the **Work description**, and the **Precise work location**. The precise location is the level, grid reference, zone or asset tag on that site.
+5. Tick the **Hazards identified** and the **Control measures in place** that apply. Use **Other hazards** and **How the controls are achieved** for anything the lists do not cover.
+6. Answer **All isolations verified and locks applied?**.
+7. Set the **Requested start**, and the **Permit validity** in minutes. 480 minutes is one shift.
+8. On **Site authorisation**, confirm the crew was briefed and the area was taken off other trades, then tap **Finalize**.
+
+Your answers save as you go, so you can stop and come back before finalizing.
+
+## Getting it approved
+
+1. A **safety manager** is assigned to approve it. They see the request in their [Workspace](/my) and in their inbox.
+2. They tap the permit and either **Approve** or **Reject** it, adding a note if needed.
+3. If they **Reject** it, the permit is not valid and no time starts. Read the note, fix what was wrong, and finalize a new request.
+4. Once it is approved, the permit is **live** and its validity clock starts.
+
+## Working under a live permit
+
+- The permit stays live until its validity runs out. It then closes by itself.
+- Check in on the permit if the app asks you to. If you miss a check-in, the permit is escalated and a supervisor is alerted.
+- You can finish it early with **End session** or **Cancel** on the permit page.
+
+## Closing out
+
+1. Open the permit when the work is finished.
+2. Tap **End session** and add a closing note.
+3. A closed permit stays on record. You can read it any time from the list.
+
+## Finding a permit
+
+- **Apps** → **Work Permit** opens the list of every permit you are allowed to see. Permits at sites you are not assigned to are not shown.
+- Use the search box and the status filter to narrow the list.
+- **Apps** → **Live session monitoring** lists every permit that is running right now, and shows one as **Expired** the moment its time is up.
+
+${CSV_EXPORT_LIMIT_GUIDANCE}`,
   },
   {
     slug: 'compliance',

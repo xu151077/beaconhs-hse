@@ -720,6 +720,100 @@ export async function draftSketchDiagram(args: {
   }
 }
 
+/**
+ * Set a Builder response's RECORD location — `form_responses.site_org_unit_id`.
+ *
+ * Why this exists: the column is the only thing the `forms.response.read.site`
+ * visibility ladder filters on (`moduleScopeWhere({ siteCol: formResponses
+ * .siteOrgUnitId })`), but the inline record layout (`inlineAutosave`, which the
+ * response page uses) rendered no Location control at all, so a response created
+ * from "New entry" kept a null site forever. A null site makes `inArray(siteCol,
+ * sites)` false, which silently downgraded every site-scoped user to own-records-
+ * only. The wizard layout had the control; the record layout did not.
+ *
+ * Guarded exactly like any other response writer: `canFillResponse` for access,
+ * the shared parent-first lock, and `canEditResponsePayload` for edit rights.
+ */
+export async function setResponseLocation(input: {
+  responseId: string
+  siteOrgUnitId: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z
+    .object({ responseId: z.string().min(1), siteOrgUnitId: z.string().uuid().nullable() })
+    .safeParse(input)
+  if (!parsed.success) return { ok: false, error: 'Invalid request' }
+  const ctx = await requireRequestContext()
+  if (!(await canFillResponse(ctx, parsed.data.responseId))) {
+    return { ok: false, error: 'You do not have access to this app' }
+  }
+  try {
+    const result = await ctx.db(async (tx) => {
+      const mutable = await lockFormResponseForMutation(tx, ctx.tenantId, parsed.data.responseId)
+      if (!mutable) return { ok: false as const, error: 'Response not found' }
+      const [row] = await tx
+        .select({
+          id: formResponses.id,
+          status: formResponses.status,
+          locked: formResponses.locked,
+          submittedBy: formResponses.submittedBy,
+        })
+        .from(formResponses)
+        .where(
+          and(
+            eq(formResponses.id, parsed.data.responseId),
+            eq(formResponses.tenantId, ctx.tenantId),
+            isNull(formResponses.deletedAt),
+          ),
+        )
+        .limit(1)
+      if (!row) return { ok: false as const, error: 'Response not found' }
+      if (row.locked) return { ok: false as const, error: 'This record is locked' }
+      if (!canEditResponsePayload(ctx, row)) {
+        return { ok: false as const, error: 'You do not have permission to edit this record' }
+      }
+
+      // Same org-unit scope the wizard's own Location control writes through, so
+      // a location can never point at another tenant's org unit.
+      if (parsed.data.siteOrgUnitId) {
+        const [org] = await tx
+          .select({ id: orgUnits.id })
+          .from(orgUnits)
+          .where(
+            and(
+              eq(orgUnits.id, parsed.data.siteOrgUnitId),
+              eq(orgUnits.tenantId, ctx.tenantId),
+              isNull(orgUnits.deletedAt),
+            ),
+          )
+          .limit(1)
+        if (!org) return { ok: false as const, error: 'Location not found' }
+      }
+      await tx
+        .update(formResponses)
+        .set({ siteOrgUnitId: parsed.data.siteOrgUnitId })
+        .where(
+          and(
+            eq(formResponses.id, parsed.data.responseId),
+            eq(formResponses.tenantId, ctx.tenantId),
+          ),
+        )
+      return { ok: true as const }
+    })
+    if (!result.ok) return result
+    await recordAudit(ctx, {
+      entityType: 'form_response',
+      entityId: parsed.data.responseId,
+      action: 'update',
+      summary: 'Updated record location',
+    })
+    revalidatePath('/apps/responses/' + parsed.data.responseId)
+    return { ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'save failed'
+    return { ok: false, error: message }
+  }
+}
+
 export async function analyzePhotos(args: {
   attachmentIds: string[]
 }): Promise<{ ok: true; analysis: SafetyVisionAnalysis } | { ok: false; error: string }> {

@@ -28,7 +28,7 @@ export async function spawnCorrectiveActionForSubject(
     siteOrgUnitId?: string | null
     flowExecutionKey?: string
   },
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; caId?: string; reference?: string }> {
   if (!ctx.tenantId) return { ok: false }
   const title = input.title?.trim()
   if (!title) return { ok: false }
@@ -118,5 +118,9 @@ export async function spawnCorrectiveActionForSubject(
       summary: `Spawned ${row.record.reference} from ${input.sourceEntityType} flow`,
     })
   }
-  return { ok: true }
+  // The id comes back so a caller outside a flow graph can link the new action
+  // back to the record it came from (an observation listing its actions). Flow
+  // adapters ignore it — `FlowSubjectAdapter.spawnCorrectiveAction` only declares
+  // `{ ok: boolean }`.
+  return { ok: true, caId: row.record.id, reference: row.record.reference }
 }

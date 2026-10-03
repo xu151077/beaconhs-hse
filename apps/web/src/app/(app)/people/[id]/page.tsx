@@ -39,6 +39,7 @@ import {
 } from '@beaconhs/ui'
 import {
   attachments,
+  companies,
   crews,
   departments,
   documentAcknowledgments,
@@ -128,6 +129,11 @@ const APP_OWNED_FIELDS = new Set([
   'formalName',
   'externalEmployeeId',
   'crewId',
+  // The employer a person works for. App-owned, NOT sync-owned: `upsertPerson`
+  // maps no employer field, so claiming it here would lock the control for synced
+  // people while nothing ever populated it. Add it to SYNC_OWNED_PERSON_FIELDS in
+  // the same change that makes a connector write it.
+  'companyId',
   'managerPersonId',
   'emergencyContactName',
   'emergencyContactPhone',
@@ -270,6 +276,7 @@ export default async function PersonDetailPage({
       .select({
         person: people,
         department: departments,
+        company: companies,
         trade: trades,
         crew: crews,
         photoKey: attachments.r2Key,
@@ -277,6 +284,7 @@ export default async function PersonDetailPage({
       })
       .from(people)
       .leftJoin(departments, eq(departments.id, people.departmentId))
+      .leftJoin(companies, eq(companies.id, people.companyId))
       .leftJoin(trades, eq(trades.id, people.tradeId))
       .leftJoin(crews, eq(crews.id, people.crewId))
       .leftJoin(attachments, eq(attachments.id, people.photoAttachmentId))
@@ -318,6 +326,7 @@ export default async function PersonDetailPage({
       fileRows,
       managerRow,
       deptOptions,
+      companyOptions,
       tradeOptions,
       crewOptions,
       managerOptions,
@@ -440,6 +449,10 @@ export default async function PersonDetailPage({
         .select({ id: departments.id, name: departments.name })
         .from(departments)
         .orderBy(asc(departments.name)),
+      tx
+        .select({ id: companies.id, name: companies.name })
+        .from(companies)
+        .orderBy(asc(companies.name)),
       tx.select({ id: trades.id, name: trades.name }).from(trades).orderBy(asc(trades.name)),
       tx.select({ id: crews.id, name: crews.name }).from(crews).orderBy(asc(crews.name)),
       // Manager picker — active people excluding self.
@@ -490,6 +503,7 @@ export default async function PersonDetailPage({
       fileRows,
       managerRow,
       deptOptions,
+      companyOptions,
       tradeOptions,
       crewOptions,
       managerOptions,
@@ -517,6 +531,7 @@ export default async function PersonDetailPage({
     fileRows,
     managerRow,
     deptOptions,
+    companyOptions,
     tradeOptions,
     crewOptions,
     managerOptions,
@@ -1065,6 +1080,15 @@ export default async function PersonDetailPage({
                           initialValue={person.departmentId}
                           options={deptOptions.map((d) => ({ value: d.id, label: d.name }))}
                           disabled={fieldDisabled('departmentId')}
+                          updateAction={updatePersonField}
+                        />
+                        <LiveSelect
+                          id={person.id}
+                          field="companyId"
+                          label={tGenerated('m_05135dcd76ada7')}
+                          initialValue={person.companyId}
+                          options={companyOptions.map((c) => ({ value: c.id, label: c.name }))}
+                          disabled={fieldDisabled('companyId')}
                           updateAction={updatePersonField}
                         />
                         <LiveSelect

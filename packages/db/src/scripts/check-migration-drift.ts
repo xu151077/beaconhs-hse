@@ -2,27 +2,52 @@
 //
 // Why this exists
 // ---------------
-// `packages/db/drizzle/meta/` holds 25 snapshots while the journal lists 41
-// entries. Sixteen journal entries (idx 1, 2, 26-28, 30-40) have no snapshot
-// file. drizzle-kit diffs the schema against the newest snapshot it can find —
-// `0029_snapshot.json` — so every `db:generate` run re-proposes all the schema
-// changes already committed as migrations 0030-0041. The result is a phantom
-// migration that re-creates live objects, and it is written under an index that
-// collides with an existing migration.
+// It answers one question: if a contributor ran `pnpm db:generate` right now,
+// would drizzle-kit propose a migration? It should not — the schema and the
+// migrations are supposed to agree — and if it would, the schema has drifted
+// ahead of its migrations and CI must fail.
 //
-// This guard runs that generation in a throwaway directory and reports whether
-// the proposal has changed. It never runs the repo's own `db:generate`, never
-// connects to a database, and never writes inside the repository.
+// This guard runs that generation in a throwaway directory and classifies the
+// result. It never runs the repo's own `db:generate`, never connects to a
+// database, and never writes inside the repository.
+//
+// WHY THERE USED TO BE A "known stale" VERDICT, AND WHY IT IS GONE
+// ----------------------------------------------------------------
+// `meta/` held 25 snapshots against 43 journal entries, so drizzle-kit diffed the
+// schema against `0029_snapshot.json` and re-proposed every change committed as
+// 0030-0043 — a phantom that re-creates live objects under an index that
+// collides with a committed migration. The guard's answer was to fingerprint that
+// phantom in a golden SHA and call the run a pass when it matched.
+//
+// That was the wrong shape for three reasons, all of which bit in practice:
+//   1. Every legitimate migration changed the phantom, so the golden had to be
+//      re-recorded by hand each time — twice in one session — and a re-record is
+//      indistinguishable from silencing a real report.
+//   2. The golden was not a drift baseline at all. It was a fingerprint of the
+//      schema delta, so it encoded "the schema is whatever it currently is".
+//   3. It left `pnpm db:generate` itself broken for every contributor: the one
+//      supported way to author a migration produced a re-creating phantom at a
+//      colliding index.
+//
+// `0043_snapshot.json` fixes the cause rather than the symptom. drizzle-kit walks
+// back from the newest journal entry, so a snapshot for the CURRENT migration is
+// all it needs; it does not require one per historical entry. With it, `generate`
+// reports "No schema changes" when the schema matches its migrations, and proposes
+// a correctly-scoped migration at the NEXT FREE INDEX when it does not.
+//
+// The snapshot is not invented history. It was emitted by drizzle-kit itself from
+// `src/schema/index.ts`, and it was verified against the live database built by
+// executing all 43 committed migrations in order: 194 tables, every column, and
+// 108 enums with identical values. It records the true post-0043 state. No
+// committed migration SQL was modified and no historical entry was removed; the
+// `0000-0029` snapshots are untouched and still chain by `prevId`.
 //
 // It is FAIL-CLOSED. drizzle-kit was observed to exit 0 while crashing, with the
 // stack trace on stdout, so neither the exit code nor the text is trusted on its
 // own: a verdict of anything other than `tool-error` requires positive evidence
 // that the generator completed (see SUCCESS_MARKERS). An unrecognised output is
-// therefore a failure, not an empty diff.
-//
-// What it deliberately does NOT check: `snapshots === migrations`. The 25/41 gap
-// is pre-existing, legitimate history, not an error. Repairing the chain is a
-// separate decision (see docs/hse-migration-integrity-guard.md §11).
+// therefore a failure, not an empty diff. A phantom is a failure too — there is no
+// longer any state in which proposing one is expected.
 
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -36,17 +61,6 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG_DB = resolve(HERE, '../..')
 const REPO_DRIZZLE = join(PKG_DB, 'drizzle')
 const SCHEMA_ENTRY = join(PKG_DB, 'src/schema/index.ts')
-
-/**
- * Fingerprint of the phantom migration drizzle-kit proposes today, recorded on
- * 2026-09-30 with drizzle-kit 0.31.10 against schema `src/schema/index.ts`.
- *
- * It is a golden value, not a hand-maintained list: it was captured by running
- * the real generator in an isolated temp directory. Regenerate it only after a
- * deliberate snapshot-chain repair, and never to silence a real drift report.
- */
-export const KNOWN_STALE_DRIFT_SHA256 =
-  'e9845ceff2a4e80d18cf2367682df082f80136bbb65b2f2765a9739fa99d658a'
 
 /** sql_bodies is content-only: drizzle-kit appends a random adjective to the filename. */
 export const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
@@ -73,18 +87,13 @@ export type DriftInput = {
   removedSql: string[]
   /** Migration filenames the run created. */
   newSql: string[]
-  /** Body of each created migration, keyed by filename. */
-  newSqlBodies: Record<string, string>
   /** Filenames the seed already had. */
   seededSql: string[]
-  /** The recorded fingerprint for the known pre-existing phantom. */
-  baselineSha256?: string
 }
 
 export type DriftVerdict =
   | { status: 'in-sync'; message: string }
   | { status: 'tool-error'; message: string; detail: string }
-  | { status: 'known-stale'; message: string; collisions: string[]; fingerprints: string[] }
   | { status: 'drift'; message: string; collisions: string[]; newSql: string[] }
 
 /**
@@ -129,7 +138,7 @@ const RECOGNISED_ERROR = /^\s*(?:[A-Za-z]*Error\b|.*\bE[A-Z]{3,}\b|error\s*:|.*\
  * a message, never to reach a passing verdict.
  */
 export function classifyDrift(input: DriftInput): DriftVerdict {
-  const { toolOutput, removedSql, newSql, newSqlBodies, seededSql, baselineSha256 } = input
+  const { toolOutput, removedSql, newSql, seededSql } = input
 
   const toolError = (message: string): DriftVerdict => ({
     status: 'tool-error',
@@ -193,24 +202,16 @@ export function classifyDrift(input: DriftInput): DriftVerdict {
     ),
   ]
 
-  const fingerprints = newSql.map((name) => sha256(newSqlBodies[name] ?? ''))
-  const isKnownStale =
-    baselineSha256 !== undefined && newSql.length === 1 && fingerprints[0] === baselineSha256
-
-  if (isKnownStale) {
-    return {
-      status: 'known-stale',
-      message:
-        'db:generate would still re-propose the known phantom migration; the snapshot chain ' +
-        'is incomplete (see docs/hse-migration-integrity-guard.md). No NEW drift.',
-      collisions,
-      fingerprints,
-    }
-  }
-
+  // Any proposal at all is now a failure. There is no longer a state in which a
+  // migration is expected to be re-proposed: the newest snapshot describes the
+  // current schema, so a proposal means either the schema moved without a
+  // migration, or the snapshot chain regressed. Both must fail closed rather than
+  // be waved through by a recorded fingerprint.
   return {
     status: 'drift',
-    message: 'db:generate would emit a migration that is not the recorded baseline',
+    message:
+      'db:generate would propose a migration, so the schema does not match its migrations ' +
+      '(either the schema moved without a migration, or the snapshot chain regressed)',
     collisions,
     newSql,
   }
@@ -251,9 +252,7 @@ export type CheckResult = { ok: boolean; verdict: DriftVerdict; repoUnchanged: b
  * directory afterwards so a guard that somehow writes into the repo is caught
  * rather than trusted.
  */
-export function checkMigrationDrift(
-  options: { baselineSha256?: string; keepTempDir?: string } = {},
-): CheckResult {
+export function checkMigrationDrift(options: { keepTempDir?: string } = {}): CheckResult {
   if (!existsSync(REPO_DRIZZLE)) {
     throw new Error(`migration directory not found: ${REPO_DRIZZLE}`)
   }
@@ -297,21 +296,17 @@ export function checkMigrationDrift(
     const seededSet = new Set(seededSql)
     const newSql = afterSql.filter((name) => !seededSet.has(name))
     const removedSql = seededSql.filter((name) => !new Set(afterSql).has(name))
-    const newSqlBodies: Record<string, string> = {}
-    for (const name of newSql) newSqlBodies[name] = readFileSync(join(outDir, name), 'utf8')
 
     const verdict = classifyDrift({
       toolOutput,
       toolFailed,
       removedSql,
       newSql,
-      newSqlBodies,
       seededSql,
-      baselineSha256: options.baselineSha256 ?? KNOWN_STALE_DRIFT_SHA256,
     })
 
     return {
-      ok: verdict.status === 'in-sync' || verdict.status === 'known-stale',
+      ok: verdict.status === 'in-sync',
       verdict,
       repoUnchanged: hashTree(REPO_DRIZZLE) === repoBefore,
     }
@@ -332,15 +327,6 @@ function main(_argv: string[]): number {
   switch (verdict.status) {
     case 'in-sync':
       console.log(`PASS ${verdict.message}`)
-      return 0
-    case 'known-stale':
-      console.warn(`PASS (known stale snapshot chain, no new drift) ${verdict.message}`)
-      if (verdict.collisions.length > 0) {
-        console.warn(`     would reuse committed migration index: ${verdict.collisions.join(', ')}`)
-      }
-      console.warn(
-        '     repair the snapshot chain to clear this; see docs/hse-migration-integrity-guard.md',
-      )
       return 0
     case 'tool-error':
       console.error(`FAIL ${verdict.message}\n${verdict.detail}`)

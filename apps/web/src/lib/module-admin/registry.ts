@@ -44,6 +44,37 @@ export type ModuleAdmin = {
 }
 
 export const MODULE_ADMIN: ModuleAdmin[] = [
+  // Safety Observations is the SECOND business class of `journal_entries` — a
+  // `definition` of `positive_observation` / `negative_observation` — so it
+  // deliberately reuses the journals administration surfaces: the same tag
+  // vocabulary governs categories and the same automations run on submit. It gets
+  // its own registry entry only so the module nav strip and the /admin rollup can
+  // point at /observations, with the identical journals permission.
+  {
+    moduleKey: 'observations',
+    label: 'Safety observations',
+    href: '/observations',
+    managePath: '/journals/manage',
+    iconKey: 'eye',
+    permission: 'journals.assign',
+    tabs: [{ key: 'list', label: 'Observations', href: '/observations' }],
+    sections: [
+      {
+        key: 'observation-tags',
+        label: 'Categories',
+        href: '/journals/tags',
+        iconKey: 'tag',
+        desc: 'Govern the tag vocabulary observations use as categories.',
+      },
+      {
+        key: 'observation-flows',
+        label: 'Automations',
+        href: '/journals/flows',
+        iconKey: 'workflow',
+        desc: 'On submit, send emails, notify roles or raise corrective actions.',
+      },
+    ],
+  },
   {
     moduleKey: 'journals',
     label: 'Journals',
@@ -577,6 +608,17 @@ export const MODULE_ADMIN: ModuleAdmin[] = [
         href: '/people/departments',
         iconKey: 'layers',
         desc: 'The departments people belong to — one per person.',
+      },
+      {
+        // Employers, not places. Deliberately a People section rather than a
+        // Locations one: `org_units` is the Location hierarchy and its site /
+        // project levels feed RoleScope.siteIds, so a contractor company stored
+        // there would leak a business relationship into authorization.
+        key: 'companies',
+        label: 'Companies',
+        href: '/people/companies',
+        iconKey: 'building',
+        desc: 'The companies people are employed by — contractor or subcontractor.',
       },
       {
         key: 'groups',

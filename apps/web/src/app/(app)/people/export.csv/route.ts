@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { and, asc, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm'
 import { primaryPersonTitleName } from '@beaconhs/db'
-import { departments, people, trades } from '@beaconhs/db/schema'
+import { companies, departments, people, trades } from '@beaconhs/db/schema'
 import { assertCan } from '@beaconhs/tenant'
 import { requireExportContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
@@ -24,6 +24,7 @@ const SORTS = [
   'title',
   'hire_date',
   'department',
+  'company',
   'trade',
   'status',
 ] as const
@@ -37,12 +38,14 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
   const sp = Object.fromEntries(url.searchParams.entries())
   const params = parseListParams(sp, { sort: 'name', dir: 'asc', perPage: 25, allowedSorts: SORTS })
   // Mirror the /people list's filters exactly so the export matches what the
-  // user sees: default status=active, optional department, never soft-deleted.
+  // user sees: default status=active, optional department / company, never
+  // soft-deleted.
   const rawStatus = pickString(sp.status) ?? 'active'
   const statusFilter: StatusFilter = (STATUS_FILTERS as readonly string[]).includes(rawStatus)
     ? (rawStatus as StatusFilter)
     : 'active'
   const departmentFilter = pickString(sp.department) ?? null
+  const companyFilter = pickString(sp.company) ?? null
   const ctx = await requireExportContext()
   // Two independent capabilities, both required.
   //
@@ -75,6 +78,9 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     }
     if (statusFilter !== 'all') filters.push(eq(people.status, statusFilter))
     if (departmentFilter) filters.push(eq(people.departmentId, departmentFilter))
+    // Company is a business-data filter, mirroring the list page. The export
+    // stays inside the same `people.read.all` + RLS boundary either way.
+    if (companyFilter) filters.push(eq(people.companyId, companyFilter))
     const whereClause = and(...filters)
 
     const orderBy =
@@ -90,19 +96,23 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
               ? [params.dir === 'asc' ? asc(people.hireDate) : desc(people.hireDate)]
               : params.sort === 'department'
                 ? [params.dir === 'asc' ? asc(departments.name) : desc(departments.name)]
-                : params.sort === 'status'
-                  ? [params.dir === 'asc' ? asc(people.status) : desc(people.status)]
-                  : [params.dir === 'asc' ? asc(trades.name) : desc(trades.name)]
+                : params.sort === 'company'
+                  ? [params.dir === 'asc' ? asc(companies.name) : desc(companies.name)]
+                  : params.sort === 'status'
+                    ? [params.dir === 'asc' ? asc(people.status) : desc(people.status)]
+                    : [params.dir === 'asc' ? asc(trades.name) : desc(trades.name)]
 
     return tx
       .select({
         person: people,
         department: departments,
+        company: companies,
         trade: trades,
         primaryTitleName,
       })
       .from(people)
       .leftJoin(departments, eq(departments.id, people.departmentId))
+      .leftJoin(companies, eq(companies.id, people.companyId))
       .leftJoin(trades, eq(trades.id, people.tradeId))
       .where(whereClause)
       .orderBy(...orderBy)
@@ -118,7 +128,12 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     summary: `Exported ${rows.length} people to CSV`,
     metadata: {
       format: 'csv',
-      filters: { q: params.q ?? null, status: statusFilter, department: departmentFilter },
+      filters: {
+        q: params.q ?? null,
+        status: statusFilter,
+        department: departmentFilter,
+        company: companyFilter,
+      },
     },
   })
 
@@ -128,6 +143,7 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     'Employee #',
     'Primary job title',
     'Department',
+    'Company',
     'Trade',
     'Hire date',
     'Email',
@@ -146,6 +162,7 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
         r.person.employeeNo ?? '',
         r.primaryTitleName ?? '',
         r.department?.name ?? '',
+        r.company?.name ?? '',
         r.trade?.name ?? '',
         r.person.hireDate ?? '',
         r.person.email ?? '',

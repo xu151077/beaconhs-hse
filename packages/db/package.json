@@ -10,6 +10,8 @@
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
     "./rls": "./src/rls.ts",
+    "./journal-class": "./src/journal-class.ts",
+    "./work-permit": "./src/work-permit.ts",
     "./canonical-templates": "./src/canonical-templates.ts",
     "./seed/lift-plan-template": "./src/seed/lift-plan-template.ts",
     "./seed/pdf-templates": "./src/seed/pdf-templates.ts",

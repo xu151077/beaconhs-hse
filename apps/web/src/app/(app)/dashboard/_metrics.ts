@@ -4,6 +4,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { htmlToSnippet } from '@beaconhs/forms-core'
 import type { Database } from '@beaconhs/db'
+import { entryClassWhere } from '@beaconhs/db/journal-class'
 import type { RequestContext } from '@beaconhs/tenant'
 import { can } from '@beaconhs/tenant'
 import {
@@ -264,6 +265,10 @@ export async function loadInProgressEntries(
           eq(journalEntries.createdByTenantUserId, myTenantUserId),
           eq(journalEntries.status, 'draft'),
           isNull(journalEntries.deletedAt),
+          // Daily journals only. A draft safety observation is unfinished work of a
+          // different kind and belongs in its own surface, not in the "Journals"
+          // in-progress widget.
+          entryClassWhere('journal'),
         ),
       )
       .orderBy(desc(journalEntries.updatedAt))

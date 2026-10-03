@@ -108,6 +108,7 @@ import {
   fetchEntityAttrs,
   listOrgUnitOptions,
   saveFormResponseDraft,
+  setResponseLocation,
   submitFormResponse,
   updateResponseField,
 } from './actions'
@@ -1007,6 +1008,39 @@ export function FormRenderer({
         <SketchAiDraftContext.Provider value={{ enabled: aiDraftEnabled, templateId }}>
           <OrgUnitOptionsCacheContext.Provider value={orgUnitOptionsCache}>
             <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-5 border-0 p-0">
+              {/* The record's own Location. The wizard layout renders this, but
+                  the inline record layout did NOT — so a response created from
+                  "New entry" kept a null `site_org_unit_id`, and the
+                  `forms.response.read.site` ladder resolves a null site to
+                  own-records-only. Same control, same write path, same tenant
+                  scoping; the inline body simply had to carry it too. */}
+              <PremiumSection
+                title={tGenerated('m_055f11420b2da4')}
+                subtitle={tGenerated('m_16bca608598e31')}
+                icon={<MapPin size={20} />}
+                tone="teal"
+              >
+                <div className="space-y-1">
+                  <Label>
+                    <GeneratedText id="m_055f11420b2da4" />
+                  </Label>
+                  <RemoteSearchSelect
+                    lookup="form-response-locations"
+                    value={siteId}
+                    onChange={(next) => {
+                      setSiteId(next)
+                      void setResponseLocation({ responseId: rid, siteOrgUnitId: next || null })
+                    }}
+                    initialOption={initialLocation}
+                    placeholder={tGenerated('m_1ad901c0a1f003')}
+                    searchPlaceholder={tGenerated('m_016e087c3c8544')}
+                    sheetTitle={tGenerated('m_055f11420b2da4')}
+                    ariaLabel={tGenerated('m_055f11420b2da4')}
+                    emptyLabel={tGenerated('m_1ad901c0a1f003')}
+                    disabled={readOnly}
+                  />
+                </div>
+              </PremiumSection>
               <GeneratedValue
                 value={
                   inlineTabbed ? (

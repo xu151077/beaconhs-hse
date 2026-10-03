@@ -108,6 +108,7 @@ export const TENANT_SCOPED_TABLES = [
   'departments',
   'trades',
   'crews',
+  'companies',
   'people',
   'people_assignments',
   'customer_contacts',

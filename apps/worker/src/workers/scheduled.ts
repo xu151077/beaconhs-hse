@@ -1,12 +1,19 @@
 import type { Job } from 'bullmq'
-import { and, asc, eq, gt, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm'
 import {
   db,
   isFormResponseParentLockedError,
   lockFormResponseForMutation,
+  permitWindowEndedExpr,
   withSuperAdmin,
 } from '@beaconhs/db'
-import { formResponseCheckins, formResponses, tenantUsers, users } from '@beaconhs/db/schema'
+import {
+  auditLog,
+  formResponseCheckins,
+  formResponses,
+  tenantUsers,
+  users,
+} from '@beaconhs/db/schema'
 import { assertScheduledTick, type ScheduledTick } from '@beaconhs/jobs'
 import { scanReportSchedules } from '../lib/report-scheduler'
 import { scanCompliance } from '../lib/compliance-scanner'
@@ -25,8 +32,10 @@ import { reconcileExpiredAttachmentUploads } from '../lib/attachment-upload-reco
 export async function processScheduledTick(job: Job<ScheduledTick>): Promise<void> {
   assertScheduledTick(job.data)
   switch (job.data.kind) {
-    case 'form_session_overdue_scan':
-      return scanFormSessionOverdue()
+    case 'form_session_overdue_scan': {
+      await scanFormSessionOverdue()
+      return scanFormSessionWindowEnded()
+    }
     case 'compliance_scan': {
       // Evaluate tenant crons against the tick's SCHEDULED minute (timestamp +
       // delay = the BullMQ repeat slot), so late processing or a retry never
@@ -245,6 +254,124 @@ async function scanFormSessionOverdue(): Promise<void> {
     processed += page.batchSize
     cursor = page.nextCursor
     if (page.batchSize < SESSION_SCAN_BATCH || !cursor) break
+  }
+}
+
+// Generic monitored-session validity-window expiry — the sibling of the overdue
+// scan above, on the same tick.
+//
+// The overdue scan answers "did the holder go quiet mid-session?" (a missed
+// check-in). This one answers the different question "did the session's own
+// approved window close?". Until now nothing read `expectedEndAt` to change
+// state: it was written by `start_monitored_session` and exposed as a report
+// column, so a session whose window had passed while nobody touched it stayed
+// `active` forever. For a work permit that is a live safety hole — the record
+// that gates the job would read as valid indefinitely.
+//
+// Both live in one tick rather than a new queue because they are the same
+// concern (monitored-session liveness) over the same table, with the same lock
+// + conditional-claim pattern. No permit-specific queue, cron or scheduler.
+//
+// Same rule for every monitored session, not just work permits: a session with a
+// window that has closed is not live. A session with NO window
+// (`expectedEndAt IS NULL`) is untouched, which is the default and the vast
+// majority of monitored sessions.
+const WINDOW_SCAN_BATCH = 100
+const MAX_WINDOWS_PER_TICK = 500
+
+async function scanFormSessionWindowEnded(): Promise<void> {
+  let processed = 0
+  let cursor: { expectedEndAt: Date; id: string } | null = null
+  while (processed < MAX_WINDOWS_PER_TICK) {
+    const page = await withSuperAdmin(db, async (tx) => {
+      // Same deliberate clock choice as the overdue scan: compare against the
+      // DB clock (`now()`) so worker/DB skew cannot close a window early.
+      const ended = await tx
+        .select({
+          id: formResponses.id,
+          tenantId: formResponses.tenantId,
+          expectedEndAt: formResponses.expectedEndAt,
+        })
+        .from(formResponses)
+        .where(
+          and(
+            // Same terminal-claim set `closeSession()` uses, so an escalated
+            // session is still closed when its window ends rather than stranded.
+            inArray(formResponses.monitorStatus, ['active', 'missed', 'escalated']),
+            permitWindowEndedExpr(sql`now()`),
+            cursor
+              ? or(
+                  gt(formResponses.expectedEndAt, cursor.expectedEndAt),
+                  and(
+                    eq(formResponses.expectedEndAt, cursor.expectedEndAt),
+                    gt(formResponses.id, cursor.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(asc(formResponses.expectedEndAt), asc(formResponses.id))
+        .limit(Math.min(WINDOW_SCAN_BATCH, MAX_WINDOWS_PER_TICK - processed))
+      // Every candidate matched `expectedEndAt IS NOT NULL`; assert it before use
+      // so the audit metadata and the keyset cursor below are both total.
+      for (const s of ended) {
+        if (!s.expectedEndAt) {
+          throw new Error('Window-ended monitored response is missing its expected end timestamp')
+        }
+      }
+      let closed = 0
+      for (const s of ended) {
+        let mutable: typeof formResponses.$inferSelect | null
+        try {
+          mutable = await lockFormResponseForMutation(tx, s.tenantId, s.id)
+        } catch (error) {
+          if (isFormResponseParentLockedError(error)) continue
+          throw error
+        }
+        if (!mutable) continue
+        // Conditional claim on monitorStatus keeps the whole pass idempotent: a
+        // re-run (retry, overlapping tick) matches nothing and rewrites nothing.
+        const [claimed] = await tx
+          .update(formResponses)
+          .set({ monitorStatus: 'completed', closedAt: new Date() })
+          .where(
+            and(
+              eq(formResponses.id, s.id),
+              eq(formResponses.tenantId, s.tenantId),
+              inArray(formResponses.monitorStatus, ['active', 'missed', 'escalated']),
+              sql`${formResponses.expectedEndAt} is not null and ${formResponses.expectedEndAt} <= now()`,
+            ),
+          )
+          .returning({ id: formResponses.id })
+        if (!claimed) continue
+        closed += 1
+        await tx.insert(auditLog).values({
+          tenantId: s.tenantId,
+          entityType: 'form_response',
+          entityId: s.id,
+          action: 'update',
+          summary: 'Monitored session validity window ended — session closed',
+          metadata: {
+            trigger: 'monitored_session_window_end',
+            monitorStatusFrom: mutable.monitorStatus,
+            monitorStatusTo: 'completed',
+            expectedEndAt: s.expectedEndAt!.toISOString(),
+          },
+        })
+      }
+      const last = ended.at(-1)
+      return {
+        batchSize: ended.length,
+        closed,
+        nextCursor: last ? { expectedEndAt: last.expectedEndAt!, id: last.id } : null,
+      }
+    })
+    processed += page.batchSize
+    cursor = page.nextCursor
+    if (page.closed > 0) {
+      console.log(`[scheduled] monitored-session window end: closed ${page.closed} session(s)`)
+    }
+    if (page.batchSize < WINDOW_SCAN_BATCH || !cursor) break
   }
 }
 

@@ -8,6 +8,7 @@ import {
   scopeAnalyticsEntities,
   siteIdsFromScopes,
   validateScopeSpecs,
+  validateTenantLevelColumns,
   type AnalyticsScopeSubject,
 } from './scope'
 
@@ -339,6 +340,123 @@ describe('analytics row-scope rules', () => {
       expect(analyticsScopeFingerprint(subject({ ...base, isSuperAdmin: true }))).not.toBe(
         analyticsScopeFingerprint(subject({ ...base })),
       )
+    })
+  })
+
+  describe('scope spec self-validation', () => {
+    /**
+     * `runScopeSpecValidation` is the guard that keeps the scope configuration
+     * honest: it rejects malformed specs, and it rejects a table granted with a
+     * FLAT read key whose transcribed schema columns include a person- or
+     * site-keyed one — which would turn "a tenant admin sees the org tree" into
+     * a tenant-wide leak.
+     *
+     * It was imported here but never called, so both halves of the guard were
+     * dead. These assertions are what make it load-bearing, and the second one
+     * exercises the split-out pure function so the check is proven to fire rather
+     * than merely to pass.
+     */
+    it('has no tenant-level column-allowlist violations', () => {
+      // The half `companies` participates in: a flat-keyed table must not expose a
+      // person- or site-keyed column. This must stay empty as tables are added.
+      const leaks = runScopeSpecValidation().errors.filter((e) => e.includes('tenant-wide leak'))
+      expect(leaks).toEqual([])
+    })
+
+    it('reports only the two known flat-key spec conflicts, and no others', () => {
+      /**
+       * KNOWN PRE-EXISTING DEFECT (present before the companies work, unrelated to
+       * it): `PREFIX_SCOPE` gives `ppe_` and `customer_` a flat read key AND scope
+       * columns. A flat key resolves to tier `all` and never applies a row
+       * predicate, so those columns are dead config.
+       *
+       * Fixing it means choosing a real read tier for PPE and customer contacts —
+       * an authorization decision outside the companies scope. Until that is done
+       * deliberately, this assertion pins the exact known set so the guard is live:
+       * a THIRD conflict, or the disappearance of these, both fail.
+       */
+      const KNOWN = [
+        'ppe_: declares a flat read key AND scope columns.',
+        'customer_: declares a flat read key AND scope columns.',
+      ]
+      const errors = runScopeSpecValidation().errors
+      expect(errors).toHaveLength(KNOWN.length)
+      for (const [index, prefix] of KNOWN.entries()) {
+        expect(errors[index]).toContain(prefix)
+      }
+    })
+
+    it('accepts a flat-keyed tenant-level table whose columns are all allowlisted', () => {
+      expect(
+        validateTenantLevelColumns(
+          ['companies'],
+          { companies: ['id', 'tenant_id', 'name', 'type'] },
+          { companies: ['id', 'tenant_id', 'name', 'type'] },
+          'tenant-level organizational definition data',
+          { companies: { key: 'admin.org.manage' } },
+        ),
+      ).toEqual([])
+    })
+
+    it('gates the companies report surface on admin.org.manage and nothing wider', () => {
+      /**
+       * `companies` is contractor/subcontractor employer master data. It must be
+       * reachable by exactly the org-admin key that already gates the People admin
+       * pages maintaining it — and by NO wider key. In particular
+       * `people.read.all` (the directory read boundary) must not become a back
+       * door into the company catalogue, and `admin.org.read` must not either
+       * unless it is the key actually configured here.
+       */
+      const companies = entity({ table: 'companies', columns: [] })
+
+      const seen = (permissions: string[]) =>
+        scopeAnalyticsEntities(subject({ permissions: (key) => permissions.includes(key) }), [
+          companies,
+        ]).map((e) => e.table)
+
+      expect(seen(['admin.org.manage'])).toEqual(['companies'])
+      // Not by the people directory read key.
+      expect(seen(['people.read.all'])).toEqual([])
+      // Not by org READ alone — `readTierCovers` never widens `.manage` into
+      // `.read`, and this pins that the configured key is the manage one.
+      expect(seen(['admin.org.read'])).toEqual([])
+      expect(seen([])).toEqual([])
+    })
+
+    it('rejects a flat-keyed tenant-level table that grows a person-keyed column', () => {
+      const errors = validateTenantLevelColumns(
+        ['companies'],
+        { companies: ['id', 'tenant_id', 'name', 'type'] },
+        { companies: ['id', 'tenant_id', 'name', 'type', 'contact_person_id'] },
+        'tenant-level organizational definition data',
+        { companies: { key: 'admin.org.manage' } },
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('companies')
+      expect(errors[0]).toContain('contact_person_id')
+      expect(errors[0]).toContain('tenant-wide leak')
+    })
+
+    it('does not apply the column guard to a withheld or tier-scoped table', () => {
+      // `read: null` is withheld and a tiered `prefix` spec narrows itself, so
+      // neither shape is a flat-key leak and neither should be reported.
+      const actual = { companies: ['id', 'contact_person_id'] }
+      const allowed = { companies: ['id'] }
+      const args = ['companies'] as const
+      const description = 'tenant-level organizational definition data'
+
+      expect(
+        validateTenantLevelColumns(args, allowed, actual, description, { companies: null }),
+      ).toEqual([])
+      expect(
+        validateTenantLevelColumns(args, allowed, actual, description, { companies: undefined }),
+      ).toEqual([])
+      // A tiered read (no `key`) is also not flat-keyed.
+      expect(
+        validateTenantLevelColumns(args, allowed, actual, description, {
+          companies: { prefix: 'people' } as never,
+        }),
+      ).toEqual([])
     })
   })
 

@@ -12,6 +12,7 @@ const FORM_CATEGORY_LABELS: Record<string, string> = {
   lift_plan: 'Lift Plan',
   monitored_session: 'Monitored Session',
   wah: 'Working at Heights',
+  work_permit: 'Work permit',
   custom: 'Custom',
 }
 

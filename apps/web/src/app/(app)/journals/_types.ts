@@ -1,8 +1,17 @@
 // Pure serializable types shared between server (queries/actions) and client
 // (workspace UI). No runtime imports here so client components can import freely.
 
+import type { AnyJournalDefinition } from '@beaconhs/db/schema'
+
 export type JournalStatus = 'draft' | 'submitted' | 'archived'
-export type JournalDefinition = 'worker' | 'supervisor'
+/**
+ * Which KIND of journal entry this is. `worker` / `supervisor` are the original
+ * daily field-safety log; the two `*_observation` values are a Safety
+ * Observation, which is a classification of the same record rather than a second
+ * table. The two sets are disjoint and exhaustive — see
+ * `entryClassOf()` in `@beaconhs/db/journal-class`.
+ */
+export type JournalDefinition = AnyJournalDefinition
 export const JOURNAL_ENTRY_TAG_LIMIT = 20
 export const JOURNAL_TAG_NAME_LIMIT = 80
 // The compose workspace is self-scoped (one author), so there is no "Person"
@@ -154,7 +163,6 @@ export type JournalFilters = {
   from?: string
   to?: string
 }
-
 export type EntryMetaResult = {
   summary: string
   tags: string[]
@@ -162,6 +170,13 @@ export type EntryMetaResult = {
 
 export type EntryPatch = {
   bodyHtml?: string
+  /**
+   * The entry's headline. The journals editor has always set the title with the
+   * entry rather than through an autosave patch, so this field is new — the
+   * observation form is title-first, and routing it through the same validated
+   * `updateEntry` avoids a second write path. Length-capped server-side.
+   */
+  title?: string
   definition?: JournalDefinition
   siteOrgUnitId?: string | null
   supervisorPersonId?: string | null

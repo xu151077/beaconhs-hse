@@ -11,13 +11,17 @@ export const OVERSIGHT_ADMIN_ARTICLES: ManualArticle[] = [
     group: 'Oversight & reports',
     iconKey: 'users',
     summary:
-      'Find the people you are allowed to see, manage departments and locations, and view the org chart.',
+      'Find the people you are allowed to see, manage departments, companies and locations, and view the org chart.',
     keywords: [
       'people',
       'directory',
       'employees',
       'workers',
       'departments',
+      'companies',
+      'contractor',
+      'subcontractor',
+      'employer',
       'org chart',
       'reporting structure',
       'crew',
@@ -107,7 +111,7 @@ This is deliberate. The directory is master data that the rest of the app depend
 on — compliance reminders, the training matrix, the org chart and every person
 picker all read it — so a partly visible roster would be worse than none. The
 directory is not a place to apply a narrower view; use **search** and the
-department filter for that.
+department or company filter for that.
 
 - **A member without read all sees an empty directory.** Not their own page either.
   That is a permission boundary, not a location rule.
@@ -123,7 +127,7 @@ do not limit what an account can see.
 
 1. Open [People](/people).
 2. Click **Add person**.
-3. Fill in their name, employee number, **Primary job title**, department, and hire date.
+3. Fill in their name, employee number, **Primary job title**, department, company, and hire date.
 4. Click **Create person**. They now show up in pickers across the app.
 
 ## Job titles
@@ -148,6 +152,24 @@ Each person belongs to one department. Departments are used for grouping, compli
 
 1. Open [Departments](/people/departments).
 2. Click **Add department** to create one, or search the list to edit one.
+
+## Companies
+
+A company is the firm a person works for. Use it to separate your own staff from the **contractors** and **subcontractors** working on your sites.
+
+1. Open [Companies](/people/companies).
+2. Click **Add company**, type the firm's name, then pick **Contractor** or **Subcontractor**.
+3. Click **Create company**.
+
+Each person belongs to one company. Set it on the person:
+
+- Open a person, and use the **Company** dropdown on their page. It saves as soon as you choose.
+- On a person's **Company** page you can also filter the directory, or click a company's headcount to see exactly who works for them.
+- A company cannot be deleted while people still work for it. Move those people to another company, or set their **Company** to none, then delete it.
+
+To change whether a firm is a contractor or a subcontractor, edit the company and change its **Type**. The same record stays, so nobody loses their place in it.
+
+A person can have no company. That is normal for employees and for anyone you have not sorted yet.
 
 ## Add company-specific fields (managers)
 

@@ -6,7 +6,7 @@ import { Users } from 'lucide-react'
 import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm'
 import { Button, EmptyState, PageHeader } from '@beaconhs/ui'
 import { primaryPersonTitleName } from '@beaconhs/db'
-import { departments, people, trades } from '@beaconhs/db/schema'
+import { companies, departments, people, trades } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { canManageModule } from '@/lib/module-admin/guard'
@@ -32,6 +32,7 @@ const SORTS = [
   'title',
   'hire_date',
   'department',
+  'company',
   'trade',
   'status',
 ] as const
@@ -54,6 +55,7 @@ export default async function PeoplePage({
     ? (rawStatus as StatusFilter)
     : 'active'
   const departmentFilter = pickString(sp.department) ?? null
+  const companyFilter = pickString(sp.company) ?? null
   const ctx = await requireRequestContext()
   // The workforce directory is master data, and `people` has no location or
   // owner column, so there is no row scope to fall back on: every record in
@@ -86,6 +88,10 @@ export default async function PeoplePage({
       if (cond) baseFilters.push(cond)
     }
     if (departmentFilter) baseFilters.push(eq(people.departmentId, departmentFilter))
+    // Company is a business-data filter on the directory, NOT an authorization
+    // scope: `people.read.all` remains the whole boundary and RLS still bounds
+    // the query to the tenant.
+    if (companyFilter) baseFilters.push(eq(people.companyId, companyFilter))
     const filters = [...baseFilters]
     if (statusFilter !== 'all') {
       filters.push(eq(people.status, statusFilter))
@@ -106,20 +112,24 @@ export default async function PeoplePage({
               ? [dirFn(people.hireDate)]
               : params.sort === 'department'
                 ? [dirFn(departments.name)]
-                : params.sort === 'status'
-                  ? [dirFn(people.status)]
-                  : [dirFn(trades.name)]
+                : params.sort === 'company'
+                  ? [dirFn(companies.name)]
+                  : params.sort === 'status'
+                    ? [dirFn(people.status)]
+                    : [dirFn(trades.name)]
 
     const [tot] = await tx.select({ c: count() }).from(people).where(whereClause)
     const data = await tx
       .select({
         person: people,
         department: departments,
+        company: companies,
         trade: trades,
         primaryTitleName,
       })
       .from(people)
       .leftJoin(departments, eq(departments.id, people.departmentId))
+      .leftJoin(companies, eq(companies.id, people.companyId))
       .leftJoin(trades, eq(trades.id, people.tradeId))
       .where(whereClause)
       .orderBy(...orderBy)
@@ -149,15 +159,29 @@ export default async function PeoplePage({
   const activeDepartmentName = departmentFilter
     ? (departmentOptions.find((d) => d.id === departmentFilter)?.name ?? 'Unknown')
     : null
+  // Name for the active company chip. Read through ctx.db so it is RLS-bounded to
+  // the tenant; a companyFilter from another tenant simply resolves to null and
+  // matches nothing.
+  const activeCompanyName = companyFilter
+    ? ((await ctx.db(async (tx) => {
+        const [row] = await tx
+          .select({ name: companies.name })
+          .from(companies)
+          .where(eq(companies.id, companyFilter))
+          .limit(1)
+        return row?.name ?? null
+      })) ?? 'Unknown')
+    : null
 
   const tableRows: PeopleTableRow[] = rows.map(
-    ({ person, department, trade, primaryTitleName }) => ({
+    ({ person, department, company, trade, primaryTitleName }) => ({
       id: person.id,
       firstName: person.firstName,
       lastName: person.lastName,
       employeeNo: person.employeeNo,
       primaryTitleName,
       departmentName: department?.name ?? null,
+      companyName: company?.name ?? null,
       tradeName: trade?.name ?? null,
       hireDate: person.hireDate,
       status: person.status,
@@ -226,6 +250,22 @@ export default async function PeoplePage({
                   >
                     <GeneratedText id="m_1a405689014fdf" />{' '}
                     <GeneratedValue value={activeDepartmentName} />
+                    <span aria-hidden className="text-teal-600 dark:text-teal-400">
+                      ✕
+                    </span>
+                  </Link>
+                ) : null
+              }
+            />
+            <GeneratedValue
+              value={
+                activeCompanyName ? (
+                  <Link
+                    href={mergeHref('/people', sp, { company: undefined, page: 1 }) as any}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 py-1 pr-2 pl-3 text-xs font-medium text-teal-800 hover:bg-teal-100 dark:bg-teal-950/50 dark:text-teal-300 dark:hover:bg-teal-900"
+                  >
+                    <GeneratedText id="m_05135dcd76ada7" />{' '}
+                    <GeneratedValue value={activeCompanyName} />
                     <span aria-hidden className="text-teal-600 dark:text-teal-400">
                       ✕
                     </span>

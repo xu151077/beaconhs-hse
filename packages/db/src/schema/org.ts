@@ -69,6 +69,56 @@ export const orgUnits = pgTable(
   }),
 )
 
+// --- Companies (contractor / subcontractor employers) ---------------------
+//
+// A company is an EMPLOYER — a legal party a person works for — NOT a place. It is
+// therefore deliberately NOT an `org_units` row: `org-hierarchy.ts` brands the
+// whole `org_unit_level` tree as "Location", and its `site` / `project` levels feed
+// `RoleScope.siteIds`, so putting employers there would leak a business-data
+// relationship into the authorization ladder. `data_sources` reference rows can
+// hold a curated contractor list for form bindings, but they are untyped and carry
+// no people association and no report binding.
+//
+// Shape follows the existing named-tenant-catalog convention (`departments`,
+// `trades`, `crews`): tenant-scoped, normalized-unique name, and NO `deleted_at`.
+// A soft-delete column nothing writes is dead schema, and soft-deleting with no
+// archived filter and no restore action is a one-way door — so deletion here is a
+// real delete, guarded by the in-use check in the action layer and by the composite
+// FK below. `person_titles` is the opposite choice, because it ships that archive UI.
+// No `status` column either: no sibling catalog has one, and no surface in this
+// phase needs one. No `code` either — same reason.
+//
+// Contractor vs subcontractor is ONE table with a mutable `type`, not two tables.
+// A company is reclassified in place (promote/demote as the engagement changes),
+// and a subcontractor is the same kind of party engaged by another contractor, so
+// a second table would duplicate the identical row shape for no new capability.
+export const companyType = pgEnum('company_type', ['contractor', 'subcontractor'])
+
+export const companies = pgTable(
+  'companies',
+  {
+    id: id(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    type: companyType('type').default('contractor').notNull(),
+    ...timestamps,
+  },
+  (t) => ({
+    tenantIdx: index('companies_tenant_idx').on(t.tenantId),
+    // Referenced by the composite `people_tenant_company_fk`, which needs this
+    // to exist as a unique key — the same reason every sibling catalog has one.
+    tenantIdIdUx: uniqueIndex('companies_tenant_id_id_ux').on(t.tenantId, t.id),
+    tenantNormalizedNameUx: uniqueIndex('companies_tenant_normalized_name_ux').on(
+      t.tenantId,
+      normalizedCatalogNameSql(t.name),
+    ),
+    tenantTypeIdx: index('companies_tenant_type_idx').on(t.tenantId, t.type),
+    nameNonblank: check('companies_name_nonblank_ck', catalogNameIsNonblankSql(t.name)),
+  }),
+)
+
 export const departments = pgTable(
   'departments',
   {
@@ -160,6 +210,12 @@ export const people = pgTable(
     departmentId: uuid('department_id'),
     tradeId: uuid('trade_id'),
     crewId: uuid('crew_id'),
+    // The company this person is employed by. Nullable: employees and unassigned
+    // hires have no company, and an existing person must keep working after this
+    // column is added. One company per person — the common case, and a nullable
+    // column rather than a join table. Same shape and same composite tenant FK as
+    // `departmentId`, so a person can never point at another tenant's company.
+    companyId: uuid('company_id'),
     email: text('email'),
     phone: text('phone'),
     photoAttachmentId: uuid('photo_attachment_id'),
@@ -198,6 +254,7 @@ export const people = pgTable(
     departmentIdx: index('people_department_idx').on(t.tenantId, t.departmentId),
     tradeIdx: index('people_trade_idx').on(t.tenantId, t.tradeId),
     crewIdx: index('people_crew_idx').on(t.tenantId, t.crewId),
+    companyIdx: index('people_company_idx').on(t.tenantId, t.companyId),
     managerIdx: index('people_manager_idx').on(t.tenantId, t.managerPersonId),
     // Reverse-lookup index for "user → person" resolution (compliance audience,
     // notification recipients, flows delivery) which join people by userId.
@@ -229,6 +286,15 @@ export const people = pgTable(
       name: 'people_tenant_crew_fk',
       columns: [t.tenantId, t.crewId],
       foreignColumns: [crews.tenantId, crews.id],
+    }),
+    // No onDelete, exactly like department/trade/crew: the action layer refuses to
+    // remove a company that still has people, so an employer never silently
+    // disappears from under its workforce. The composite (tenantId, companyId)
+    // target is what makes a cross-tenant company reference impossible.
+    companyFk: foreignKey({
+      name: 'people_tenant_company_fk',
+      columns: [t.tenantId, t.companyId],
+      foreignColumns: [companies.tenantId, companies.id],
     }),
     managerFk: foreignKey({
       name: 'people_tenant_manager_fk',

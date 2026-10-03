@@ -48,8 +48,18 @@ export async function POST(
 
   const command = event.payload.web
   const actor = command.actor
+  // `user.id` is a TEXT primary key (Better-Auth's own tables — `select id from
+  // information_schema` says `text`, not `uuid`), so requiring a UUID here
+  // rejected every seeded and every real Better-Auth user id with 422
+  // "Invalid command actor". That silently killed the whole durable web-command
+  // path for those users: `form.submitted` could never be published, so
+  // on-submit Builder flows — including approval gates — never ran for them.
+  // Validate the actor by the real column type instead: a bounded non-empty
+  // string for `userId`, UUIDs for the two genuinely-uuid columns.
+  const validUserId =
+    typeof actor.userId === 'string' && actor.userId.length > 0 && actor.userId.length <= 255
   if (
-    !isUuid(actor.userId) ||
+    !validUserId ||
     (actor.membershipId && !isUuid(actor.membershipId)) ||
     (actor.personId && !isUuid(actor.personId))
   ) {
