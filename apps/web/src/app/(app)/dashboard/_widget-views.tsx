@@ -29,6 +29,7 @@ import {
   CalendarClock,
   ClipboardCheck,
   ClipboardList,
+  Eye,
   FileCheck,
   GraduationCap,
   HardHat,
@@ -281,6 +282,24 @@ export function WidgetCard({ widgetId, data, todayIso, quickActions }: Props) {
           href="/apps/responses"
           icon={ClipboardList}
           caption={tGenerated('m_09e635d5d70b6e')}
+          tone="normal"
+        />
+      )
+    case 'op-safety-observations-30d':
+      return (
+        <CountTile
+          label={tGenerated('m_02068af67c6a94')}
+          value={data.safetyObservations.total}
+          href="/journals"
+          icon={Eye}
+          caption={tGeneratedValue(
+            data.safetyObservations.total > 0
+              ? tGenerated('m_04ca0e4beb5950', {
+                  value0: data.safetyObservations.positive,
+                  value1: data.safetyObservations.negative,
+                })
+              : tGenerated('m_12ae52d2bfd156'),
+          )}
           tone="normal"
         />
       )

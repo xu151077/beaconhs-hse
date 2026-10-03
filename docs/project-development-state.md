@@ -48,6 +48,7 @@ Phase 1（数据模型统一）开始。在此之前不做任何 HSE 功能开�
 | `TENANT_SCOPED_TABLES`           | 187                                                      |
 | `PERMISSION_CATALOGUE`           | 89 unique keys                                           |
 | Report entities / seeded reports | 16 / 35                                                  |
+| Dashboard widgets                | 30                                                       |
 | Form field types                 | 46                                                       |
 | Flow triggers / actions          | 6 / 13                                                   |
 

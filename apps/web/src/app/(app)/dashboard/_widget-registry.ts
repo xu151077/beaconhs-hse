@@ -108,6 +108,15 @@ export const WIDGETS: Record<string, WidgetMeta> = {
     defaultSize: { w: 3, h: 2 },
     minSize: { w: 2, h: 2 },
   },
+  'op-safety-observations-30d': {
+    id: 'op-safety-observations-30d',
+    category: 'operations',
+    label: 'Safety observations',
+    description: 'Positive and negative safety observations recorded in the field.',
+    defaultSize: { w: 3, h: 2 },
+    minSize: { w: 2, h: 2 },
+    rolesShown: ['super_admin', 'tenant_admin', 'safety_manager', 'foreman'],
+  },
   'op-inspections-mtd': {
     id: 'op-inspections-mtd',
     category: 'operations',

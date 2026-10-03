@@ -56,6 +56,10 @@ const WIDGET_PERMISSIONS: Record<string, readonly string[]> = {
   'op-monitored-sessions-active': TRUSTED_RESPONSE_KPI,
   'op-submissions-today': TRUSTED_RESPONSE_KPI,
   'op-inspections-mtd': [...INSPECT, ...ANALYTICS],
+  // Safety observations are journal entries under the Journals module's own ladder
+  // (Phase 11-A classification), so this reuses `journals.read.*`. No observation
+  // permission exists and none is introduced here.
+  'op-safety-observations-30d': ['journals.read.all', 'journals.read.site'],
   // Incidents
   'list-recent-incidents': INCIDENTS,
   'chart-severity-pyramid': [...INCIDENTS, ...ANALYTICS],

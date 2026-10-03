@@ -34,6 +34,10 @@ describe('dashboard widget access', () => {
     'inspections.read.all',
     'documents.manage',
     'admin.org.manage',
+    // The built-in `safety_manager` role holds `journals.read.all` (iam.ts), so a
+    // safety manager sees the safety-observations widget. Without this the fixture
+    // understated the role and failed to see an org widget it really may see.
+    'journals.read.all',
     'reports.read',
     'insights.read',
   ])

@@ -88,6 +88,21 @@ export type DashboardMetrics = {
    */
   peopleCount: number | null
   inspectionsThisMonth: number
+  /**
+   * Safety observations recorded in the last 30 days, under the Journals module's
+   * own read ladder. An observation is a journal entry whose class is an
+   * observation (Phase 11-A), so this counts `journal_entries` — there is no
+   * observation table and no observation permission.
+   *
+   * The positive/negative split is carried alongside the total because that
+   * classification already exists on the row and costs nothing to preserve; the
+   * widget reads it for its caption.
+   */
+  safetyObservations: {
+    total: number
+    positive: number
+    negative: number
+  }
   vehicleLogStatus: {
     loggedDays: number
     importedDays: number
@@ -372,6 +387,8 @@ export async function loadDashboardMetrics(
 ): Promise<DashboardMetrics> {
   const today = new Date(now)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000)
+  // `journal_entries.entry_date` is a DATE column, so it needs the ISO day form.
+  const thirtyDaysAgoIso = thirtyDaysAgo.toISOString().slice(0, 10)
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 86_400_000)
   const ninetyDaysAhead = new Date(now.getTime() + 90 * 86_400_000)
   const thirtyDaysAhead = new Date(now.getTime() + 30 * 86_400_000)
@@ -401,6 +418,7 @@ export async function loadDashboardMetrics(
       scopeInspections,
       scopeEquipment,
       scopeIncidentHours,
+      scopeJournals,
     ] = await Promise.all([
       moduleScopeWhere(ctx, tx, {
         prefix: 'incidents',
@@ -438,6 +456,17 @@ export async function loadDashboardMetrics(
         siteCol: incidentHoursPeriods.siteOrgUnitId,
         ownerCols: [incidentHoursPeriods.enteredByTenantUserId],
       }),
+      // Safety observations are journal entries whose class is an observation
+      // (Phase 11-A), so this counts `journal_entries` under the Journals module's
+      // own `journals.read.*` ladder — no observation permission exists and none
+      // is needed. Scoped by site, then by the entry's own person/author, exactly
+      // like every other count on this dashboard.
+      moduleScopeWhere(ctx, tx, {
+        prefix: 'journals',
+        siteCol: journalEntries.siteOrgUnitId,
+        personCol: journalEntries.personId,
+        ownerCols: [journalEntries.createdByTenantUserId],
+      }),
     ])
     const [
       incRow,
@@ -451,6 +480,7 @@ export async function loadDashboardMetrics(
       ppeOverdue,
       peopleCount,
       inspThisMonth,
+      observationsRow,
     ] = await Promise.all([
       tx
         .select({ c: count() })
@@ -572,6 +602,28 @@ export async function loadDashboardMetrics(
             isNull(inspectionRecords.deletedAt),
             gte(inspectionRecords.occurredAt, startOfMonth),
             inArray(inspectionRecords.status, ['submitted', 'closed']),
+          ),
+        )
+        .then((r) => r[0]),
+      // --- Safety observations --------------------------------------------
+      // A safety observation is a `journal_entries` row whose class is an
+      // observation (Phase 11-A `entryClassWhere`), NOT a separate table. One
+      // grouped query yields the 30-day total and the positive/negative split, so
+      // the classification is preserved without a second round trip or any new
+      // infrastructure. `scopeJournals` is the Journals module's own ladder.
+      tx
+        .select({
+          total: count(),
+          positive: sql<number>`COUNT(*) FILTER (WHERE ${journalEntries.definition} = 'positive_observation')::int`,
+          negative: sql<number>`COUNT(*) FILTER (WHERE ${journalEntries.definition} = 'negative_observation')::int`,
+        })
+        .from(journalEntries)
+        .where(
+          and(
+            scopeJournals,
+            isNull(journalEntries.deletedAt),
+            entryClassWhere('observation'),
+            gte(journalEntries.entryDate, thirtyDaysAgoIso),
           ),
         )
         .then((r) => r[0]),
@@ -1268,6 +1320,11 @@ export async function loadDashboardMetrics(
       ppeInspectionsOverdue: Number(ppeOverdue?.c ?? 0),
       peopleCount: headcount,
       inspectionsThisMonth: Number(inspThisMonth?.c ?? 0),
+      safetyObservations: {
+        total: Number(observationsRow?.total ?? 0),
+        positive: Number(observationsRow?.positive ?? 0),
+        negative: Number(observationsRow?.negative ?? 0),
+      },
       vehicleLogStatus,
 
       trir: {
