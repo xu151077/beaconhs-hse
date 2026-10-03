@@ -488,6 +488,76 @@ describe('R2 — report_compliance_status is scoped, not granted tenant-wide', (
 })
 
 /**
+ * `report_hazid_signatures` — the projection renamed so discovery would inject it.
+ *
+ * Renaming the curated entry's table to the `report_` convention is what makes the
+ * seeded `hazid_signatures` report reachable at all: `discover.ts` only injects a
+ * curated entity whose table starts with `report_`. But it also moves the entity
+ * off the `hazid_` prefix rule, and the `report_` default is the studio-wide
+ * `reports.read` — so without an explicit `TABLE_SCOPE` entry, renaming the table
+ * would have WIDENED access: any holder of `reports.read` could read every
+ * hazard-assessment signature in the tenant.
+ *
+ * These assertions pin the rebinding to the Hazard ID module's own ladder, and
+ * pin it against the base table the projection actually reads from.
+ */
+describe('report_hazid_signatures stays on the Hazard ID ladder', () => {
+  const signatures = entity('hazid_signatures', 'report_hazid_signatures', [
+    'assessment_id',
+    'signature_type',
+    'person_id',
+    'external_name',
+    'signed_at',
+  ])
+
+  it('is NOT exposed to a caller holding only the studio grant', () => {
+    const studioOnly: AnalyticsScopeSubject = {
+      tenantUserId: 'verif-viewer',
+      personId: null,
+      isSuperAdmin: false,
+      permissions: (key) => key === 'reports.read',
+      siteIds: [],
+    }
+    expect(scopeAnalyticsEntities(studioOnly, [signatures])).toHaveLength(0)
+  })
+
+  it('is exposed to a Hazard ID reader, and narrowed by their tier', () => {
+    // `hazid.read.all` -> no row predicate, RLS bounds the tenant.
+    const manager = subject('safety_manager')
+    const all = scopeAnalyticsEntities(manager, [signatures])
+    expect(all).toHaveLength(1)
+    expect(all[0]?.baseFilter).toBeUndefined()
+
+    // A self-tier reader must still be pinned to their own rows.
+    const worker = subject('worker', { personId: 'verif-worker' })
+    const own = scopeAnalyticsEntities(worker, [signatures])
+    expect(own).toHaveLength(1)
+    expect(filterFor(own[0]?.baseFilter, 'person_id')?.value).toEqual(['verif-worker'])
+  })
+
+  it('resolves identically to the base table it projects from', () => {
+    // The projection joins `hazid_assessments`/`people` off
+    // `hazid_assessment_signatures`, so it must not be more permissive than that
+    // table under any tier.
+    const base = entity('hazid_assessment_signatures', 'hazid_assessment_signatures', [
+      'assessment_id',
+      'signature_type',
+      'person_id',
+      'external_name',
+      'signed_at',
+    ])
+    for (const role of ['worker', 'foreman', 'safety_manager'] as const) {
+      for (const siteIds of [[], [SITE_A]]) {
+        const viewer = subject(role, { siteIds, personId: 'verif-worker' })
+        const projection = scopeAnalyticsEntities(viewer, [signatures])
+        const source = scopeAnalyticsEntities(viewer, [base])
+        expect(projection.length, `${role} @ ${siteIds.length} sites`).toBe(source.length)
+      }
+    }
+  })
+})
+
+/**
  * Phase 1 — `safe_distance_records` on the NATIVE read tier.
  *
  * The spec's read rule changed from the flat key `tools.safe-distance.use` to the

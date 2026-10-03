@@ -397,6 +397,17 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
     siteCols: SITE_COLUMNS,
     personCols: PERSON_COLUMNS,
   },
+  report_hazid_signatures: {
+    // Without this entry the `report_` prefix default would hand this entity the
+    // studio-wide `reports.read` tier, so ANY viewer of reports could read every
+    // hazard-assessment signature in the tenant. It must stay on the Hazard ID
+    // module's own ladder: the same `hazid.read.*` prefix and the same
+    // site/person columns the `hazid_` prefix rule gives the base table this
+    // projection selects from.
+    read: { prefix: 'hazid' },
+    siteCols: SITE_COLUMNS,
+    personCols: PERSON_COLUMNS,
+  },
 
   // Platform internals with no module owner.
   reference_counters: { read: null },

@@ -502,7 +502,26 @@ export const REPORT_ENTITIES: ReportEntity[] = [
     label: 'Hazard assessment signatures',
     category: 'hazid',
     description: 'Recorded internal and external signatures on hazard assessments.',
-    table: 'hazid_assessment_signatures',
+    // The `report_` prefix is load-bearing, not cosmetic. `discover.ts` only
+    // injects a curated entity into the runtime catalogue when its table starts
+    // with `report_` AND its key is not already a discovered table. This entry
+    // used to name the base table `hazid_assessment_signatures`, so it was never
+    // injected and the seeded `hazid_signatures` report threw "Unknown report
+    // entity" at runtime - invisible for as long as the parity test compiled
+    // seeds against this curated list, which does contain it.
+    //
+    // `discoverEntities()` already exposes `hazid_assessment_signatures` as its
+    // own full-schema entity, and the guard in `discover.ts` exists precisely so a
+    // report-only projection never shadows a discovered business entity. Naming
+    // the projection `report_hazid_signatures` satisfies both: the key stays
+    // distinct, and the base table keeps its own complete entity.
+    //
+    // The read tier is NOT inherited from the `report_` prefix default (that is
+    // the studio-wide `reports.read`); `TABLE_SCOPE` in
+    // `packages/analytics/src/server/scope.ts` rebinds this projection to the
+    // Hazard ID module's own `hazid.read.*` ladder, exactly as
+    // `report_compliance_status` and `report_monitored_sessions` already do.
+    table: 'report_hazid_signatures',
     from: `(
       SELECT
         signature.id,
@@ -524,7 +543,7 @@ export const REPORT_ENTITIES: ReportEntity[] = [
         ON person.tenant_id = signature.tenant_id
        AND person.id = signature.person_id
        AND person.deleted_at IS NULL
-    ) AS "hazid_assessment_signatures"`,
+    ) AS "report_hazid_signatures"`,
     columns: [
       { key: 'assessment_id', label: 'Assessment', kind: 'text' },
       { key: 'signature_type', label: 'Signature type', kind: 'enum' },
