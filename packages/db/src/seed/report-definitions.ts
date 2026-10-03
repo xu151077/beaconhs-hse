@@ -844,6 +844,96 @@ export const BEACON_REPORT_SEEDS: BeaconReportSeed[] = [
       },
     ),
   ),
+  // --- Phase 11-F -------------------------------------------------------
+  //
+  // All three reports below need no new table, view, permission or scope rule.
+  //
+  // They deliberately do NOT appear in REPORT_ENTITIES. That list is also the
+  // public REST API entity list, so naming `journal_entries` or `companies`
+  // there would publish them on /api/v1 with no `READ_PERMISSION_BY_CATEGORY`
+  // gate for the `journals` / `people` categories - and /api/v1 500s on an
+  // unmapped category. Publishing those two tables is an authorization decision
+  // and is out of scope for a seed-only phase.
+  //
+  // Nothing is lost by that: reports are compiled against the DISCOVERED
+  // catalogue (see seed-parity.test.ts), and both tables are already RLS-
+  // registered and already bound to their native read ladders - `journal_` ->
+  // `journals.read.*` with site scoping, and `companies` -> `admin.org.manage`.
+  //
+  seed(
+    'work_permit_expiry',
+    'Work Permit Expiry',
+    'Live and unattended monitored sessions reaching their expected end, so they can be closed out or renewed.',
+    'apps',
+    rows(
+      'monitored_sessions',
+      [
+        'app_name',
+        'site_org_unit_id',
+        'monitor_status',
+        'expected_end_at',
+        'next_checkin_due_at',
+        'escalated_at',
+        'closed_at',
+      ],
+      {
+        filters: {
+          combinator: 'and',
+          rules: [
+            // `completed` and `cancelled` are already closed out; only a session
+            // still running (or one nobody answered) can expire.
+            { field: 'monitor_status', op: 'in', value: ['active', 'missed', 'escalated'] },
+            { field: 'expected_end_at', op: 'due_within_days', value: 7 },
+          ],
+        },
+        sorts: [{ column: 'expected_end_at', direction: 'asc' }],
+      },
+    ),
+  ),
+  seed(
+    'safety_observations',
+    'Safety Observations',
+    'Positive and negative safety observations, newest first. An observation is a journal entry whose class is an observation, not a separate record type.',
+    'journals',
+    rows(
+      'journal_entries',
+      [
+        'reference',
+        'entry_date',
+        'definition',
+        'title',
+        'status',
+        'site_org_unit_id',
+        'person_id',
+        'supervisor_person_id',
+        'submitted_at',
+      ],
+      {
+        filters: {
+          combinator: 'and',
+          rules: [
+            // Phase 11-A added exactly these two classes to `journal_definition`.
+            // No status filter: a draft observation must still be visible here.
+            {
+              field: 'definition',
+              op: 'in',
+              value: ['positive_observation', 'negative_observation'],
+            },
+          ],
+        },
+        sorts: [{ column: 'entry_date', direction: 'desc' }],
+      },
+    ),
+  ),
+  seed(
+    'contractor_company_register',
+    'Contractor / Company Register',
+    'Every contractor and subcontractor company on the books, with its type.',
+    'people',
+    rows('companies', ['name', 'type', 'created_at', 'updated_at'], {
+      sorts: [{ column: 'name', direction: 'asc' }],
+    }),
+  ),
   seed(
     'equipment_oil_change_due',
     'Equipment — Upcoming & overdue oil changes',
