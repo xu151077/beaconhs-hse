@@ -1598,6 +1598,84 @@ async function main() {
     }
   })
 
+  // Reference-counter reconciliation.
+  //
+  // `nextReference` mints `PREFIX-YYYY-NNNN` from `reference_counters`, and its
+  // own comment records why it replaced `SELECT count(*) + 1`: that scheme
+  // "raced" (two concurrent creates read one count) and "drifted" (a deleted
+  // record lowered the count, so a number was reused). The counter is therefore
+  // the single source of truth for the next number, and a duplicate reference is
+  // a real defect — these strings are how an incident, corrective action or work
+  // order is identified to a user in a list, a PDF, a print sheet and an email.
+  //
+  // This seed writes references as LITERALS (`CA-2026-0001`, `INC-2026-0001`,
+  // `WO-2026-0001`, …) in exactly the format `nextReference` mints, but it never
+  // advanced the counter. The counter therefore still read 0 after seeding, so
+  // the first few records a user created through the UI or the API were handed
+  // `CA-2026-0001` and `CA-2026-0002` again, colliding with seeded rows that
+  // already held those numbers.
+  //
+  // One statement raises every counter to at least the highest reference already
+  // present for that entity and year. `GREATEST` makes it raise-only, so it never
+  // rewinds a counter, and the whole stage is idempotent and safe on every seed.
+  // Each UNION branch matches the exact shape `nextReference` mints, so a
+  // free-text reference can never be misread as a sequence number.
+  await db.transaction(async (tx) => {
+    const all = await tx.select({ id: tenants.id }).from(tenants)
+    for (const t of all) {
+      await tx.execute(sql`
+        INSERT INTO reference_counters (tenant_id, entity, period, seq, created_at, updated_at)
+        SELECT
+          ${t.id}::uuid,
+          parsed.entity,
+          substring(parsed.reference from '^[A-Z]+-([0-9]{4})-'),
+          GREATEST(
+            0,
+            COALESCE(MAX(NULLIF(substring(parsed.reference from '-([0-9]+)$'), '')::bigint), 0)
+          ),
+          now(),
+          now()
+        FROM (
+          SELECT 'incident'::text AS entity, i.reference AS reference
+            FROM incidents i
+           WHERE i.tenant_id = ${t.id}::uuid AND i.reference ~ '^INC-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'corrective_action', c.reference
+            FROM corrective_actions c
+           WHERE c.tenant_id = ${t.id}::uuid AND c.reference ~ '^CA-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'inspection', r.reference
+            FROM inspection_records r
+           WHERE r.tenant_id = ${t.id}::uuid AND r.reference ~ '^INS-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'equipment_inspection', r.reference
+            FROM equipment_inspection_records r
+           WHERE r.tenant_id = ${t.id}::uuid AND r.reference ~ '^EQI-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'work_order', w.reference
+            FROM equipment_work_orders w
+           WHERE w.tenant_id = ${t.id}::uuid AND w.reference ~ '^WO-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'hazid', h.reference
+            FROM hazid_assessments h
+           WHERE h.tenant_id = ${t.id}::uuid AND h.reference ~ '^HAZ-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'journal', j.reference
+            FROM journal_entries j
+           WHERE j.tenant_id = ${t.id}::uuid AND j.reference ~ '^JRN-[0-9]{4}-[0-9]+$'
+          UNION ALL
+          SELECT 'safe_distance', sd.reference
+            FROM safe_distance_records sd
+           WHERE sd.tenant_id = ${t.id}::uuid AND sd.reference ~ '^SD-[0-9]{4}-[0-9]+$'
+        ) parsed
+        GROUP BY parsed.entity, substring(parsed.reference from '^[A-Z]+-([0-9]{4})-')
+        ON CONFLICT (tenant_id, entity, period) DO UPDATE
+          SET seq = GREATEST(reference_counters.seq, EXCLUDED.seq),
+              updated_at = now()
+      `)
+    }
+  })
+
   // Completeness assertion. Everything above is best-effort per stage, so this
   // is the one place that can tell the truth about the run as a whole.
   //
