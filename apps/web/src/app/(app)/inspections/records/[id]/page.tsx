@@ -2,7 +2,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
@@ -70,6 +70,8 @@ import { SectionNav, type SectionNavItem } from '@/components/section-nav'
 import { LiveDateTime, LiveField, LiveRemoteSelect } from '@/components/live-field'
 import {
   assertInspectionStatusTransitionInTx,
+  findIncompleteInspectionItems,
+  InspectionTransitionError,
   inspectionStatusMilestonePatch,
   lockVisibleInspectionRecordForMutation,
   parseAnswer,
@@ -291,7 +293,33 @@ async function toggleLock(formData: FormData) {
   const id = String(formData.get('id') ?? '')
   const lock = formData.get('lock') === 'true'
   if (!isUuid(id)) return
-  const changed = await ctx.db(async (tx) => {
+  // An incomplete inspection is ordinary user error, not a crash. Left to
+  // propagate, `InspectionTransitionError` escapes the action and Next renders
+  // its "This page could not load / Your work was not reported as complete"
+  // boundary, showing a digest instead of the list of unanswered criteria. Catch
+  // it and return to the record, where the page re-renders that same list
+  // through `findIncompleteInspectionItems`.
+  let changed: boolean
+  try {
+    changed = await runLockTransition(ctx, id, lock)
+  } catch (error) {
+    if (error instanceof InspectionTransitionError) {
+      redirect(`/inspections/records/${id}?incomplete=1`)
+    }
+    throw error
+  }
+  if (!changed) return
+  revalidatePath(`/inspections/records/${id}`)
+}
+
+/** The lock / unlock / submit transition, in its own scope so `toggleLock` above
+ *  can turn a refused transition into a redirect instead of an error page. */
+async function runLockTransition(
+  ctx: Awaited<ReturnType<typeof requireRequestContext>>,
+  id: string,
+  lock: boolean,
+) {
+  return ctx.db(async (tx) => {
     const current = await lockVisibleInspectionRecordForMutation(tx, ctx, id, {
       allowLocked: true,
     })
@@ -375,8 +403,6 @@ async function toggleLock(formData: FormData) {
     })
     return true
   })
-  if (!changed) return
-  revalidatePath(`/inspections/records/${id}`)
 }
 
 async function lockInspection(formData: FormData) {
@@ -1598,6 +1624,11 @@ export default async function InspectionRecordDetailPage({
   const canUpdate = can(ctx, 'inspections.update')
   const canCreate = can(ctx, 'inspections.create')
   const canManage = can(ctx, 'inspections.manage')
+  // Set by `toggleLock` when a submit is refused because criteria are still
+  // incomplete. Re-derive the list here so the banner names exactly what the
+  // guard rejected — the same helper the guard itself uses.
+  const incompleteItems =
+    sp.incomplete === '1' ? await findIncompleteInspectionItems(ctx, id) : null
   const pendingGates = await getPendingFlowGatesForSubject(
     ctx,
     'module',
@@ -1907,6 +1938,34 @@ export default async function InspectionRecordDetailPage({
       }
       alerts={
         <>
+          <GeneratedValue
+            value={
+              incompleteItems && incompleteItems.length > 0 ? (
+                <Alert variant="warning">
+                  <AlertTitle>
+                    <GeneratedText id="m_194fc72144cc72" />
+                  </AlertTitle>
+                  <AlertDescription>
+                    <p>
+                      {incompleteItems.length === 1 ? (
+                        <GeneratedText id="m_13bad8fb8e6869" />
+                      ) : (
+                        <GeneratedText
+                          id="m_1962edc755ea9f"
+                          values={{ value0: String(incompleteItems.length) }}
+                        />
+                      )}
+                    </p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      {incompleteItems.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              ) : null
+            }
+          />
           <GeneratedValue
             value={
               recordImmutable ? (

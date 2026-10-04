@@ -1145,6 +1145,19 @@ export default async function FormResponsePage({
                         }}
                         initialResponseId={id}
                         initialValues={recordValues}
+                        // The record's Location control renders from this prop only.
+                        // The `fill` route passes it; without it here the control
+                        // initialised empty and showed "No location" for every saved
+                        // record, even though `baseData.site` was already joined and
+                        // `site_org_unit_id` was set -- so a location a user had chosen
+                        // silently disappeared on reload. `baseData.site` is null for a
+                        // record that genuinely has no location, which is the correct
+                        // empty state, so passing it through cannot invent one.
+                        initialLocation={
+                          baseData.site
+                            ? { value: baseData.site.id, label: baseData.site.name }
+                            : undefined
+                        }
                         initialRows={initialRows}
                         initialStepIndex={0}
                         isResumed={false}

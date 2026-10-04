@@ -23,7 +23,13 @@ export type CardRow = {
   status: 'draft' | 'published'
   createdBy: string | null
   allowedRoles: string[] | null
-  trustedSystemCard?: true
+  /**
+   * Present (and true) only for a seeded built-in whose query reads the withheld
+   * tenant-wide `app_responses` source. It is `false`/absent for every other
+   * built-in, which is what keeps the `canReadAppResponses` gate off cards that
+   * never touch that source.
+   */
+  trustedSystemCard?: boolean
 }
 
 const SELECT = {

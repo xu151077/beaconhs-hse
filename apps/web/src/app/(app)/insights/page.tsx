@@ -10,6 +10,7 @@ import { resolveParamValues } from './_params'
 import { ensureSystemCards } from './_system-cards'
 import { loadInsightRoleOptions } from './_visibility'
 import { BUILTIN_QUERIES, INSIGHT_WIDGET_MAP } from './_widgets'
+import { queryUsesAppResponses } from './_system-cards'
 import { InsightsWorkspace } from './_workspace'
 
 export const dynamic = 'force-dynamic'
@@ -54,7 +55,7 @@ export default async function InsightsPage({
       // through the engine; the AI journal widget falls through (bespoke render).
       const items: Array<
         Pick<CardRow, 'id' | 'name' | 'kind' | 'query' | 'vizType' | 'vizSettings' | 'config'> & {
-          trustedSystemCard?: true
+          trustedSystemCard?: boolean
         }
       > = []
       for (const w of d.layout.widgets) {
@@ -73,7 +74,9 @@ export default async function InsightsPage({
             vizType: builtin.vizType,
             vizSettings: builtin.vizSettings ?? {},
             config: null,
-            trustedSystemCard: true,
+            // Only a built-in that reads the withheld tenant-wide
+            // `app_responses` source is trusted. See `queryUsesAppResponses`.
+            trustedSystemCard: queryUsesAppResponses(builtin.query),
           })
         }
       }

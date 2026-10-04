@@ -24,13 +24,15 @@ import {
   caPhotos,
   correctiveActions,
   incidents,
+  inspectionRecords,
+  inspectionTypes,
   tenantUsers,
   users as user,
 } from '@beaconhs/db/schema'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { assertCan } from '@beaconhs/tenant'
+import { assertCan, can } from '@beaconhs/tenant'
 import { canSeeRecord } from '@/lib/visibility'
 import { recentActivityForEntity, recordAuditInTransaction } from '@/lib/audit'
 import { FlowApprovals } from '@/components/flows/flow-approvals'
@@ -288,20 +290,49 @@ export default async function CorrectiveActionPage({
       .limit(1)
     if (!ca) return null
 
+    // Resolve the record this action was raised from, so the CA links back to it.
+    //
+    // `sourceEntityType` is polymorphic and every module that can raise a CA
+    // writes its own value: `incident`, `inspection_record`, `hazid_assessment`,
+    // `equipment_inspection_record`, `ppe_inspection`, `journal_entry`,
+    // `form_response`. Only `incident` used to be resolved, so a CA spawned from
+    // an inspection finding — the single most common case, and the one the
+    // High/Critical auto-spawn produces — showed only the free-text source
+    // CATEGORY dropdown with no way back to the inspection that justified it.
+    //
+    // Each branch reads its own record for a human label and links the route
+    // that module actually serves. An unresolvable source stays null rather than
+    // rendering a dead link.
     let source: { type: string; ref?: string; title?: string; href?: string } | null = null
-    if (ca.sourceEntityType === 'incident' && ca.sourceEntityId) {
-      const [inc] = await tx
-        .select()
-        .from(incidents)
-        .where(eq(incidents.id, ca.sourceEntityId))
-        .limit(1)
-      if (inc)
-        source = {
-          type: 'Incident',
-          ref: inc.reference,
-          title: inc.title,
-          href: `/incidents/${inc.id}`,
-        }
+    if (ca.sourceEntityId) {
+      if (ca.sourceEntityType === 'incident') {
+        const [inc] = await tx
+          .select()
+          .from(incidents)
+          .where(eq(incidents.id, ca.sourceEntityId))
+          .limit(1)
+        if (inc)
+          source = {
+            type: 'Incident',
+            ref: inc.reference,
+            title: inc.title,
+            href: `/incidents/${inc.id}`,
+          }
+      } else if (ca.sourceEntityType === 'inspection_record') {
+        const [insp] = await tx
+          .select({ record: inspectionRecords, type: inspectionTypes })
+          .from(inspectionRecords)
+          .leftJoin(inspectionTypes, eq(inspectionTypes.id, inspectionRecords.typeId))
+          .where(eq(inspectionRecords.id, ca.sourceEntityId))
+          .limit(1)
+        if (insp)
+          source = {
+            type: 'Inspection',
+            ref: insp.record.reference,
+            title: insp.type?.name,
+            href: `/inspections/records/${insp.record.id}`,
+          }
+      }
     }
 
     const photoRows = await tx
@@ -774,6 +805,7 @@ export default async function CorrectiveActionPage({
                     verifierName={verifierName}
                     verificationNotes={ca.verificationNotes}
                     locked={locked}
+                    canVerify={can(ctx, 'ca.verify')}
                   />
                 </Section>
               </section>

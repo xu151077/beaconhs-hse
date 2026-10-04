@@ -26,13 +26,27 @@ export function VerificationPanel({
   verifierName,
   verificationNotes,
   locked,
+  canVerify,
 }: {
   caId: string
   verifiedAt: Date | null
   verifierName: string | null
   verificationNotes: string | null
   locked: boolean
+  /**
+   * Whether the viewer holds `ca.verify`.
+   *
+   * `verifyCorrectiveAction` asserts `ca.verify`, which is deliberately a
+   * separate key from `ca.update` so the person who did the work cannot sign it
+   * off. That separation is only useful if the UI reflects it: the section used
+   * to render its trigger on record visibility alone, so an owner without
+   * `ca.verify` was offered a button that could only ever fail — and failed as a
+   * 500 error page ("This page could not load") rather than as a refusal.
+   */
+  canVerify: boolean
 }) {
+  const tGenerated = useGeneratedTranslations()
+
   if (verifiedAt) {
     return (
       <div className="space-y-4">
@@ -93,11 +107,27 @@ export function VerificationPanel({
           <GeneratedText id="m_051852821f63ea" />
         </AlertDescription>
       </Alert>
-      <Link href={`/corrective-actions/${caId}?drawer=verify`} scroll={false}>
-        <Button>
-          <CheckCircle2 size={14} /> <GeneratedText id="m_0fd315c49f4689" />
-        </Button>
-      </Link>
+      {canVerify ? (
+        <Link href={`/corrective-actions/${caId}?drawer=verify`} scroll={false}>
+          <Button>
+            <CheckCircle2 size={14} /> <GeneratedText id="m_0fd315c49f4689" />
+          </Button>
+        </Link>
+      ) : (
+        // Same shape as the header's `canClose` refusal: keep the control
+        // discoverable, but disabled and explained, instead of offering an
+        // action this role cannot perform. The explanation is about the missing
+        // `ca.verify` permission, NOT the outstanding-verification state the
+        // header's tooltip describes — those are different reasons to be blocked.
+        <>
+          <Button type="button" disabled title={tGenerated('m_1b13e032627fdd')}>
+            <CheckCircle2 size={14} /> <GeneratedText id="m_0fd315c49f4689" />
+          </Button>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            <GeneratedText id="m_1b13e032627fdd" />
+          </p>
+        </>
+      )}
     </div>
   )
 }

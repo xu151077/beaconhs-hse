@@ -468,6 +468,25 @@ async function findIncompleteCriteriaInTx(
 }
 
 /**
+ * The same completeness list `assertInspectionStatusTransitionInTx` enforces,
+ * read outside a transition so the record page can SHOW it.
+ *
+ * `toggleLock` refuses a submit that leaves criteria incomplete by throwing
+ * `InspectionTransitionError`, and a thrown server action renders Next's generic
+ * "This page could not load" boundary — so a user who simply had not answered
+ * everything was told the app had failed, with no list of what was missing. This
+ * wrapper is what lets the page re-render that list after the redirect. It
+ * reuses the one implementation, so the message can never disagree with the
+ * guard that produced it.
+ */
+export async function findIncompleteInspectionItems(
+  ctx: RequestContext,
+  recordId: string,
+): Promise<string[]> {
+  return ctx.db((tx) => findIncompleteCriteriaInTx(tx, ctx.tenantId, recordId))
+}
+
+/**
  * Submitted inspections remain editable until they are closed. If an edit
  * removes required evidence, atomically return the record to in-progress so a
  * submitted status can never claim completeness that no longer exists.

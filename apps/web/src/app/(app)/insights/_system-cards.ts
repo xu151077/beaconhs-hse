@@ -18,7 +18,74 @@ type SystemCard = {
   query: BhqlQuery
   vizType: string
   vizSettings: Record<string, unknown>
-  trustedSystemCard: true
+  /** True only for the built-ins whose query reads the withheld tenant-wide
+   *  `app_responses` source. See `queryUsesAppResponses`. */
+  trustedSystemCard: boolean
+}
+
+/**
+ * Does this BHQL query read the tenant-wide `app_responses` source?
+ *
+ * That source is withheld from `scopeAnalyticsEntities` and only re-added for a
+ * "trusted system card", which `canReadAppResponses` then gates on
+ * `forms.response.read.all`. So the question is not "is this a built-in" but
+ * "does this query need the withheld source" — the two are different sets.
+ *
+ * `metricRefs` are deliberately not followed: resolving one needs the metric
+ * card's own query, which is a DB read, and no built-in references a metric.
+ * A card that reaches `app_responses` that way fails on the unknown entity
+ * rather than reading tenant-wide rows, so the answer stays fail-closed.
+ */
+export function queryUsesAppResponses(query: BhqlQuery): boolean {
+  return query.stages.some(
+    (stage) =>
+      stage.source === 'app_responses' ||
+      (stage.joinedSources ?? []).some((j) => j.source === 'app_responses') ||
+      (stage.spine?.dimensions ?? []).some((d) => d.source === 'app_responses') ||
+      (stage.spine?.facts ?? []).some((f) => f.source === 'app_responses'),
+  )
+}
+
+/**
+ * Key-order-independent JSON, for comparing a query literal with a stored row.
+ *
+ * A system card's `query` is `jsonb`, and Postgres does not preserve key order —
+ * it reorders object keys by length then bytewise, so the same query read back
+ * from the database stringifies differently than the object literal that produced
+ * it. Comparing `JSON.stringify(a) === JSON.stringify(b)` therefore fails for
+ * structurally identical queries, which is why the trusted-card match below
+ * needed a canonical form.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+}
+
+/**
+ * Normalise a query for comparison: parse it, then canonicalise the key order.
+ *
+ * Both sides go through this so the match means "same query" rather than "same
+ * JSON key order and optionality". Both transformations are needed:
+ * `validateTrustedSystemBhql` materialises optionals the literal omits (a stage
+ * gains `limit: null`), and Postgres `jsonb` — which is where a stored card's
+ * query comes from — reorders object keys by length then bytewise. Comparing raw
+ * `JSON.stringify` output therefore failed for every structurally identical
+ * query, which is what left this function returning false for all seeded cards.
+ *
+ * A query that fails validation is NOT trusted. Trust re-admits a withheld
+ * tenant-wide source, so an unparseable query must fail closed rather than throw
+ * out of a render path.
+ */
+function normalizedQueryJson(query: BhqlQuery): string | null {
+  try {
+    return canonicalJson(validateTrustedSystemBhql(query))
+  } catch {
+    return null
+  }
 }
 
 export function isTrustedSystemCard(card: {
@@ -27,11 +94,21 @@ export function isTrustedSystemCard(card: {
   createdBy?: string | null
 }): boolean {
   if (card.createdBy !== null) return false
-  return Object.entries(BUILTIN_QUERIES).some(
+  const stored = normalizedQueryJson(card.query)
+  if (stored === null) return false
+  const matched = Object.entries(BUILTIN_QUERIES).find(
     ([key, builtin]) =>
       INSIGHT_WIDGET_MAP.get(key)?.label === card.name &&
-      JSON.stringify(builtin.query) === JSON.stringify(card.query),
+      normalizedQueryJson(builtin.query) === stored,
   )
+  // Being a seeded built-in is NOT what makes a card trusted. Trust exists only
+  // to re-admit `app_responses`, so a built-in that counts corrective actions or
+  // inspection records must not inherit the gate — otherwise `runCardCached`
+  // refuses it with "Not authorized to read app responses" for exactly the
+  // site-scoped viewers who are entitled to those counts, and the foreman's
+  // default dashboard renders three error tiles. `analytics-access.ts` states
+  // the intended scope: "Tenant-wide covers exactly two built-in cards".
+  return matched !== undefined && queryUsesAppResponses(matched[1].query)
 }
 
 /** Ensure the BHQL built-ins exist as published Cards for this tenant. Returns
@@ -145,7 +222,13 @@ export async function ensureSystemCards(ctx: RequestContext): Promise<Map<string
         query: c.query,
         vizType: c.vizType,
         vizSettings: (c.vizSettings ?? {}) as Record<string, unknown>,
-        trustedSystemCard: true,
+        // Only the built-ins that actually read the withheld `app_responses`
+        // source are trusted. Stamping every system card `true` made the
+        // `canReadAppResponses` gate fire on cards that never touch it — a
+        // site-scoped foreman is entitled to the CA and inspection counts, but
+        // was refused with "Not authorized to read app responses", so three
+        // tiles of their default dashboard rendered as errors.
+        trustedSystemCard: queryUsesAppResponses(c.query),
       })
     }
   }
