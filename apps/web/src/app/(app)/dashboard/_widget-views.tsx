@@ -285,6 +285,28 @@ export function WidgetCard({ widgetId, data, todayIso, quickActions }: Props) {
           tone="normal"
         />
       )
+    case 'op-work-permit-expiry-7d':
+      // Tones up to `warning` rather than `danger`: an expiring permit is work to
+      // schedule, while an already-overdue one is the exception the caption calls out.
+      return (
+        <CountTile
+          label={tGenerated('m_12d8f269bb53bc')}
+          value={data.workPermitExpiry.total}
+          href="/apps/sessions"
+          icon={CalendarClock}
+          tone={data.workPermitExpiry.overdue > 0 ? 'danger' : 'normal'}
+          caption={
+            data.workPermitExpiry.total > 0
+              ? tGeneratedValue(
+                  tGenerated('m_10cb285ec490ee', {
+                    value0: data.workPermitExpiry.total - data.workPermitExpiry.overdue,
+                    value1: data.workPermitExpiry.overdue,
+                  }),
+                )
+              : tGenerated('m_0759b2c8e5c526')
+          }
+        />
+      )
     case 'op-safety-observations-30d':
       return (
         <CountTile

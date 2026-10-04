@@ -393,36 +393,6 @@ export const REPORT_ENTITIES: ReportEntity[] = [
     description:
       'Materialized compliance results with the obligation, source module, and person names resolved.',
     table: 'report_compliance_status',
-    from: `(
-      SELECT
-        status.id,
-        status.tenant_id,
-        obligation.source_module,
-        obligation.title AS obligation_title,
-        status.subject_key,
-        CASE
-          WHEN person.id IS NULL THEN NULL
-          ELSE person.last_name || ', ' || person.first_name
-        END AS person_name,
-        status.status,
-        status.period_start,
-        status.period_end,
-        status.due_on,
-        status.completed_on,
-        status.count,
-        status.expected,
-        status.percent,
-        status.computed_at
-      FROM compliance_status status
-      JOIN compliance_obligations obligation
-        ON obligation.tenant_id = status.tenant_id
-       AND obligation.id = status.obligation_id
-       AND obligation.deleted_at IS NULL
-      LEFT JOIN people person
-        ON person.tenant_id = status.tenant_id
-       AND person.id = status.person_id
-       AND person.deleted_at IS NULL
-    ) AS "report_compliance_status"`,
     columns: [
       { key: 'source_module', label: 'Module', kind: 'enum' },
       { key: 'obligation_title', label: 'Requirement', kind: 'text' },
@@ -446,44 +416,29 @@ export const REPORT_ENTITIES: ReportEntity[] = [
     category: 'apps',
     description: 'Live timed check-in sessions started from any Builder app.',
     table: 'report_monitored_sessions',
-    from: `(
-      SELECT
-        response.id,
-        response.tenant_id,
-        CASE
-          WHEN person.id IS NULL THEN NULL
-          ELSE person.last_name || ', ' || person.first_name
-        END AS subject_person_id,
-        location.name AS site_org_unit_id,
-        template.name AS app_name,
-        response.monitor_status,
-        response.checkin_interval_minutes,
-        response.grace_period_minutes,
-        response.expected_end_at,
-        response.next_checkin_due_at,
-        response.last_checkin_at,
-        response.escalated_at,
-        response.created_at,
-        response.closed_at
-      FROM form_responses response
-      JOIN form_templates template
-        ON template.tenant_id = response.tenant_id
-       AND template.id = response.template_id
-       AND template.deleted_at IS NULL
-      LEFT JOIN people person
-        ON person.tenant_id = response.tenant_id
-       AND person.id = response.subject_person_id
-       AND person.deleted_at IS NULL
-      LEFT JOIN org_units location
-        ON location.tenant_id = response.tenant_id
-       AND location.id = response.site_org_unit_id
-       AND location.deleted_at IS NULL
-      WHERE response.monitor_status IS NOT NULL
-        AND response.deleted_at IS NULL
-    ) AS "report_monitored_sessions"`,
     columns: [
-      { key: 'subject_person_id', label: 'Employee', kind: 'text' },
-      { key: 'site_org_unit_id', label: 'Location', kind: 'text' },
+      // The real person UUID, so `PERSON_COLUMNS` can match a self-tier caller against
+      // their own sessions (defect D10). It used to hold the resolved NAME, which never
+      // equals a uuid, so self-scoping could not match.
+      //
+      // This column must keep resolving to `"report_monitored_sessions"."subject_person_id"`.
+      // It is deliberately given NO `expression`: `columnRef` resolves an expression
+      // column verbatim, so pointing this one at `subject_person_name` to make the report
+      // prettier would silently redirect the SELF-SCOPE PREDICATE at the name and
+      // reintroduce D10. The display fix belongs on the column below, which is the one a
+      // reader actually sees.
+      //
+      // `kind: 'uuid'` already makes `isTechnicalIdentifierColumn` true, so the report
+      // builder treats this as technical rather than a display column. It stays in
+      // `columns`, and therefore in `/api/v1`, because it is the scope key.
+      { key: 'subject_person_id', label: 'Employee id', kind: 'uuid' },
+      // The readable name, and the column a reader sees as "Employee".
+      { key: 'subject_person_name', label: 'Employee', kind: 'text' },
+      // The real org-unit UUID, so a site-scoped caller can actually narrow
+      // (`SITE_COLUMNS` compares this against `org_units.id`). The readable name lives
+      // in its own column; it used to be aliased into this one (defect D7).
+      { key: 'site_org_unit_id', label: 'Location', kind: 'uuid' },
+      { key: 'site_name', label: 'Site', kind: 'text' },
       { key: 'app_name', label: 'App', kind: 'text' },
       { key: 'monitor_status', label: 'Status', kind: 'enum' },
       { key: 'checkin_interval_minutes', label: 'Check-in interval', kind: 'number' },
@@ -496,6 +451,71 @@ export const REPORT_ENTITIES: ReportEntity[] = [
       { key: 'closed_at', label: 'Closed at', kind: 'timestamp' },
     ],
     defaultSort: { column: 'created_at', direction: 'desc' },
+  },
+  // Environmental monitoring and statutory compliance are Builder apps, so both are
+  // exposed as `report_*` views over `form_responses` (see REPORT_VIEWS_SQL in
+  // `packages/db/src/views.ts`). Each view filters to one stable `form_templates.key`,
+  // so the same key names the same app in every tenant and nothing depends on a
+  // per-tenant template UUID.
+  //
+  // Both reuse the existing `forms` category, which the public API already gates on
+  // `forms.response.read.all` and which `TABLE_SCOPE` already binds to the
+  // `forms.response` ladder. That is deliberate: these ARE form responses, so they
+  // inherit the permissions a Builder reader already holds - no new permission key, no
+  // new category, and no second ladder over data the module already governs.
+  {
+    key: 'environmental_monitoring',
+    label: 'Environmental monitoring',
+    category: 'forms',
+    description:
+      'Environmental monitoring readings logged against a site, with the parameter, reading, limit and outcome resolved.',
+    table: 'report_environmental_monitoring',
+    columns: [
+      { key: 'app_key', label: 'App key', kind: 'text' },
+      { key: 'response_status', label: 'Response status', kind: 'enum' },
+      { key: 'monitoring_category', label: 'Category', kind: 'text' },
+      { key: 'parameter', label: 'Parameter', kind: 'text' },
+      { key: 'reading_value', label: 'Reading', kind: 'number' },
+      { key: 'reading_unit', label: 'Unit', kind: 'text' },
+      { key: 'limit_value', label: 'Limit', kind: 'number' },
+      { key: 'result', label: 'Result', kind: 'enum' },
+      { key: 'monitoring_on', label: 'Monitored at', kind: 'timestamp' },
+      { key: 'monitoring_datetime', label: 'Monitored at (raw)', kind: 'text' },
+      { key: 'person_name', label: 'Monitored by', kind: 'text' },
+      { key: 'site_org_unit_id', label: 'Location', kind: 'text' },
+      { key: 'site_name', label: 'Site', kind: 'text' },
+      { key: 'notes', label: 'Notes', kind: 'text' },
+      { key: 'created_at', label: 'Logged at', kind: 'timestamp' },
+      { key: 'updated_at', label: 'Updated at', kind: 'timestamp' },
+    ],
+    defaultSort: { column: 'monitoring_on', direction: 'desc' },
+  },
+  {
+    key: 'statutory_compliance',
+    label: 'Statutory compliance',
+    category: 'forms',
+    description:
+      'Statutory compliance register entries with the requirement, instrument, issuing authority and review dates resolved.',
+    table: 'report_statutory_compliance',
+    columns: [
+      { key: 'app_key', label: 'App key', kind: 'text' },
+      { key: 'response_status', label: 'Response status', kind: 'enum' },
+      { key: 'register_status', label: 'Register status', kind: 'enum' },
+      { key: 'requirement', label: 'Requirement', kind: 'text' },
+      { key: 'instrument', label: 'Instrument', kind: 'text' },
+      { key: 'issuing_authority', label: 'Issuing authority', kind: 'text' },
+      { key: 'applicable_date', label: 'Applicable from', kind: 'timestamp' },
+      { key: 'applicable_on', label: 'Applicable from (raw)', kind: 'text' },
+      { key: 'review_or_expiry_date', label: 'Review or expiry', kind: 'timestamp' },
+      { key: 'review_or_expiry_on', label: 'Review or expiry (raw)', kind: 'text' },
+      { key: 'person_name', label: 'Responsible person', kind: 'text' },
+      { key: 'site_org_unit_id', label: 'Location', kind: 'text' },
+      { key: 'site_name', label: 'Site', kind: 'text' },
+      { key: 'notes', label: 'Notes', kind: 'text' },
+      { key: 'created_at', label: 'Logged at', kind: 'timestamp' },
+      { key: 'updated_at', label: 'Updated at', kind: 'timestamp' },
+    ],
+    defaultSort: { column: 'applicable_date', direction: 'desc' },
   },
   {
     key: 'hazid_signatures',
@@ -521,29 +541,18 @@ export const REPORT_ENTITIES: ReportEntity[] = [
     // `packages/analytics/src/server/scope.ts` rebinds this projection to the
     // Hazard ID module's own `hazid.read.*` ladder, exactly as
     // `report_compliance_status` and `report_monitored_sessions` already do.
+    //
+    // `report_hazid_signatures` — like `report_compliance_status` and
+    // `report_monitored_sessions` — is a REAL PostgreSQL view (migration
+    // 0045_report_projection_views), not an authored `from` subquery. That matters
+    // because the report engine honours `from` while the public REST API does not:
+    // `apps/web/src/lib/api/query.ts` emits `FROM "${entity.table}"` literally, so
+    // an authored projection published an endpoint that resolved a relation which
+    // never existed. A real view gives both engines one identical relation, and the
+    // view carries no RLS of its own — it inherits the `FORCE ROW LEVEL SECURITY`
+    // policy of every base table it reads, exactly like the nine report views that
+    // have always worked.
     table: 'report_hazid_signatures',
-    from: `(
-      SELECT
-        signature.id,
-        signature.tenant_id,
-        assessment.reference AS assessment_id,
-        signature.signature_type,
-        CASE
-          WHEN person.id IS NULL THEN NULL
-          ELSE person.last_name || ', ' || person.first_name
-        END AS person_id,
-        signature.external_name,
-        signature.signed_at
-      FROM hazid_assessment_signatures signature
-      JOIN hazid_assessments assessment
-        ON assessment.tenant_id = signature.tenant_id
-       AND assessment.id = signature.assessment_id
-       AND assessment.deleted_at IS NULL
-      LEFT JOIN people person
-        ON person.tenant_id = signature.tenant_id
-       AND person.id = signature.person_id
-       AND person.deleted_at IS NULL
-    ) AS "report_hazid_signatures"`,
     columns: [
       { key: 'assessment_id', label: 'Assessment', kind: 'text' },
       { key: 'signature_type', label: 'Signature type', kind: 'enum' },

@@ -397,6 +397,23 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
     siteCols: SITE_COLUMNS,
     personCols: PERSON_COLUMNS,
   },
+  // Environmental monitoring and statutory compliance are Builder apps exposed as
+  // `report_*` views over `form_responses`, so they belong to the same
+  // `forms.response.read.*` ladder as every other form response - not to the
+  // studio-wide `report_` default, which would hand them to any viewer of reports.
+  // `siteCols` works because both views project the real org-unit UUID in
+  // `site_org_unit_id`; `personCols` works because both resolve the payload's person
+  // reference into a `person_id`.
+  report_environmental_monitoring: {
+    read: { prefix: 'forms.response' },
+    siteCols: SITE_COLUMNS,
+    personCols: PERSON_COLUMNS,
+  },
+  report_statutory_compliance: {
+    read: { prefix: 'forms.response' },
+    siteCols: SITE_COLUMNS,
+    personCols: PERSON_COLUMNS,
+  },
   report_hazid_signatures: {
     // Without this entry the `report_` prefix default would hand this entity the
     // studio-wide `reports.read` tier, so ANY viewer of reports could read every

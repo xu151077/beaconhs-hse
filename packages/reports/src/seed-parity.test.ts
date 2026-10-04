@@ -29,6 +29,10 @@ const CURATED_ENTITY_KEYS = [
   'compliance_status',
   'corrective_actions',
   'documents',
+  // Builder-backed projections over `form_responses`, keyed by a stable
+  // `form_templates.key`. They reuse the existing `forms` category, so they publish on
+  // /api/v1 through the pre-existing `forms.response.read.all` gate.
+  'environmental_monitoring',
   'equipment_fleet',
   'equipment_items',
   'hazid_signatures',
@@ -38,6 +42,7 @@ const CURATED_ENTITY_KEYS = [
   'monitored_sessions',
   'ppe_items',
   'skill_assignments',
+  'statutory_compliance',
   'training_matrix',
   'training_records',
   'vehicle_log_entries',

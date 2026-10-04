@@ -1,0 +1,20 @@
+-- Snapshot reconciliation only — executes NO database DDL.
+--
+-- `equipment_inspection_schedules_tenant_inspection_type_fk` has existed in
+-- PostgreSQL since 0005_production_cutover.sql created
+-- equipment_inspection_schedules. That squashed migration is hand-written, so the
+-- drizzle snapshot chain never recorded the constraint: the latest snapshot listed
+-- only three FKs on this table while the catalogue held four.
+--
+-- The FK declaration in packages/db/src/schema/equipment-maintenance.ts is
+-- therefore ALIGNMENT, not a schema change. Declaring it made the generator propose
+-- `ALTER TABLE ... ADD CONSTRAINT`, which would fail on every database that already
+-- has the constraint (duplicate_constraint) and is a no-op everywhere else.
+--
+-- This migration is deliberately statement-free so applying it to an existing or a
+-- fresh database is a no-op. The accompanying 0044_snapshot.json records the FK, so
+-- `db:generate` reports "No schema changes" and `check:migration-drift` stays green.
+--
+-- Only this one FK is reconciled. The snapshot chain still under-records other
+-- foreign keys that 0005 created; that gap is tracked separately and is NOT
+-- addressed here.

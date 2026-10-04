@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PERMISSION_CATALOGUE } from '@beaconhs/db/schema'
-import { readPermissionForEntity } from './permissions'
+import { keyHasPermission, readPermissionForEntity } from './permissions'
 import { REPORT_ENTITIES } from '@beaconhs/reports'
 
 /**
@@ -34,6 +34,7 @@ const CATEGORIES = [
   'equipment',
   'ppe',
   'corrective_actions',
+  'compliance',
 ] as const
 
 describe('READ_PERMISSION_BY_CATEGORY catalogue invariant', () => {
@@ -55,14 +56,15 @@ describe('READ_PERMISSION_BY_CATEGORY catalogue invariant', () => {
   it('holds for every report entity category with an API read gate', () => {
     // Guards against a new entity category being added without a read gate.
     //
-    // `compliance` and `apps` are excluded because they are a known, recorded
-    // defect: they have no entry in READ_PERMISSION_BY_CATEGORY, so an API key
-    // request against them throws ("POST /api/v1 returns 500"). Recorded in
-    // AGENTS.md §Environment and tooling issues. Fixing it means adding a
-    // permission grant, which is a business-authorization decision and out of
-    // scope here — so these are listed rather than silently passed over. When
-    // the defect is fixed, delete them from this list and the test will hold.
-    const KNOWN_UNGATED = new Set(['compliance', 'apps'])
+    // `apps` alone is excluded: it has no entry in READ_PERMISSION_BY_CATEGORY, so an
+    // API key request against `monitored_sessions` throws ("/api/v1 returns 500").
+    // Recorded in AGENTS.md §Environment and tooling issues. It is still listed rather
+    // than silently passed over, and the test below fails the moment that changes.
+    //
+    // `compliance` used to be listed here too. It no longer is: `compliance_status` is
+    // gated by the Compliance module's own existing `compliance.read.all`, so the
+    // category is now covered by this test like any other.
+    const KNOWN_UNGATED = new Set(['apps'])
     const categories = [...new Set(REPORT_ENTITIES.map((entity) => entity.category))]
 
     const unmapped = categories.filter((category) => {
@@ -77,8 +79,8 @@ describe('READ_PERMISSION_BY_CATEGORY catalogue invariant', () => {
   })
 
   it('still reports the known-ungated categories, so the exclusion cannot go stale', () => {
-    // If `compliance`/`apps` ever gain a read gate, this fails and tells us to
-    // drop them from KNOWN_UNGATED above rather than leave a dead exclusion.
+    // If `apps` ever gains a read gate, this fails and tells us to drop it from
+    // KNOWN_UNGATED above rather than leave a dead exclusion.
     const stillUngated = ['compliance', 'apps'].filter((category) => {
       try {
         readPermissionFor(category)
@@ -87,7 +89,7 @@ describe('READ_PERMISSION_BY_CATEGORY catalogue invariant', () => {
         return true
       }
     })
-    expect(stillUngated).toEqual(['compliance', 'apps'])
+    expect(stillUngated).toEqual(['apps'])
   })
 
   it('assigns no duplicate permission to two categories', () => {
@@ -105,6 +107,45 @@ describe('READ_PERMISSION_BY_CATEGORY catalogue invariant', () => {
 describe('readPermissionForEntity', () => {
   it('throws for an unmapped category rather than failing open', () => {
     expect(() => readPermissionFor('not_a_category')).toThrow(
+      /No public API read permission mapped/,
+    )
+  })
+})
+
+describe('the Builder-backed report projections publish through the forms gate', () => {
+  const entityFor = (key: string) =>
+    REPORT_ENTITIES.find((entity) => entity.key === key) as unknown as Parameters<
+      typeof readPermissionForEntity
+    >[0]
+
+  for (const key of ['environmental_monitoring', 'statutory_compliance']) {
+    it(`${key} is gated on the existing forms.response.read.all`, () => {
+      // Both read `form_responses`, so they inherit the exact permission a Builder
+      // reader already holds. No new category and no new permission key: a key granted
+      // `forms.response.read.all` reaches the app's own responses and these two views
+      // of the same rows, which is the intent.
+      expect(readPermissionForEntity(entityFor(key))).toBe('forms.response.read.all')
+    })
+
+    it(`${key} is refused without that permission, and never fails open`, () => {
+      const entity = entityFor(key)
+      expect(keyHasPermission([], 'forms.response.read.all')).toBe(false)
+      expect(keyHasPermission(['ca.read.all'], 'forms.response.read.all')).toBe(false)
+      expect(keyHasPermission(['forms.response.read.all'], 'forms.response.read.all')).toBe(true)
+      expect(keyHasPermission(['forms.response.*'], 'forms.response.read.all')).toBe(true)
+      // The gate is derived, never read off the entity, so an entity cannot opt itself in.
+      expect(entity.category).toBe('forms')
+    })
+  }
+
+  it('leaves apps unmapped rather than aliasing an existing module permission', () => {
+    // `monitored_sessions` (category `apps`) stays ungated on purpose. Mapping it to
+    // `forms.response.read.all` would give two categories the same permission, which the
+    // "no duplicate permission to two categories" invariant above exists to prevent: one
+    // role read grant would silently cover two modules. Rather than weaken that
+    // invariant, the category stays listed in KNOWN_UNGATED until the module boundary is
+    // decided.
+    expect(() => readPermissionForEntity({ category: 'apps' } as never)).toThrow(
       /No public API read permission mapped/,
     )
   })

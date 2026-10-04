@@ -41,6 +41,16 @@ type EntityPage = {
 }
 
 function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
+  // An absent parameter is not a number, so it takes the default.
+  //
+  // `Number(null)` is 0 and `Number('')` is 0, and 0 is finite, so before this check
+  // both fell through to the range clamp and were pinned to `min`. For `limit` that
+  // meant every `/api/v1/{entity}` list call that omitted `?limit=` returned exactly
+  // one row — `LIMIT 1` — while `pagination.total` correctly reported the true count
+  // and `hasMore` was true, so it looked like a working page of a much longer list.
+  // Rejecting the absent value here restores DEFAULT_LIMIT without touching the min/max
+  // behaviour for values that were actually supplied.
+  if (raw === null || raw.trim() === '') return fallback
   const n = Number(raw)
   if (!Number.isFinite(n)) return fallback
   return Math.min(Math.max(Math.trunc(n), min), max)

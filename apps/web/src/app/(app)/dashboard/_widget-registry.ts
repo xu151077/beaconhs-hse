@@ -117,6 +117,15 @@ export const WIDGETS: Record<string, WidgetMeta> = {
     minSize: { w: 2, h: 2 },
     rolesShown: ['super_admin', 'tenant_admin', 'safety_manager', 'foreman'],
   },
+  'op-work-permit-expiry-7d': {
+    id: 'op-work-permit-expiry-7d',
+    category: 'operations',
+    label: 'Work permit expiry',
+    description: 'Monitored sessions still open that reach their expected end in the next 7 days.',
+    defaultSize: { w: 3, h: 2 },
+    minSize: { w: 2, h: 2 },
+    rolesShown: ['super_admin', 'tenant_admin', 'safety_manager', 'foreman'],
+  },
   'op-inspections-mtd': {
     id: 'op-inspections-mtd',
     category: 'operations',

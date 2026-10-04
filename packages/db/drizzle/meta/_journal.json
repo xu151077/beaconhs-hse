@@ -302,6 +302,13 @@
       "when": 1789608000003,
       "tag": "0043_companies",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791008079646,
+      "tag": "0044_inspection_type_fk_snapshot",
+      "breakpoints": true
     }
   ]
 }

@@ -140,7 +140,7 @@ describe('report seeds compile against the runtime (discovered) catalogue', () =
     // The `report_` rename must not have added an API entity, and must not have
     // published the raw base table either.
     const curated = REPORT_ENTITIES.map((e) => e.key)
-    expect(curated).toHaveLength(16)
+    expect(curated).toHaveLength(18)
     expect(curated).toContain('hazid_signatures')
     expect(curated).not.toContain('hazid_assessment_signatures')
     expect(curated).not.toContain('journal_entries')

@@ -20,6 +20,12 @@ const READ_PERMISSION_BY_CATEGORY: Record<string, CataloguePermission> = {
   equipment: 'equipment.read.all',
   ppe: 'ppe.read.all',
   corrective_actions: 'ca.read.all',
+  // `compliance_status` is the materialized compliance result set. It is gated by
+  // the Compliance module's own `compliance.read.*` ladder - the same prefix
+  // `TABLE_SCOPE` already binds `report_compliance_status` to - so an API key needs
+  // exactly the permission a Compliance reader already holds. No new permission key,
+  // and no second ladder over the same data.
+  compliance: 'compliance.read.all',
 }
 
 function isApiPermission(permission: string): boolean {

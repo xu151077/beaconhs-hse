@@ -10,10 +10,18 @@ export const REPORT_VIEWS_SQL: string[] = [
   // CREATE OR REPLACE can neither shrink a view's column set nor drop a removed
   // view, so drop both up front every migrate (idempotent); the operational fleet view
   // is recreated further down.
+  //
+  // report_monitored_sessions joins that list for a different reason: fixing defect D7
+  // changed an existing column's TYPE, from `text` (a display name) to `uuid` (the real
+  // org-unit id). Postgres refuses that under CREATE OR REPLACE outright -- "cannot
+  // change data type of view column" -- so the view must be dropped and rebuilt rather
+  // than replaced. Same idempotent drop, same single transaction, no migration: this is
+  // the view-application step, not the journal.
   `DROP VIEW IF EXISTS report_equipment_charges;
    DROP VIEW IF EXISTS report_vehicle_log_monthly;
    DROP VIEW IF EXISTS report_vehicle_log_entries;
-   DROP VIEW IF EXISTS report_equipment_fleet`,
+   DROP VIEW IF EXISTS report_equipment_fleet;
+   DROP VIEW IF EXISTS report_monitored_sessions`,
 
   // Externally-issued skills & certifications per person (the shape the old
   // hardcoded CWB welder report produced — now any tenant user can build /
@@ -496,4 +504,249 @@ export const REPORT_VIEWS_SQL: string[] = [
    JOIN training_courses c ON c.id = r.course_id AND c.tenant_id = r.tenant_id
    WHERE p.deleted_at IS NULL
      AND c.deleted_at IS NULL`,
+
+  // The three projections below used to live only as an authored `from` subquery on
+  // their REPORT_ENTITIES entry. That satisfied the report engine, which honours
+  // `from`, but not the public REST API: `apps/web/src/lib/api/query.ts` emits
+  // `FROM "${entity.table}"` literally and ignores `from`, so each of these entities
+  // resolved a relation name that was never created in the database.
+  // `/api/v1/hazid_signatures` failed outright with
+  // `relation "report_hazid_signatures" does not exist`.
+  //
+  // Declaring them here - alongside the other report views, applied idempotently by
+  // `applyReportingViews()` after the migration chain - gives the report engine and
+  // the API one identical physical relation, which is how every other `report_*`
+  // entity has always worked. It is a relation change only: each SELECT below is the
+  // former authored `from` verbatim, keeping the same joins, the same
+  // tenant-qualified ON conditions, the same soft-delete filters, the same
+  // resolved-name CASE expressions and the same trailing predicates.
+  //
+  // RLS needs no work here. Like every other view in this list these carry no policy
+  // of their own; they read FORCE-RLS base tables, so `app.tenant_id` scopes the
+  // result exactly as it scopes the underlying rows. `tenant_id` is projected
+  // through for that reason.
+  // `report_monitored_sessions` used to project `location.name AS site_org_unit_id`,
+  // putting a display name in the one column `TABLE_SCOPE` filters as an org-unit
+  // UUID (`SITE_COLUMNS`). A site-scoped caller could therefore never narrow: the
+  // name never equals a site id. `site_org_unit_id` now carries the real
+  // `form_responses.site_org_unit_id`, and the readable name moved to its own
+  // `site_name` column so nothing is lost from the report.
+  //
+  // Defect D10, the same class one column over: `subject_person_id` used to hold the
+  // resolved NAME, but `PERSON_COLUMNS` falls back to `subject_person_id` when an entity
+  // has no `person_id`, comparing it against a person uuid. A name never equals a uuid, so
+  // a self-tier caller could never match their own sessions. It now carries the real
+  // `person.id` — NULL when the response has no person, or the person is soft-deleted — and
+  // the readable name moved to its own `subject_person_name` so reports keep it.
+  //
+  // That also changes this column's TYPE, so it needs the same drop-and-rebuild as D7.
+  // Only the relation changed. The row set, the joins, the soft-delete filters and the
+  // monitored-session semantics are untouched, and no permission or RoleScope moved.
+  `CREATE OR REPLACE VIEW report_compliance_status AS
+     SELECT
+       status.id,
+       status.tenant_id,
+       obligation.source_module,
+       obligation.title         AS obligation_title,
+       status.subject_key,
+       CASE
+         WHEN person.id IS NULL THEN NULL
+         ELSE person.last_name || ', ' || person.first_name
+       END                      AS person_name,
+       status.status,
+       status.period_start,
+       status.period_end,
+       status.due_on,
+       status.completed_on,
+       status.count,
+       status.expected,
+       status.percent,
+       status.computed_at
+     FROM compliance_status status
+     JOIN compliance_obligations obligation
+       ON obligation.tenant_id = status.tenant_id
+      AND obligation.id = status.obligation_id
+      AND obligation.deleted_at IS NULL
+     LEFT JOIN people person
+       ON person.tenant_id = status.tenant_id
+      AND person.id = status.person_id
+      AND person.deleted_at IS NULL`,
+
+  `CREATE OR REPLACE VIEW report_monitored_sessions AS
+     SELECT
+       response.id,
+       response.tenant_id,
+       person.id                             AS subject_person_id,
+       CASE
+         WHEN person.id IS NULL THEN NULL
+         ELSE person.last_name || ', ' || person.first_name
+       END                                   AS subject_person_name,
+       response.site_org_unit_id,
+       location.name                         AS site_name,
+       template.name                         AS app_name,
+       response.monitor_status,
+       response.checkin_interval_minutes,
+       response.grace_period_minutes,
+       response.expected_end_at,
+       response.next_checkin_due_at,
+       response.last_checkin_at,
+       response.escalated_at,
+       response.created_at,
+       response.closed_at
+     FROM form_responses response
+     JOIN form_templates template
+       ON template.tenant_id = response.tenant_id
+      AND template.id = response.template_id
+      AND template.deleted_at IS NULL
+     LEFT JOIN people person
+       ON person.tenant_id = response.tenant_id
+      AND person.id = response.subject_person_id
+      AND person.deleted_at IS NULL
+     LEFT JOIN org_units location
+       ON location.tenant_id = response.tenant_id
+      AND location.id = response.site_org_unit_id
+      AND location.deleted_at IS NULL
+     WHERE response.monitor_status IS NOT NULL
+       AND response.deleted_at IS NULL`,
+
+  // Stays on the Hazard ID module's own `hazid.read.*` ladder through the mandatory
+  // `report_hazid_signatures` entry in `packages/analytics/src/server/scope.ts`.
+  // Without that entry the `report_` prefix default would hand this entity the
+  // studio-wide `reports.read` tier, so any viewer of reports could read every
+  // hazard-assessment signature in the tenant.
+  `CREATE OR REPLACE VIEW report_hazid_signatures AS
+     SELECT
+       signature.id,
+       signature.tenant_id,
+       assessment.reference   AS assessment_id,
+       signature.signature_type,
+       CASE
+         WHEN person.id IS NULL THEN NULL
+         ELSE person.last_name || ', ' || person.first_name
+       END                    AS person_id,
+       signature.external_name,
+       signature.signed_at
+     FROM hazid_assessment_signatures signature
+     JOIN hazid_assessments assessment
+       ON assessment.tenant_id = signature.tenant_id
+      AND assessment.id = signature.assessment_id
+      AND assessment.deleted_at IS NULL
+     LEFT JOIN people person
+       ON person.tenant_id = signature.tenant_id
+      AND person.id = signature.person_id
+      AND person.deleted_at IS NULL`,
+
+  // Environmental monitoring log and statutory compliance register. Both are Builder
+  // apps, so the rows already exist as `form_responses`; these views expose the two
+  // stable template keys as flat, reportable relations instead of leaving a tenant's
+  // environmental and statutory evidence reachable only by per-tenant template UUID.
+  //
+  // `form_templates.key` is the stable identifier, never `template_id`: the unique
+  // constraint is `(tenant_id, key)`, so the same key names the same app in every
+  // tenant and a seed or report can bind it without knowing a UUID. Each view filters
+  // to exactly one key, and because `form_responses.template_id` is a single column the
+  // join to `form_templates` stays one row per response - no fan-out, no aggregation.
+  //
+  // Columns are derived only from keys that actually occur in the payloads; the raw
+  // `payload` is projected through as well so nothing is lost to a future field. Every
+  // cast is regex-guarded, so one malformed legacy value yields NULL for that column
+  // instead of failing the whole relation. Person references arrive as UUID text in the
+  // payload and are resolved by joining `p.id::text`, which avoids casting untrusted
+  // text to uuid and keeps the join on the FORCE-RLS `people` table.
+  //
+  // `site_org_unit_id` is the response's real org-unit UUID, NOT a display name:
+  // `TABLE_SCOPE` filters `SITE_COLUMNS` on that name, so it must hold the id. The
+  // readable name is projected separately as `site_name`.
+  `CREATE OR REPLACE VIEW report_environmental_monitoring AS
+     SELECT
+       response.id,
+       response.tenant_id,
+       template.key                                   AS app_key,
+       template.name                                  AS app_name,
+       response.site_org_unit_id,
+       location.name                                  AS site_name,
+       response.status                                AS response_status,
+       person.id                                      AS person_id,
+       person.last_name || ', ' || person.first_name  AS person_name,
+       response.data->>'monitoring_category'          AS monitoring_category,
+       response.data->>'parameter'                    AS parameter,
+       CASE
+         WHEN response.data->>'reading_value' ~ '^-?[0-9]+(\\.[0-9]+)?$'
+           THEN (response.data->>'reading_value')::numeric
+       END                                            AS reading_value,
+       response.data->>'reading_unit'                 AS reading_unit,
+       CASE
+         WHEN response.data->>'limit_value' ~ '^-?[0-9]+(\\.[0-9]+)?$'
+           THEN (response.data->>'limit_value')::numeric
+       END                                            AS limit_value,
+       response.data->>'result'                       AS result,
+       response.data->>'monitoring_datetime'          AS monitoring_datetime,
+       CASE
+         WHEN response.data->>'monitoring_datetime' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+           THEN (response.data->>'monitoring_datetime')::timestamptz
+       END                                            AS monitoring_on,
+       response.data->>'notes'                        AS notes,
+       response.data                                  AS payload,
+       response.created_at,
+       response.updated_at
+     FROM form_responses response
+     JOIN form_templates template
+       ON template.tenant_id = response.tenant_id
+      AND template.id = response.template_id
+      AND template.deleted_at IS NULL
+     LEFT JOIN org_units location
+       ON location.tenant_id = response.tenant_id
+      AND location.id = response.site_org_unit_id
+      AND location.deleted_at IS NULL
+     LEFT JOIN people person
+       ON person.tenant_id = response.tenant_id
+      AND person.id::text = response.data->>'monitored_by'
+      AND person.deleted_at IS NULL
+     WHERE template.key = 'environmental-monitoring-log'
+       AND response.deleted_at IS NULL`,
+
+  `CREATE OR REPLACE VIEW report_statutory_compliance AS
+     SELECT
+       response.id,
+       response.tenant_id,
+       template.key                                   AS app_key,
+       template.name                                  AS app_name,
+       response.site_org_unit_id,
+       location.name                                  AS site_name,
+       response.status                                AS response_status,
+       person.id                                      AS person_id,
+       person.last_name || ', ' || person.first_name  AS person_name,
+       response.data->>'status'                       AS register_status,
+       response.data->>'requirement'                  AS requirement,
+       response.data->>'instrument'                   AS instrument,
+       response.data->>'issuing_authority'            AS issuing_authority,
+       response.data->>'applicable_on'                AS applicable_on,
+       CASE
+         WHEN response.data->>'applicable_on' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+           THEN (response.data->>'applicable_on')::date
+       END                                            AS applicable_date,
+       response.data->>'review_or_expiry_on'          AS review_or_expiry_on,
+       CASE
+         WHEN response.data->>'review_or_expiry_on' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+           THEN (response.data->>'review_or_expiry_on')::date
+       END                                            AS review_or_expiry_date,
+       response.data->>'notes'                        AS notes,
+       response.data                                  AS payload,
+       response.created_at,
+       response.updated_at
+     FROM form_responses response
+     JOIN form_templates template
+       ON template.tenant_id = response.tenant_id
+      AND template.id = response.template_id
+      AND template.deleted_at IS NULL
+     LEFT JOIN org_units location
+       ON location.tenant_id = response.tenant_id
+      AND location.id = response.site_org_unit_id
+      AND location.deleted_at IS NULL
+     LEFT JOIN people person
+       ON person.tenant_id = response.tenant_id
+      AND person.id::text = response.data->>'responsible_person'
+      AND person.deleted_at IS NULL
+     WHERE template.key = 'statutory-compliance-register'
+       AND response.deleted_at IS NULL`,
 ]

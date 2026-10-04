@@ -331,7 +331,12 @@ describe('end-to-end against the real generator', () => {
       //
       // So a real drift is now caught WITHOUT a filename collision, and a
       // contributor never has to hand-rename the generated file.
-      expect(indexPrefix(newSql[0]!)).toBe('0044')
+      //
+      // The head has since advanced: `0044_inspection_type_fk_snapshot` is a
+      // statement-free reconciliation that only recorded the pre-existing
+      // `equipment_inspection_schedules_tenant_inspection_type_fk`, so the next
+      // free index is now `0045`.
+      expect(indexPrefix(newSql[0]!)).toBe('0045')
       expect(verdict.status === 'drift' && verdict.collisions).toEqual([])
     } finally {
       rmSync(work, { recursive: true, force: true })

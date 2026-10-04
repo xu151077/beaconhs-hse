@@ -204,8 +204,15 @@ describe('R2 — the compliance report entity is scoped, not handed over whole',
       new URL('../../../../packages/reports/src/entities.ts', import.meta.url),
       'utf8',
     )
-    const body = entities.slice(entities.indexOf("key: 'compliance_status'"))
-    const columns = [...body.slice(0, 2000).matchAll(/key: '([a-z_]+)', label/g)].map((m) => m[1]!)
+    const start = entities.indexOf("key: 'compliance_status'")
+    // Bound the window to this entity's OWN block. A fixed character count silently
+    // runs into the neighbouring entity once the authored `from` subquery that used
+    // to sit here is gone, and `report_monitored_sessions` does declare both
+    // `site_org_unit_id` and `subject_person_id` - so the check would be reading
+    // another entity's columns and fail for the wrong reason.
+    const next = entities.indexOf("  {\n    key: '", start + 1)
+    const block = entities.slice(start, next === -1 ? undefined : next)
+    const columns = [...block.matchAll(/key: '([a-z_]+)', label/g)].map((m) => m[1]!)
     expect(columns.length, 'compliance_status columns parsed').toBeGreaterThan(0)
     expect(columns).not.toContain('site_org_unit_id')
     expect(columns).not.toContain('person_id')

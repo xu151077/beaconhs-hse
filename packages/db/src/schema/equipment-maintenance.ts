@@ -78,6 +78,17 @@ export const equipmentInspectionSchedules = pgTable(
       columns: [t.tenantId, t.equipmentItemId],
       foreignColumns: [equipmentItems.tenantId, equipmentItems.id],
     }).onDelete('cascade'),
+    // Declares the constraint that migration 0005_production_cutover.sql already
+    // created and that `equipmentInspectionTypesRelations` already models below.
+    // Without it the FK existed only in Postgres, so `discover.ts` — which reads
+    // this schema, not the catalogue — could not see the relation and
+    // `inspection_type_id` was unjoinable for reporting. Alignment only: this
+    // generates no migration.
+    inspectionTypeFk: foreignKey({
+      name: 'equipment_inspection_schedules_tenant_inspection_type_fk',
+      columns: [t.tenantId, t.inspectionTypeId],
+      foreignColumns: [equipmentInspectionTypes.tenantId, equipmentInspectionTypes.id],
+    }),
     createdByFk: foreignKey({
       name: 'equipment_inspection_schedules_tenant_created_by_fk',
       columns: [t.tenantId, t.createdByTenantUserId],

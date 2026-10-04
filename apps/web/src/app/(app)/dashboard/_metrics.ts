@@ -103,6 +103,27 @@ export type DashboardMetrics = {
     positive: number
     negative: number
   }
+  /**
+   * Monitored Builder sessions still open whose expected end falls within the next 7
+   * days — the permits and timed check-ins a coordinator has to close out or renew.
+   * Same rows as the seeded `work_permit_expiry` report: `completed` and `cancelled`
+   * are already closed out, so only a session still running (or one nobody answered)
+   * can expire.
+   *
+   * `overdue` counts the subset already past `expected_end_at`. `due_within_days` is an
+   * upper bound only, so those rows are included rather than silently dropped — they are
+   * the most urgent in the set.
+   *
+   * Scoped by `forms.response.read.*` and by Builder app access, exactly like
+   * `monitoredSessionsActive`. No new permission: a monitored session IS a form
+   * response, so it inherits the ladder the Builder module already governs.
+   */
+  workPermitExpiry: {
+    total: number
+    overdue: number
+    /** Soonest `expected_end_at` in the window, ISO, or null when nothing is due. */
+    nextExpiryAt: string | null
+  }
   vehicleLogStatus: {
     loggedDays: number
     importedDays: number
@@ -392,6 +413,11 @@ export async function loadDashboardMetrics(
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 86_400_000)
   const ninetyDaysAhead = new Date(now.getTime() + 90 * 86_400_000)
   const thirtyDaysAhead = new Date(now.getTime() + 30 * 86_400_000)
+  // Horizon for the work-permit / monitored-session expiry tile. Matches the
+  // `due_within_days: 7` window of the seeded `work_permit_expiry` report, and is an
+  // upper bound only (matching that filter operator): a session already past its end but
+  // still open is exactly the row a coordinator has to chase.
+  const permitExpiryHorizon = new Date(now.getTime() + 7 * 86_400_000)
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 86_400_000)
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
@@ -481,6 +507,7 @@ export async function loadDashboardMetrics(
       peopleCount,
       inspThisMonth,
       observationsRow,
+      permitExpiryRow,
     ] = await Promise.all([
       tx
         .select({ c: count() })
@@ -624,6 +651,31 @@ export async function loadDashboardMetrics(
             isNull(journalEntries.deletedAt),
             entryClassWhere('observation'),
             gte(journalEntries.entryDate, thirtyDaysAgoIso),
+          ),
+        )
+        .then((r) => r[0]),
+      // --- Work permit / monitored-session expiry --------------------------
+      // One grouped query yields the count, the already-overdue subset and the soonest
+      // end, so the widget captions itself without a second round trip. The 7-day
+      // horizon mirrors `due_within_days: 7` in the seeded `work_permit_expiry`
+      // report, so the tile and the report can never disagree.
+      tx
+        .select({
+          total: count(),
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${formResponses.expectedEndAt} < now())::int`,
+          nextExpiryAt: sql<string | null>`MIN(${formResponses.expectedEndAt}::timestamptz)::text`,
+        })
+        .from(formResponses)
+        .innerJoin(formTemplates, eq(formTemplates.id, formResponses.templateId))
+        .where(
+          and(
+            scopeFormResponses,
+            isNull(formResponses.deletedAt),
+            // Still open: `completed` and `cancelled` are closed out already.
+            inArray(formResponses.monitorStatus, ['active', 'missed', 'escalated']),
+            isNotNull(formResponses.expectedEndAt),
+            lte(formResponses.expectedEndAt, permitExpiryHorizon),
+            templateAccessWhere(ctx, effectiveRoleKeys, 'browse-records'),
           ),
         )
         .then((r) => r[0]),
@@ -1324,6 +1376,13 @@ export async function loadDashboardMetrics(
         total: Number(observationsRow?.total ?? 0),
         positive: Number(observationsRow?.positive ?? 0),
         negative: Number(observationsRow?.negative ?? 0),
+      },
+      workPermitExpiry: {
+        total: Number(permitExpiryRow?.total ?? 0),
+        overdue: Number(permitExpiryRow?.overdue ?? 0),
+        // MIN() over an empty set is NULL, and the predicate already excludes a NULL
+        // expected_end_at, so this is null only when nothing is due.
+        nextExpiryAt: permitExpiryRow?.nextExpiryAt ?? null,
       },
       vehicleLogStatus,
 

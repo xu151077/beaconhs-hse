@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest'
 import { compileCustomReport, type ReportRule } from '@braedonsaunders/appkit-reports'
 import { discoverEntities } from '@beaconhs/analytics/server'
 import type { ReportEntityCatalog } from '@beaconhs/reports/entities'
-import { REPORT_ENTITIES } from './entities'
+import { REPORT_ENTITIES, columnRef, isTechnicalIdentifierColumn } from './entities'
 import {
   BEACON_REPORT_SEEDS,
   EXPECTED_BEACON_REPORT_SEED_KEYS,
@@ -242,15 +242,23 @@ describe('Phase 11-F introduced no new architecture', () => {
   })
 
   it('no new migration', () => {
-    // This phase adds no schema, so the journal must still END at the tag that
-    // shipped before it. Asserting on the tail rather than on keywords matters:
-    // `0042_journal_observation_definitions` and `0043_companies` are legitimate
-    // Phase 11-A/11-B migrations.
+    // The seed-only work adds no schema of its own, so the journal tail must be a tag
+    // from an earlier, separately-authorised change. Asserting on the tail rather than
+    // on keywords matters: `0042_journal_observation_definitions` and
+    // `0043_companies` are legitimate Phase 11-A/11-B migrations, and
+    // `0044_inspection_type_fk_snapshot` is a statement-free snapshot reconciliation
+    // for a foreign key that already existed in Postgres.
+    //
+    // Note the report projections deliberately do NOT appear here. Promoting
+    // `compliance_status`, `monitored_sessions` and `hazid_signatures` to real
+    // relations needed no migration, because `packages/db/src/views.ts` already applies
+    // `REPORT_VIEWS_SQL` idempotently on every `db:migrate` - a view is not a journal
+    // event. Asserting the tail is what proves that.
     const journal = JSON.parse(repoRead('packages', 'db', 'drizzle', 'meta', '_journal.json')) as {
       entries: { tag: string }[]
     }
     const tags = journal.entries.map((e) => e.tag)
-    expect(tags[tags.length - 1]).toBe('0043_companies')
+    expect(tags[tags.length - 1]).toBe('0044_inspection_type_fk_snapshot')
     expect(tags.filter((t) => /permit|observation/i.test(t))).toEqual([
       '0042_journal_observation_definitions',
     ])
@@ -265,7 +273,9 @@ describe('Phase 11-F introduced no new architecture', () => {
     const keys = REPORT_ENTITIES.map((e) => e.key)
     expect(keys).not.toContain('journal_entries')
     expect(keys).not.toContain('companies')
-    expect(keys).toHaveLength(16)
+    // 16 curated entities plus `environmental_monitoring` and `statutory_compliance`,
+    // which reuse the existing `forms` category and therefore need no new API gate.
+    expect(keys).toHaveLength(18)
   })
 
   it('every curated entity category still has a public API read gate', () => {
@@ -300,7 +310,10 @@ describe('Phase 11-F introduced no new architecture', () => {
   })
 
   it('does not modify the curated entity catalogue itself', () => {
-    // entities.ts must be byte-identical to HEAD for this phase.
+    // The seed-only work adds no entity and no publishing flag. A later, separately
+    // authorised change removed the three authored `from` subqueries so the API and
+    // the report engine read one real relation; that is asserted on its own above and
+    // in `packages/db/src/reporting-view-cutover.test.ts`.
     const curated = repoRead('packages', 'reports', 'src', 'entities.ts')
     expect(curated).toContain('export const REPORT_ENTITIES: ReportEntity[] = [')
     expect(curated).not.toMatch(/publishToApi|apiExposed|publicApi/)
@@ -388,5 +401,202 @@ describe.each(PHASE_11_F_KEYS)('%s is tenant-bound at compile time', (key) => {
       if (other === 'journal_entries') continue // monitored_sessions reads it internally
       expect(compiled.sql).not.toContain(`"${other}"`)
     }
+  })
+})
+
+describe('a curated entity may not hide its relation behind an authored `from`', () => {
+  it('no curated entity carries an authored `from` subquery', () => {
+    // The regression this guards against is a real, shipped 500. The report engine
+    // honours `entity.from`, but the public REST API does not:
+    // `apps/web/src/lib/api/query.ts` emits `FROM "${entity.table}"` literally and
+    // ignores `from` entirely. An entity that only existed as an authored subquery
+    // therefore compiled and ran perfectly in the report builder while the API
+    // resolved a relation name that was never created - `/api/v1/hazid_signatures`
+    // failed with `relation "report_hazid_signatures" does not exist`.
+    //
+    // `compliance_status`, `monitored_sessions` and `hazid_signatures` were all three
+    // in that state. They are now real views (REPORT_VIEWS_SQL in
+    // `packages/db/src/views.ts`), asserted in
+    // `packages/db/src/reporting-view-cutover.test.ts`.
+    const authored = REPORT_ENTITIES.filter((e) => typeof e.from === 'string')
+    expect(
+      authored.map((e) => e.key),
+      'an authored `from` is invisible to the public API, so no entity may use one',
+    ).toEqual([])
+  })
+
+  it('keeps any `from` alias identical to the table it is queried as', () => {
+    // Belt and braces for the invariant above: should an alias ever be reintroduced,
+    // it has to name the same relation the API reads, or the two engines silently
+    // diverge again.
+    for (const entity of REPORT_ENTITIES) {
+      if (typeof entity.from !== 'string') continue
+      const alias = entity.from.match(/AS "([a-z_]+)"\s*$/)?.[1]
+      expect(alias, `${entity.key} must alias its own table`).toBe(entity.table)
+    }
+  })
+
+  it('still curates exactly 16 entities and adds none', () => {
+    expect(REPORT_ENTITIES).toHaveLength(18)
+    expect(REPORT_ENTITIES.map((e) => e.key)).toContain('hazid_signatures')
+  })
+
+  it('leaves the three projections list-only, so /{id} and POST stay closed', () => {
+    // Promoting a projection to a real relation must not turn it into a writable
+    // record. Recordability is not a flag: `apps/web/src/lib/api/records.ts` derives
+    // RECORDABLE from `!table.startsWith('report_')`, and `recordIdColumn()` returns
+    // null for any `report_` table, which is what closes the `/{id}` path. All three
+    // therefore keep list-only semantics.
+    //
+    // Worth stating plainly: these three views DO project a real `id`, unlike the
+    // join-baked views that synthesise one. That does not reopen per-record access -
+    // the prefix rule, not the presence of a column, is what decides.
+    for (const key of ['compliance_status', 'monitored_sessions', 'hazid_signatures']) {
+      const entity = REPORT_ENTITIES.find((e) => e.key === key)
+      expect(entity, `${key} must remain curated`).toBeDefined()
+      expect(entity!.table.startsWith('report_'), `${key} must stay a report_ projection`).toBe(
+        true,
+      )
+    }
+  })
+})
+
+describe('the Builder-backed projections add no new authorization surface', () => {
+  const entityOf = (key: string) => {
+    const found = REPORT_ENTITIES.find((e) => e.key === key)
+    expect(found, `${key} must be curated`).toBeDefined()
+    return found!
+  }
+  const scope = () => repoRead('packages', 'analytics', 'src', 'server', 'scope.ts')
+
+  for (const [key, table] of [
+    ['environmental_monitoring', 'report_environmental_monitoring'],
+    ['statutory_compliance', 'report_statutory_compliance'],
+  ] as const) {
+    it(`${key} reuses the existing forms category and forms.response ladder`, () => {
+      // Both projections read `form_responses`, so they belong to the Builder response
+      // ladder the module already governs. Reusing `forms` means the public API gate is
+      // the pre-existing `forms.response.read.all` - no new category, no new permission,
+      // no second ladder over data `forms` already covers.
+      expect(entityOf(key).category).toBe('forms')
+      expect(entityOf(key).table).toBe(table)
+    })
+
+    it(`${key} is bound in TABLE_SCOPE, so the report_ default cannot widen it`, () => {
+      // The `report_` prefix default is fail-closed to the studio-wide `reports.read`.
+      // Without an explicit entry, ANY viewer of reports could read every environmental
+      // or statutory record in the tenant.
+      const entry = scope().slice(scope().indexOf(`${table}: {`))
+      expect(entry.slice(0, 400)).toContain("read: { prefix: 'forms.response' }")
+      expect(entry.slice(0, 400)).toContain('siteCols: SITE_COLUMNS')
+      expect(entry.slice(0, 400)).toContain('personCols: PERSON_COLUMNS')
+    })
+  }
+
+  it('introduces no new permission key', () => {
+    const catalogue = repoRead('packages', 'db', 'src', 'schema', 'iam.ts')
+    expect(catalogue).not.toMatch(/'environmental[a-z.]*'/)
+    expect(catalogue).not.toMatch(/'statutory[a-z.]*'/)
+  })
+
+  it('introduces no new curated category beyond forms', () => {
+    const categories = new Set(REPORT_ENTITIES.map((e) => e.category))
+    expect(categories.has('forms')).toBe(true)
+    // `compliance` and `apps` are pre-existing; nothing new joins them.
+    expect([...categories].sort()).toEqual([
+      'apps',
+      'compliance',
+      'corrective_actions',
+      'documents',
+      'equipment',
+      'forms',
+      'hazid',
+      'incidents',
+      'inspections',
+      'ppe',
+      'training',
+    ])
+  })
+
+  it('keeps both projections list-only, consistent with every other report_ entity', () => {
+    for (const key of ['environmental_monitoring', 'statutory_compliance']) {
+      expect(entityOf(key).table.startsWith('report_')).toBe(true)
+    }
+  })
+
+  it('projects tenant_id and the site org unit the scope ladder filters on', () => {
+    for (const key of ['environmental_monitoring', 'statutory_compliance']) {
+      const cols = entityOf(key).columns.map((c) => c.key)
+      expect(cols).toContain('site_org_unit_id')
+      expect(cols).toContain('app_key')
+      expect(cols).toContain('created_at')
+      expect(cols).toContain('updated_at')
+    }
+  })
+})
+
+describe('monitored_sessions shows a readable Employee without breaking self scope', () => {
+  const entity = REPORT_ENTITIES.find((e) => e.key === 'monitored_sessions')!
+  const columnOf = (key: string) => {
+    const found = entity.columns.find((c) => c.key === key)
+    expect(found, `${key} must remain a curated column`).toBeDefined()
+    return found!
+  }
+
+  it('labels the readable name as Employee, not the uuid', () => {
+    // Phase 12-C. The D10 fix moved the NAME out of `subject_person_id`, which left the
+    // visible "Employee" column rendering a bare uuid. The display belongs on
+    // `subject_person_name`; the uuid stays exactly where scoping needs it.
+    expect(columnOf('subject_person_name').label).toBe('Employee')
+    expect(columnOf('subject_person_name').kind).toBe('text')
+    expect(columnOf('subject_person_id').label).not.toBe('Employee')
+    expect(columnOf('subject_person_id').kind).toBe('uuid')
+  })
+
+  it('binds the Employee display to subject_person_name, never back to the uuid', () => {
+    // The regression this guards: "Employee" is a LABEL, and the tempting shortcut is to
+    // label the uuid column "Employee" again, or to attach an `expression` pointing it at
+    // the name. Both look right in a report and break self-scoping, because
+    // `PERSON_COLUMNS` scopes on `subject_person_id` and `columnRef` resolves an
+    // expression verbatim.
+    expect(columnOf('subject_person_name')).not.toHaveProperty('expression')
+    expect(columnOf('subject_person_id')).not.toHaveProperty('expression')
+    // The uuid column must resolve to the uuid column.
+    expect(columnRef(entity, 'subject_person_id')).toBe(
+      '"report_monitored_sessions"."subject_person_id"',
+    )
+    expect(columnRef(entity, 'subject_person_name')).toBe(
+      '"report_monitored_sessions"."subject_person_name"',
+    )
+  })
+
+  it('treats the uuid as technical and the name as the visible column', () => {
+    // `custom-fields.ts` derives `hidden` from this, so the report builder offers the
+    // name and keeps the uuid out of the display list without hiding it from the API.
+    expect(isTechnicalIdentifierColumn(columnOf('subject_person_id'))).toBe(true)
+    expect(isTechnicalIdentifierColumn(columnOf('subject_person_name'))).toBe(false)
+  })
+
+  it('keeps both fields in the API surface', () => {
+    // `resolveFields` returns every curated column key regardless of visibility, so the
+    // uuid remains selectable and returned by /api/v1 even though it is not a display
+    // column.
+    const keys = entity.columns.map((c) => c.key)
+    expect(keys).toContain('subject_person_id')
+    expect(keys).toContain('subject_person_name')
+  })
+
+  it('leaves the underlying view and the scope ladder untouched', () => {
+    // Phase 12-C is a labelling change only. The view still projects the real uuid into
+    // `subject_person_id`, and `PERSON_COLUMNS` still falls back to it.
+    const views = repoRead('packages', 'db', 'src', 'views.ts')
+    const body = views.slice(views.indexOf('CREATE OR REPLACE VIEW report_monitored_sessions'))
+    expect(body.slice(0, 1200)).toContain(
+      'person.id                             AS subject_person_id',
+    )
+    const scope = repoRead('packages', 'analytics', 'src', 'server', 'scope.ts')
+    const personCols = scope.slice(scope.indexOf('const PERSON_COLUMNS'))
+    expect(personCols.slice(0, 300)).toContain("'person_id'")
+    expect(personCols.slice(0, 300)).toContain("'subject_person_id'")
   })
 })

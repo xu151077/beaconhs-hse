@@ -55,6 +55,11 @@ const WIDGET_PERMISSIONS: Record<string, readonly string[]> = {
   // Operations
   'op-monitored-sessions-active': TRUSTED_RESPONSE_KPI,
   'op-submissions-today': TRUSTED_RESPONSE_KPI,
+  // A monitored session is a form response, so the expiry tile belongs to the same
+  // trusted-response group as the active-session count above it. Reusing the group is
+  // the point: it introduces no new permission, and it keeps this tile hidden from a
+  // self-tier worker exactly like its sibling.
+  'op-work-permit-expiry-7d': TRUSTED_RESPONSE_KPI,
   'op-inspections-mtd': [...INSPECT, ...ANALYTICS],
   // Safety observations are journal entries under the Journals module's own ladder
   // (Phase 11-A classification), so this reuses `journals.read.*`. No observation
