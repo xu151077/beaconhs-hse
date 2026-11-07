@@ -241,8 +241,11 @@
   //               project (jungchihoon) and is deliberately NOT used.
   //   playwright— local, @playwright/mcp from github.com/microsoft/playwright-mcp
   //               (Apache-2.0, Microsoft-maintained). Pinned, not floating.
-  // Both remote servers authenticate with OAuth; run `/mcps` in the TUI to sign
-  // in. Credentials are stored outside this file by design.
+  // context7 authenticates with OAuth (`/mcps`). github uses `oauth: false` and
+  // a PAT read from a file OUTSIDE this repository, so no credential is written
+  // into this file. That PAT is a GitHub fine-grained token and it EXPIRES: on
+  // 401 "credential expired", refresh it from the account's git credential
+  // store. See docs/opencode-mcp-baseline.md §6.
   // -----------------------------------------------------------------------
   "mcp": {
     "servers": {
@@ -257,6 +260,8 @@
       "github": {
         "type": "remote",
         "url": "https://api.githubcopilot.com/mcp/",
+        // PAT, not OAuth. The token lives outside the repo and expires; see
+        // docs/opencode-mcp-baseline.md §6 for the refresh path.
         "oauth": false,
         "headers": {
           "Authorization": "Bearer {file:~/.config/opencode/github-token}",

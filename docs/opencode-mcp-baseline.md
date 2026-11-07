@@ -20,6 +20,8 @@
 
 **权限分层：** 文档查询 allow；GitHub 只读动词 allow、其余 ask；浏览器只读动词 allow、写入动词 ask。**未能安全限制粒度的能力默认 ask**——这是 fail-safe 方向。
 
+**认证方式：** context7 走 OAuth（`/mcps`）；github 使用 `oauth: false` + 个人访问令牌（PAT），令牌保存在仓库外的 `~/.config/opencode/github-token`，配置文件里不写任何密钥。PAT 会过期，刷新步骤见 §6（2026-11-08 曾因过期导致 401，已修复）。
+
 **已知功能重叠（如实记录）：** OpenCode V2 自带 `browser` 工具（Code Mode 命名空间，45 个工具），与 Playwright MCP 部分重叠。保留 Playwright MCP 的理由是它用于**脚本化 E2E 与 CI 集成**；内置 browser 用于交互式轻量验证。二者用途不同，但确实重叠。
 
 ---
@@ -33,7 +35,7 @@ Nothing was configured on trust. Each candidate was checked first.
 | Existing MCP servers            | `opencode mcp list`  | `No MCP servers configured` — no duplicates possible                                                                                                      |
 | `@playwright/mcp` provenance    | npm registry         | official Microsoft, `github.com/microsoft/playwright-mcp`, Apache-2.0, maintainers include `microsoft-oss-releases`, latest `0.0.83` published 2026-09-28 |
 | Context7 endpoint               | HTTP probe           | `https://mcp.context7.com/mcp` → `405` (expected for GET on an MCP endpoint)                                                                              |
-| GitHub endpoint                 | HTTP probe           | `https://api.githubcopilot.com/mcp/` → `401` (reachable, OAuth required)                                                                                  |
+| GitHub endpoint                 | HTTP probe           | `https://api.githubcopilot.com/mcp/` → `401` (reachable; authentication required)                                                                         |
 | Official GitHub server          | GitHub API           | `github/github-mcp-server`, not archived, 33 268 stars, MIT, pushed 2026-09-28                                                                            |
 | Third-party `github-mcp-server` | npm registry         | **rejected** — author `jungchihoon`, ISC, a different project                                                                                             |
 | Native GitHub integration       | `opencode auth list` | `No authenticated integrations` — so an MCP is genuinely additive                                                                                         |
@@ -70,6 +72,10 @@ it has no write surface.
 "github": {
   "type": "remote",
   "url": "https://api.githubcopilot.com/mcp/",
+  "oauth": false,
+  "headers": {
+    "Authorization": "Bearer {file:~/.config/opencode/github-token}",
+  },
   "timeout": { "startup": 45000, "catalog": 45000, "execution": 300000 }
 }
 ```
@@ -77,7 +83,20 @@ it has no write surface.
 **Why:** upstream issue/PR/release tracking and code search across the
 BeaconHS ecosystem, without leaving the session.
 
-**Auth:** OAuth via `/mcps`.
+**Auth:** a GitHub fine-grained **PAT**, not OAuth. The token is read from
+`~/.config/opencode/github-token` (mode `0600`), outside the repository; no
+secret is written into the config file. `oauth: false` is set because the
+OAuth sign-in flow was never completed on this host — leaving it enabled would
+only put the server into `needs authentication`. V2 documents `{env:NAME}`
+substitution; this deployment uses the file-reference form, which OpenCode
+v2.2.x resolves at connect time (proven by the 2026-11-08 incident: the server
+received the stale token and returned a real `credential expired` 401, not a
+configuration error).
+
+**PATs expire.** When GitHub answers
+`unauthorized: token authentication failed: credential expired (HTTP 401)`,
+refresh the file as described in §6. Replacing the file restores the connection
+on the next connect attempt; no config edit is needed.
 
 **Permissions — read verbs allowed, everything else asks:**
 
@@ -181,29 +200,44 @@ state, and without it no verification flow can start.
 ## 3. Verified state
 
 ```
-$ opencode mcp list
+$ opencode mcp list --server http://127.0.0.1:4096
 ```
 
-Confirmed after configuration:
+The shared background service is the systemd unit `opencode.service` on port 4096. The CLI is pointed at it explicitly: a bare `opencode mcp list` tries to
+start its own managed service on the same port and fails with
+`Managed service port 4096 ... is already in use`.
+
+Current state:
 
 | Server       | State                                                                                                          |
 | ------------ | -------------------------------------------------------------------------------------------------------------- |
 | `context7`   | **connected** — tools live in the Code Mode catalog as `context7.query-docs` and `context7.resolve-library-id` |
-| `github`     | configured, **awaiting OAuth sign-in** — run `/mcps`, select `github`, sign in                                 |
+| `github`     | **connected** — 46 tools in the Code Mode catalog; `github.get_me()` returns `xu151077`                        |
 | `playwright` | **connected** — 25 tools live in the Code Mode catalog                                                         |
 
-Raw output of `opencode mcp list` after configuration:
+Raw output:
 
 ```
 ✓ context7    connected
-⚠ github      needs authentication
+✓ github      connected
 ✓ playwright  connected
 ```
 
-**The GitHub server is configured but not yet authenticated.** Per the V2 MCP
-guide, OAuth must be completed through the user-facing `/mcps` interface, not
-from a shell tool, because the authorization link would be hidden in background
-process output. Until sign-in completes, no `github_*` tool is available.
+### 2026-11-08 — expired PAT incident (fixed)
+
+From 2026-11-07 the github server failed every connect with
+`unauthorized: token authentication failed: credential expired (HTTP 401)`.
+The cause was the fine-grained PAT in `~/.config/opencode/github-token`, not the
+MCP configuration: the old token returned `401 Bad credentials` from
+`api.github.com`, while the account's git credential store held a **different,
+valid** token (created 2026-11-07). The two copies had drifted — the git
+credential was rotated and the MCP file was not.
+
+Fix: copied the valid token into `~/.config/opencode/github-token` (kept mode
+`0600`). No config change was needed; the server reconnected and
+`github.get_me()` succeeded. The standing risk is that these are **two
+independent credential copies** — §6 documents the refresh procedure that keeps
+them in sync.
 
 ## 4. Known overlap: the built-in `browser` tool
 
@@ -244,14 +278,53 @@ the built-in tools cannot.** All three configured servers pass that test.
 ## 6. Maintenance
 
 ```sh
-opencode mcp list                 # connection state
-opencode mcp add <name> --url …   # add (project-local by default)
-opencode mcp logout <name>        # clear stored OAuth credentials
+opencode mcp list --server http://127.0.0.1:4096   # connection state (systemd service)
+opencode mcp add <name> --url …                    # add (project-local by default)
+opencode mcp logout <name>                         # clear stored OAuth credentials
 ```
 
-To connect or disconnect a server interactively, use `/mcps` in the TUI.
+To connect or disconnect a server interactively, use `/mcps` in the TUI. Only
+`context7` uses OAuth; `github` has `oauth: false`, so `/mcps` sign-in does not
+apply to it.
 
-After editing `mcp.servers`, restart the background service so it reconciles:
+### Refreshing the GitHub PAT
+
+`github` authenticates with a fine-grained PAT that expires. Rotate it on
+GitHub, then update **both** places that hold it — the account's git credential
+store (`~/.config/git/credentials`, used by git) and
+`~/.config/opencode/github-token` (used by the MCP header). They are independent
+copies; rotating only one reproduces the 2026-11-08 incident.
+
+Sync the MCP file from the git credential store without printing the secret:
+
+```sh
+python3 - <<'PY'
+import pathlib, os
+home = pathlib.Path.home()
+line = (home / '.config/git/credentials').read_text().strip()
+secret = line.rsplit('@', 1)[0].split('://', 1)[1].split(':', 1)[1]
+target = home / '.config/opencode/github-token'
+target.write_text(secret)
+os.chmod(target, 0o600)
+PY
+```
+
+Verify the credential and the connection (never echo the token):
+
+```sh
+python3 - <<'PY'
+import urllib.request, pathlib
+tok = pathlib.Path.home().joinpath('.config/opencode/github-token').read_text().strip()
+req = urllib.request.Request('https://api.github.com/user', headers={
+    'Authorization': f'Bearer {tok}', 'Accept': 'application/vnd.github+json'})
+print(urllib.request.urlopen(req, timeout=20).status)
+PY
+opencode mcp list --server http://127.0.0.1:4096
+```
+
+Config changes are watched and applied without a restart; replacing the token
+file is picked up on the next connect attempt. Restart the background service
+only when it is stuck or unhealthy:
 
 ```sh
 opencode service restart
@@ -266,3 +339,4 @@ opencode service status
 - Read and write exposure is separated by permission rule, and anything that
   cannot be separated defaults to `ask`.
 - No secret or token is written into `.opencode/opencode.jsonc`.
+- The GitHub PAT expiry path is documented (§6), since fine-grained PATs expire.
