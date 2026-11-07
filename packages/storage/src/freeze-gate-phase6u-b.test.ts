@@ -20,7 +20,9 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { createMockWriteLeaseManager, type WriteLeaseManager } from './testing/write-lease'
 import { registerStorageFreezeReader } from './freeze-gate'
 
-describe('Phase 6U-B: Write lease mechanism', () => {
+// These cases share a mocked clock and DB pool; under full-parallel CI load a
+// single case can exceed vitest's 5s default even though nothing is hung.
+describe('Phase 6U-B: Write lease mechanism', { timeout: 30_000 }, () => {
   let leaseManager: WriteLeaseManager
 
   beforeEach(() => {

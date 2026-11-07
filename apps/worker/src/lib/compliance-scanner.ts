@@ -43,7 +43,11 @@ type ComplianceScanResult = {
   reminders: number
   /** Equipment maintenance entries alerted (schedules + reminders due). */
   maintenance: number
+  /** Runtime failures: the tick throws so BullMQ retries them. */
   errors: number
+  /** Bad persisted config (invalid cron/recurrence): logged, never retried
+   * forever — a broken tenant must not fail every minute tick. */
+  configErrors: number
 }
 
 function cronDueNow(cron: string, tz: string, now: Date): boolean {
@@ -283,6 +287,7 @@ export async function scanCompliance(
     reminders: 0,
     maintenance: 0,
     errors: 0,
+    configErrors: 0,
   }
   const now = scheduledFor
 
@@ -339,7 +344,7 @@ export async function scanCompliance(
     try {
       tenantHeartbeatDue = cronDueNow(s.cron, s.tz, now)
     } catch (error) {
-      result.errors += 1
+      result.configErrors += 1
       console.warn(
         `[compliance_scan] tenant ${s.id} has an invalid scan schedule: ${complianceErrorMessage(error)}`,
       )
@@ -352,7 +357,7 @@ export async function scanCompliance(
       } catch (error) {
         // One damaged imported obligation must not suppress every other
         // compliance status (or equipment maintenance) for this tenant.
-        result.errors += 1
+        result.configErrors += 1
         console.warn(
           `[compliance_scan] form obligation ${schedule.id} has an invalid schedule: ${complianceErrorMessage(error)}`,
         )

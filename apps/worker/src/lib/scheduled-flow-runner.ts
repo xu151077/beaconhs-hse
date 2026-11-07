@@ -17,10 +17,17 @@ import { interpolate, resolveEmails, roleUserIds } from './session-overdue-flows
 import { lastCronOccurrenceBetween, parseCron, type CronFields } from './cron'
 import { renderEmail } from '@beaconhs/email-render'
 
-type ScheduledFlowScanResult = { flows: number; ran: number; errors: number }
+type ScheduledFlowScanResult = {
+  flows: number
+  ran: number
+  /** Runtime failures — the tick throws so BullMQ retries. */
+  errors: number
+  /** Persisted bad cron — logged once per tick, must not fail every tick. */
+  configErrors: number
+}
 
 export async function scanScheduledFlows(now: Date = new Date()): Promise<ScheduledFlowScanResult> {
-  const result: ScheduledFlowScanResult = { flows: 0, ran: 0, errors: 0 }
+  const result: ScheduledFlowScanResult = { flows: 0, ran: 0, errors: 0, configErrors: 0 }
   const tenantRows = await withSuperAdmin(db, (tx) => tx.select({ id: tenants.id }).from(tenants))
 
   for (const t of tenantRows) {
@@ -50,7 +57,7 @@ export async function scanScheduledFlows(now: Date = new Date()): Promise<Schedu
             cron = parseCron(node.data.trigger.cron)
           } catch (error) {
             invalidCron = true
-            result.errors += 1
+            result.configErrors += 1
             console.warn(
               `[scheduled_flow] tenant ${t.id} flow ${flow.id}: bad cron on ${node.id} — ${error instanceof Error ? error.message : error}`,
             )

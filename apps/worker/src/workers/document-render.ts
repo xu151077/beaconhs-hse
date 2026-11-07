@@ -224,11 +224,31 @@ export async function renderDocumentVersion(args: {
     console.log(`[document-render] version ${versionId} rendered (${pdf.length} bytes)`)
   } catch (err) {
     if (uploadedKey) {
-      await deleteObject({ key: uploadedKey }).catch(() => undefined)
+      await deleteObject({ key: uploadedKey }).catch((cleanupError: unknown) => {
+        console.error('[document-render] could not delete staged artifact', cleanupError)
+      })
     }
     const message = renderErrorMessage(err)
     console.error(`[document-render] version ${versionId} failed:`, message)
-    await setStatus('failed', message).catch(() => {})
+    // Persisting the failed status is a STATE WRITE, not best-effort cleanup.
+    // Silently swallowing its failure leaves the version stuck at `processing`
+    // with no operator signal; keep both errors visible.
+    let statusError: unknown = null
+    try {
+      await setStatus('failed', message)
+    } catch (error) {
+      statusError = error
+      console.error(
+        `[document-render] could not persist failed status for version ${versionId}`,
+        error,
+      )
+    }
+    if (statusError) {
+      throw new AggregateError(
+        [err, statusError],
+        `Render failed and the failure status could not be saved: ${message}`,
+      )
+    }
     throw err
   }
 }

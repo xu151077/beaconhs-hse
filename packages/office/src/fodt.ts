@@ -24,8 +24,20 @@ function decodeEntities(s: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n: string) => {
+      const cp = Number(n)
+      // A malformed entity (out-of-range / NaN) must degrade to the literal
+      // instead of throwing RangeError out of the whole FODT conversion.
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff
+        ? String.fromCodePoint(cp)
+        : `&#${n};`
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => {
+      const cp = parseInt(n, 16)
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff
+        ? String.fromCodePoint(cp)
+        : `&#x${n};`
+    })
     .replace(/&amp;/g, '&')
 }
 

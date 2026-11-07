@@ -36,7 +36,10 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  console.error('[health] worker dependencies are not ready')
+main().catch((error: unknown) => {
+  // Surface WHICH dependency failed — DB down, Redis down, an insecure secret
+  // or a repeat-registry mismatch are different operator actions. The previous
+  // no-arg catch collapsed them all into one unactionable line.
+  console.error('[health] worker dependencies are not ready', error)
   process.exitCode = 1
 })

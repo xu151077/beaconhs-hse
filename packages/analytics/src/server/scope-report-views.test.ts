@@ -508,6 +508,7 @@ describe('report_hazid_signatures stays on the Hazard ID ladder', () => {
     'person_id',
     'external_name',
     'signed_at',
+    'person_uuid',
   ])
 
   it('is NOT exposed to a caller holding only the studio grant', () => {
@@ -528,11 +529,15 @@ describe('report_hazid_signatures stays on the Hazard ID ladder', () => {
     expect(all).toHaveLength(1)
     expect(all[0]?.baseFilter).toBeUndefined()
 
-    // A self-tier reader must still be pinned to their own rows.
+    // A self-tier reader must still be pinned to their own rows — and to the
+    // REAL person UUID column, not the `person_id` display name the view also
+    // exposes. Binding to the name silently returned zero rows for every
+    // worker/foreman holding hazid.read.self.
     const worker = subject('worker', { personId: 'verif-worker' })
     const own = scopeAnalyticsEntities(worker, [signatures])
     expect(own).toHaveLength(1)
-    expect(filterFor(own[0]?.baseFilter, 'person_id')?.value).toEqual(['verif-worker'])
+    expect(filterFor(own[0]?.baseFilter, 'person_uuid')?.value).toEqual(['verif-worker'])
+    expect(filterFor(own[0]?.baseFilter, 'person_id')).toBeUndefined()
   })
 
   it('resolves identically to the base table it projects from', () => {

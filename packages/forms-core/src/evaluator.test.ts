@@ -52,6 +52,38 @@ describe('evaluateLogicRule', () => {
       )
     })
 
+    it('in / notIn compare numeric and boolean values against designer string lists', () => {
+      // Regression: LogicBuilder persists comparison values as strings, while
+      // number/boolean fields store typed values. Strict includes() made
+      // `rating in ["1","2"]` never match and `notIn` always match — hiding
+      // required fields and firing wrong automations.
+      const numbers = makeCtx({ values: { rating: 3 } })
+      expect(evaluateLogicRule({ op: 'in', field: 'rating', value: ['2', '3'] }, numbers)).toBe(
+        true,
+      )
+      expect(evaluateLogicRule({ op: 'in', field: 'rating', value: ['1', '2'] }, numbers)).toBe(
+        false,
+      )
+      expect(evaluateLogicRule({ op: 'notIn', field: 'rating', value: ['1', '2'] }, numbers)).toBe(
+        true,
+      )
+      expect(evaluateLogicRule({ op: 'notIn', field: 'rating', value: ['3'] }, numbers)).toBe(false)
+
+      const booleans = makeCtx({ values: { passed: true } })
+      expect(evaluateLogicRule({ op: 'in', field: 'passed', value: ['true'] }, booleans)).toBe(true)
+      expect(evaluateLogicRule({ op: 'notIn', field: 'passed', value: ['true'] }, booleans)).toBe(
+        false,
+      )
+
+      const numericArray = makeCtx({ values: { scores: [1, 2] } })
+      expect(evaluateLogicRule({ op: 'in', field: 'scores', value: ['2'] }, numericArray)).toBe(
+        true,
+      )
+      expect(evaluateLogicRule({ op: 'notIn', field: 'scores', value: ['2'] }, numericArray)).toBe(
+        false,
+      )
+    })
+
     it('isSet / isNotSet treat undefined, null, empty-string, empty-array as empty', () => {
       const ctx = makeCtx({
         values: { a: 'x', b: '', c: null, d: undefined, e: [] },

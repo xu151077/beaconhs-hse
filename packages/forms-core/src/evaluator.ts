@@ -165,14 +165,16 @@ export function evaluateLogicRule(rule: LogicRule, ctx: EvalContext): boolean {
       return coerceNumber(resolveFieldRef(ctx, rule.field)) <= coerceNumber(rule.value)
     case 'in': {
       const v = resolveFieldRef(ctx, rule.field)
-      // Multi-select / checkbox_group store arrays — treat as "any overlap".
-      if (Array.isArray(v)) return v.some((x) => rule.value.includes(x))
-      return rule.value.includes(v)
+      // The designer persists comparison values as strings while responses
+      // store typed values (number field = 3, not "3"). Strict includes()
+      // silently never matched — see looseEquals above for eq/ne.
+      if (Array.isArray(v)) return v.some((x) => rule.value.some((c) => looseEquals(x, c)))
+      return rule.value.some((c) => looseEquals(v, c))
     }
     case 'notIn': {
       const v = resolveFieldRef(ctx, rule.field)
-      if (Array.isArray(v)) return !v.some((x) => rule.value.includes(x))
-      return !rule.value.includes(v)
+      if (Array.isArray(v)) return !v.some((x) => rule.value.some((c) => looseEquals(x, c)))
+      return !rule.value.some((c) => looseEquals(v, c))
     }
     case 'isSet':
       return !isEmpty(resolveFieldRef(ctx, rule.field))

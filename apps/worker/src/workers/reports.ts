@@ -225,7 +225,9 @@ export async function processReportRun(job: Job<ReportRunJobData>): Promise<void
           return { attachmentId: att.id, rowCount, created: true }
         })
       } catch (error) {
-        await deleteObject({ key: r2Key }).catch(() => undefined)
+        await deleteObject({ key: r2Key }).catch((cleanupError: unknown) => {
+          console.error('[reports] could not delete orphaned PDF artifact', cleanupError)
+        })
         throw error
       }
       if (persistence.created) {

@@ -41,8 +41,15 @@ function getPushQueue(): Queue<PushJobData> {
   return pushQueue
 }
 
-export async function enqueuePush(data: PushJobData, jobId: string) {
+export async function enqueuePush(
+  data: PushJobData,
+  jobId: string,
+  options: { delay?: number } = {},
+) {
   assertPushJobData(data)
   assertQueueJobId(jobId, 'Push jobId')
-  return getPushQueue().add('send', data, { jobId })
+  return getPushQueue().add('send', data, {
+    jobId,
+    ...(options.delay && options.delay > 0 ? { delay: options.delay } : {}),
+  })
 }

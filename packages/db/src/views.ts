@@ -614,6 +614,14 @@ export const REPORT_VIEWS_SQL: string[] = [
   // Without that entry the `report_` prefix default would hand this entity the
   // studio-wide `reports.read` tier, so any viewer of reports could read every
   // hazard-assessment signature in the tenant.
+  // `person_id` is the DISPLAY NAME (`Last, First`) — it has been since this
+  // view shipped, and seeded report definitions/custom-field options select it
+  // as a text column, so changing its value or type would break every existing
+  // tenant's report. But the scope engine binds every PERSON_COLUMNS candidate
+  // to the caller's person UUID, which made `hazid.read.self`/`site` holders see
+  // ZERO rows. `person_uuid` is the real UUID appended at the END of the
+  // projection (CREATE OR REPLACE may append columns) and is the column the
+  // scope spec for this entity binds to. Name stays for display, uuid for auth.
   `CREATE OR REPLACE VIEW report_hazid_signatures AS
      SELECT
        signature.id,
@@ -625,7 +633,8 @@ export const REPORT_VIEWS_SQL: string[] = [
          ELSE person.last_name || ', ' || person.first_name
        END                    AS person_id,
        signature.external_name,
-       signature.signed_at
+       signature.signed_at,
+       person.id              AS person_uuid
      FROM hazid_assessment_signatures signature
      JOIN hazid_assessments assessment
        ON assessment.tenant_id = signature.tenant_id

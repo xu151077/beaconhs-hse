@@ -16,9 +16,17 @@ async function rateLimitClient() {
     // idle connection failure from becoming an unhandled EventEmitter error.
     client.on('error', () => undefined)
   }
-  if (client.status === 'wait') {
-    clientConnect ??= client.connect().finally(() => {
-      clientConnect = null
+  if (client.status === 'wait' && !clientConnect) {
+    const connecting = client.connect()
+    clientConnect = connecting
+    // Clear the shared promise only on FAILURE (so a later caller can retry).
+    // On success the client leaves `wait`, so this branch is never re-entered.
+    // The old `.finally(() => { clientConnect = null })` cleared it *before*
+    // the promise settled: a concurrent caller arriving in that window called
+    // `connect()` a second time on an already-connecting ioredis client and
+    // got "Redis is already connecting/connected".
+    void connecting.catch(() => {
+      if (clientConnect === connecting) clientConnect = null
     })
   }
   if (clientConnect) await clientConnect

@@ -88,13 +88,17 @@ describe('report seeds compile against the runtime (discovered) catalogue', () =
     expect(keys).toContain('hazid_assessment_signatures')
     const projection = RUNTIME_CATALOG.entities.find((e) => e.key === 'hazid_signatures')!
     expect(projection.table).toBe('report_hazid_signatures')
-    // The curated 5-column projection, not the base table's 12 raw columns.
+    // 5 curated display columns + `person_uuid`, the real UUID the scope
+    // engine binds self/site tiers to. `person_id` stays the "Last, First"
+    // display name (see packages/db/src/views.ts), so narrowing readers need
+    // a separate uuid column — without it every worker saw zero rows.
     expect(projection.columns.map((c) => c.key)).toEqual([
       'assessment_id',
       'signature_type',
       'person_id',
       'external_name',
       'signed_at',
+      'person_uuid',
     ])
   })
 

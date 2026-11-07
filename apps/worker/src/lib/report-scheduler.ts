@@ -19,6 +19,44 @@ import {
   DURABLE_PUBLICATION_BATCH_SIZE,
 } from './durable-publication-policy'
 
+// Maximum missed occurrences a single schedule may catch up in one tick. A
+// schedule left active across months must not flood one transaction; the next
+// tick resumes from whatever occurrence was left pending.
+const MAX_CATCHUP_PER_TICK = 10
+
+/**
+ * Walk a schedule's occurrences from `nextRunAt` up to `now`, in order.
+ * Pure so the outage catch-up can be tested without a database.
+ *
+ * `nextAfter` must return the first occurrence strictly AFTER its argument
+ * (or null when the cadence has ended). The result's `next` is the first
+ * UNPROCESSED occurrence — possibly still in the past when the cap was hit —
+ * which is what keeps the following tick selecting this schedule again.
+ */
+export function collectMissedOccurrences(args: {
+  nextRunAt: Date | null
+  now: Date
+  nextAfter: (after: Date) => Date | null
+  max?: number
+}): { occurrences: Date[]; next: Date | null; ended: boolean } {
+  const max = args.max ?? MAX_CATCHUP_PER_TICK
+  const occurrences: Date[] = []
+  let occurrence = args.nextRunAt ?? new Date(Math.floor(args.now.getTime() / 60_000) * 60_000)
+  let ended = false
+  while (occurrence.getTime() <= args.now.getTime() && occurrences.length < max) {
+    occurrences.push(occurrence)
+    // `+1ms` makes "strictly after this occurrence" explicit regardless of
+    // whether the cadence helper treats its cursor as inclusive.
+    const following = args.nextAfter(new Date(occurrence.getTime() + 1))
+    if (!following || following.getTime() <= occurrence.getTime()) {
+      ended = true
+      break
+    }
+    occurrence = following
+  }
+  return { occurrences, next: ended ? null : occurrence, ended }
+}
+
 async function claimQueuedReportRuns(tx: Database, now: Date) {
   const candidates = await tx
     .select({ id: reportRuns.id })
@@ -85,33 +123,41 @@ export async function scanReportSchedules(now: Date = new Date()): Promise<void>
       .for('update', { skipLocked: true })
 
     const runs: { id: string; tenantId: string; scheduleId: string }[] = []
+    // A worker outage spanning several cadence boundaries used to generate
+    // exactly ONE run and then jump nextRunAt to the first occurrence after
+    // wall-clock `now` — every intermediate occurrence was silently lost.
     for (const schedule of due) {
-      const occurrence = schedule.nextRunAt ?? new Date(Math.floor(now.getTime() / 60_000) * 60_000)
-      const run = await claimBeaconReportRun(tx, {
-        scheduleId: schedule.id,
-        scheduledFor: occurrence,
-        trigger: 'scheduled',
-      })
-      const next = computeNextRunAt(
-        {
-          cadence: schedule.cadence,
-          repeatEvery: schedule.repeatEvery,
-          dayOfWeek: schedule.dayOfWeek,
-          dayOfMonth: schedule.dayOfMonth,
-          weekOfMonth: schedule.weekOfMonth,
-          hour: schedule.hour,
-          minute: schedule.minute,
-          timezone: schedule.timezone,
-          startsOn: schedule.startsOn,
-          endsOn: schedule.endsOn,
-        },
+      const config = {
+        cadence: schedule.cadence,
+        repeatEvery: schedule.repeatEvery,
+        dayOfWeek: schedule.dayOfWeek,
+        dayOfMonth: schedule.dayOfMonth,
+        weekOfMonth: schedule.weekOfMonth,
+        hour: schedule.hour,
+        minute: schedule.minute,
+        timezone: schedule.timezone,
+        startsOn: schedule.startsOn,
+        endsOn: schedule.endsOn,
+      }
+      const { occurrences, next } = collectMissedOccurrences({
+        nextRunAt: schedule.nextRunAt,
         now,
-      )
+        nextAfter: (after) => computeNextRunAt(config, after),
+      })
+      for (const occurrence of occurrences) {
+        const run = await claimBeaconReportRun(tx, {
+          scheduleId: schedule.id,
+          scheduledFor: occurrence,
+          trigger: 'scheduled',
+        })
+        runs.push({ id: run.id, tenantId: schedule.tenantId, scheduleId: schedule.id })
+      }
+      // If the cadence ended, deactivate; otherwise `next` is the first
+      // unprocessed occurrence and may still be in the past (catch-up cap).
       await tx
         .update(reportSchedules)
         .set({ nextRunAt: next, ...(next ? {} : { active: false }) })
         .where(eq(reportSchedules.id, schedule.id))
-      runs.push({ id: run.id, tenantId: schedule.tenantId, scheduleId: schedule.id })
     }
     return runs
   })

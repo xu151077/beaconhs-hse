@@ -44,9 +44,13 @@ export async function processScheduledTick(job: Job<ScheduledTick>): Promise<voi
       const slotMs = job.timestamp + (job.opts.delay ?? 0)
       const r = await scanCompliance(Number.isFinite(slotMs) ? new Date(slotMs) : new Date())
       // Runs every minute now (per-tenant self-gating); only log when work happened.
-      if (r.due > 0 || r.errors > 0) {
+      // `configErrors` (a tenant's persisted bad cron) is logged above by the
+      // scanner but must NOT fail the tick: one broken config would otherwise
+      // retry and fail the whole job every single minute forever. Only real
+      // runtime/dispatch errors throw so BullMQ retries them.
+      if (r.due > 0 || r.errors > 0 || r.configErrors > 0) {
         console.log(
-          `[scheduled] compliance_scan: ${r.due}/${r.tenants} tenants due / ${r.obligations} obligations / ${r.reminders} reminders / ${r.maintenance} maintenance / ${r.errors} errors`,
+          `[scheduled] compliance_scan: ${r.due}/${r.tenants} tenants due / ${r.obligations} obligations / ${r.reminders} reminders / ${r.maintenance} maintenance / ${r.errors} errors / ${r.configErrors} bad configs`,
         )
       }
       if (r.errors > 0) {
@@ -70,9 +74,9 @@ export async function processScheduledTick(job: Job<ScheduledTick>): Promise<voi
     case 'scheduled_flow_scan': {
       const slotMs = job.timestamp + (job.opts.delay ?? 0)
       const r = await scanScheduledFlows(Number.isFinite(slotMs) ? new Date(slotMs) : new Date())
-      if (r.flows > 0 || r.errors > 0)
+      if (r.flows > 0 || r.errors > 0 || r.configErrors > 0)
         console.log(
-          `[scheduled] scheduled_flow_scan: ${r.flows} flows fired / ${r.ran} actions / ${r.errors} errors`,
+          `[scheduled] scheduled_flow_scan: ${r.flows} flows fired / ${r.ran} actions / ${r.errors} errors / ${r.configErrors} bad configs`,
         )
       if (r.errors > 0) {
         throw new Error(`Scheduled flow scan completed with ${r.errors} flow error(s)`)

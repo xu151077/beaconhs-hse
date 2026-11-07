@@ -543,8 +543,9 @@ export const REPORT_ENTITIES: ReportEntity[] = [
     // `report_compliance_status` and `report_monitored_sessions` already do.
     //
     // `report_hazid_signatures` — like `report_compliance_status` and
-    // `report_monitored_sessions` — is a REAL PostgreSQL view (migration
-    // 0045_report_projection_views), not an authored `from` subquery. That matters
+    // `report_monitored_sessions` — is a REAL PostgreSQL view created by
+    // `applyReportingViews()` in `packages/db/src/views.ts` (not a migration
+    // and not an authored `from` subquery). That matters
     // because the report engine honours `from` while the public REST API does not:
     // `apps/web/src/lib/api/query.ts` emits `FROM "${entity.table}"` literally, so
     // an authored projection published an endpoint that resolved a relation which
@@ -559,6 +560,9 @@ export const REPORT_ENTITIES: ReportEntity[] = [
       { key: 'person_id', label: 'Employee', kind: 'text' },
       { key: 'external_name', label: 'External signer', kind: 'text' },
       { key: 'signed_at', label: 'Signed at', kind: 'timestamp' },
+      // The real person UUID (see views.ts). The scope engine binds self/site
+      // tiers here; `person_id` above stays the "Last, First" display name.
+      { key: 'person_uuid', label: 'Employee (id)', kind: 'uuid' },
     ],
     defaultSort: { column: 'signed_at', direction: 'desc' },
   },

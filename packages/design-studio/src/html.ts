@@ -11,6 +11,7 @@ import type {
   PersonBadgeDesignData,
   TextElement,
 } from './schema'
+import { DESIGN_DOCUMENT_LIMITS } from './schema'
 
 // Internal: every field lookup goes through this widened bag so credential,
 // equipment, and person-badge data shapes resolve through one switch without
@@ -154,9 +155,26 @@ function baseStyle(element: DesignElement): string {
   )
 }
 
+const DEFAULT_FONT_FAMILY = "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"
+
+/**
+ * A tenant-authored font stack is interpolated into a `style="…"` attribute.
+ * Strip characters that could terminate the attribute or inject extra CSS
+ * declarations, then HTML-escape the rest. Font names legitimately contain
+ * quotes, commas, spaces, hyphens and dots, so those survive.
+ */
+function safeFontFamily(value: string | undefined): string {
+  if (!value) return DEFAULT_FONT_FAMILY
+  const cleaned = value
+    .replace(/[;:{}\\()\u0000-\u001f\u007f]/g, '')
+    .slice(0, DESIGN_DOCUMENT_LIMITS.fontFamilyLength)
+    .trim()
+  return cleaned ? esc(cleaned) : DEFAULT_FONT_FAMILY
+}
+
 function textStyle(element: TextElement | DataFieldElement): string {
   return [
-    `font-family:${element.fontFamily ?? "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"}`,
+    `font-family:${safeFontFamily(element.fontFamily)}`,
     `font-size:${element.fontSize ?? 12}pt`,
     `font-weight:${element.fontWeight ?? '600'}`,
     `font-style:${element.fontStyle ?? 'normal'}`,

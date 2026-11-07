@@ -81,7 +81,10 @@ export async function processNotification(job: Job<NotifyJobData>): Promise<void
     const emailAllowed = allowed.includes('email') && (critical || !digestOn)
     const emailDelayMs =
       !critical && quietNow && quietHours ? msUntilQuietHoursEnd(quietHours, now) : 0
-    const pushAllowed = allowed.includes('push') && (critical || !quietNow)
+    // Quiet hours DEFER a non-critical push; they must not drop it. Email is
+    // already delayed below, and push has a delayed-job path now too.
+    const pushDelayMs = emailDelayMs
+    const pushAllowed = allowed.includes('push')
     const smsAllowed = allowed.includes('sms')
 
     const targets =
@@ -157,6 +160,7 @@ export async function processNotification(job: Job<NotifyJobData>): Promise<void
       emailAllowed,
       emailDelayMs,
       pushAllowed,
+      pushDelayMs,
       smsAllowed,
       subscriptions,
     }
@@ -225,6 +229,7 @@ export async function processNotification(job: Job<NotifyJobData>): Promise<void
             linkPath: d.linkPath,
           },
           pushJobId,
+          { delay: plan.pushDelayMs },
         )
       }
     }

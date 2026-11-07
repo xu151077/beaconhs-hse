@@ -395,6 +395,10 @@ describe('defect D10 — a person column may never hold a display name', () => {
     // The class-level guard. `person_id`, `subject_person_id`, `driver_person_id`,
     // `inspector_person_id`, `current_holder_person_id` and `operator_person_id` are all
     // compared against person uuids, so none may be sourced from a name.
+    //
+    // Capture the WHOLE select-list item up to the alias. The old `(\S+)\s+AS`
+    // only saw the last token, so `CASE ... END AS person_id` passed it as the
+    // harmless word "END" — the exact bypass that let D10's sibling ship.
     const PERSON_COLUMNS = [
       'person_id',
       'subject_person_id',
@@ -403,19 +407,41 @@ describe('defect D10 — a person column may never hold a display name', () => {
       'current_holder_person_id',
       'operator_person_id',
     ]
+    // One historical exception: this view has ALWAYS exposed `person_id` as the
+    // "Last, First" display name (seeded report definitions and custom-field
+    // options select it as text). Changing it would show UUIDs in every
+    // existing tenant's report. The scope spec binds `person_uuid` instead —
+    // asserted below — so no uuid comparison ever lands on this display column.
+    const DISPLAY_ONLY_ALIASES = new Set(['report_hazid_signatures.person_id'])
     let checked = 0
     for (const statement of REPORT_VIEWS_SQL) {
       const body = sqlOnly(statement)
+      const viewName = /CREATE OR REPLACE VIEW (\w+)/.exec(body)?.[1] ?? ''
       for (const column of PERSON_COLUMNS) {
-        for (const match of body.matchAll(new RegExp(`(\\S+)\\s+AS\\s+${column}\\b`, 'gi'))) {
+        if (DISPLAY_ONLY_ALIASES.has(`${viewName}.${column}`)) continue
+        for (const match of body.matchAll(
+          new RegExp(`(?:SELECT|,)([^,;]*?)\\s+AS\\s+${column}\\b`, 'gi'),
+        )) {
           checked += 1
+          const source = match[1] ?? ''
           expect(
-            match[1],
-            `${column} must be sourced from a person id column, got ${match[1]}`,
-          ).not.toMatch(/last_name|first_name|full_name|\bname\b/i)
+            source,
+            `${viewName}.${column} must be sourced from a person id column, got ${source}`,
+          ).not.toMatch(/last_name|first_name|full_name|\|\|/i)
         }
       }
     }
     expect(checked, 'fixture must exercise at least one person-column alias').toBeGreaterThan(0)
+  })
+
+  it('report_hazid_signatures keeps the display name AND exposes a real uuid binding', () => {
+    // Regression for the sibling of D10: a worker with hazid.read.self saw ZERO
+    // signatures because the scope engine compared a "Last, First" name to a
+    // person uuid. The display column stays for compatibility; `person_uuid`
+    // (appended, so CREATE OR REPLACE accepts it) is what scope binds to.
+    const body = flat('report_hazid_signatures')
+    expect(body).toContain('person.id AS person_uuid')
+    expect(body).toContain('END AS person_id')
+    expect(body.indexOf('AS person_id')).toBeLessThan(body.indexOf('AS person_uuid'))
   })
 })

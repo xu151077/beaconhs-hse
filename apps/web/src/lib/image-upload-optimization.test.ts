@@ -2,7 +2,10 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { optimizeUploadedImage, UPLOADED_IMAGE_POLICY } from './image-upload-optimization'
 
-describe('uploaded image optimization', () => {
+// sharp's first transform in a fresh process pays a native-module load cost;
+// under full-parallel `pnpm test --force` that exceeds vitest's 5s default.
+// The work is genuinely heavier than a unit assertion, not a broken test.
+describe('uploaded image optimization', { timeout: 30_000 }, () => {
   it('resizes and recompresses an oversized camera photo', async () => {
     const original = await sharp({
       create: {

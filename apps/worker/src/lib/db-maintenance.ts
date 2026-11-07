@@ -18,6 +18,10 @@ import { PLATFORM_SETTINGS_ID, platformSettings } from '@beaconhs/db/schema'
 // live operations). Deletes are batched to keep locks short on large tables.
 
 const DELETE_BATCH = 5000
+// Conservative fallback when a stored retention override is not a finite
+// number (e.g. a hand-edited platform_settings.database row). Keeps the daily
+// maintenance job from failing forever on one malformed value.
+const FALLBACK_RETENTION_DAYS = 365
 
 type DbMaintenanceResult = {
   ok: boolean
@@ -42,7 +46,11 @@ async function pruneTable(
   retentionDays: number,
   retentionWhere?: string,
 ): Promise<number> {
-  const days = Math.max(1, Math.floor(retentionDays))
+  // A malformed stored retention value (NaN / Infinity / negative) used to
+  // produce `interval 'NaN days'`, a SQL syntax error that failed the daily
+  // maintenance tick every day forever. Fall back to the table default.
+  const parsed = Number(retentionDays)
+  const days = Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : FALLBACK_RETENTION_DAYS
   let total = 0
   for (;;) {
     const deleted = await withSuperAdmin(db, async (tx) => {

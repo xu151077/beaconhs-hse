@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [main]
+    branches: [main, hse-platform]
   pull_request:
-    branches: [main]
+    branches: [main, hse-platform]
   schedule:
     - cron: '17 7 * * 1'
 

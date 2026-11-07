@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, hse-platform]
   pull_request:
-    branches: [main]
+    branches: [main, hse-platform]
   workflow_dispatch:
 
 jobs:
@@ -175,7 +175,11 @@ jobs:
 
   deploy-dev:
     name: Deploy tested commit to dev
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # The gated dev deploy is the upstream main-branch path only. This fork's
+    # default branch is hse-platform, whose pushes must still run the full CI
+    # gate above — but calling deploy-dev from hse-platform would fail inside
+    # the reusable workflow's own `refs/heads/main` guard and turn CI red.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: ci
     permissions:
       contents: read

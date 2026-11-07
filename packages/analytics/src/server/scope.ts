@@ -421,9 +421,14 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
     // module's own ladder: the same `hazid.read.*` prefix and the same
     // site/person columns the `hazid_` prefix rule gives the base table this
     // projection selects from.
+    //
+    // `personCols` binds to `person_uuid`, NOT the default `person_id`: in this
+    // view `person_id` is a DISPLAY NAME ("Last, First"), so comparing it to
+    // the caller's person UUID silently returned zero rows for every self/site
+    // holder. `person_uuid` is the real people.id appended to the projection.
     read: { prefix: 'hazid' },
     siteCols: SITE_COLUMNS,
-    personCols: PERSON_COLUMNS,
+    personCols: ['person_uuid'],
   },
 
   // Platform internals with no module owner.

@@ -331,8 +331,10 @@ async function emailRenderedPdf(
   // The transient render artifact has served its purpose once attached.
   try {
     await deleteObject({ key: artifact.r2Key })
-  } catch {
-    /* best-effort cleanup */
+  } catch (cleanupError) {
+    // The transient artifact is orphaned but the email is already attached;
+    // log it so storage growth is diagnosable instead of silent.
+    console.error('[pdf] could not delete transient render artifact', cleanupError)
   }
 }
 

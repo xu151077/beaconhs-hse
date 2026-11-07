@@ -57,9 +57,23 @@ for (const w of workers) {
 
 let shutdownPromise: Promise<void> | null = null
 
+// A job can legitimately run for minutes (AI has a 5-minute lock, PDF books
+// render up to 250 MiB of sources, outbound HTTP has a 120 s timeout). Without
+// a hard deadline, `worker.close()` can outlive the orchestrator's SIGTERM
+// grace period and the process is SIGKILLed mid-transaction. Give the drain a
+// bounded window, then exit non-zero so the supervisor sees an unclean stop.
+const SHUTDOWN_GRACE_MS = Number(process.env.BEACONHS_WORKER_SHUTDOWN_GRACE_MS ?? 45_000)
+
 const shutdown = (signal: NodeJS.Signals) => {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
+    const deadline = setTimeout(() => {
+      console.error(
+        `[worker] shutdown exceeded ${SHUTDOWN_GRACE_MS}ms; forcing exit before the orchestrator kills us mid-transaction`,
+      )
+      process.exit(1)
+    }, SHUTDOWN_GRACE_MS)
+    deadline.unref()
     console.log(`[worker] ${signal} received; draining active jobs…`)
     const closeResults = await Promise.allSettled(workers.map((worker) => worker.close()))
     let exitCode = 0
@@ -84,6 +98,7 @@ const shutdown = (signal: NodeJS.Signals) => {
       exitCode = 1
       console.error('[worker] observability flush failed during shutdown:', error)
     }
+    clearTimeout(deadline)
     process.exit(exitCode)
   })()
   return shutdownPromise
@@ -91,3 +106,18 @@ const shutdown = (signal: NodeJS.Signals) => {
 
 process.once('SIGINT', () => void shutdown('SIGINT'))
 process.once('SIGTERM', () => void shutdown('SIGTERM'))
+
+// A rejection outside a BullMQ worker's `failed` event (a stray promise in a
+// handler, an event-emitter callback) must still reach Sentry and drain the
+// observability buffer before the runtime terminates.
+for (const event of ['unhandledRejection', 'uncaughtException'] as const) {
+  process.on(event, (reason: unknown) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason))
+    captureWorkerFailure(error, { queue: event })
+    console.error(`[worker] ${event}:`, error)
+    void flushObservability().then(
+      () => process.exit(1),
+      () => process.exit(1),
+    )
+  })
+}
