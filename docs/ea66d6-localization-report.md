@@ -780,3 +780,44 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / build 0。`test --force` 24/25，
 - 上线前先以新镜像执行 `APP_ROLE=migrate` 应用视图变更：生产 `report_hazid_signatures.person_uuid` 列为 `uuid` 已核验存在；迁移账本仍为 52（无需新迁移）
 - 公网 `/login` 200，各容器健康
 - CI 工作流改动需用户 `git push origin hse-platform` 后才会首次真正触发六门禁与 gitleaks（此前从未运行）
+
+---
+
+## 22. 债务清偿（EA-66D.23）
+
+承接 §21.5 的债务，本轮修完全部可在源码内确定的项：
+
+### 22.1 CI 红问题定位（根因）
+
+CI 工作流加了 `hse-platform`，首次真实 run 是本地门禁全绿、CI 在 `deadcode:check` 红——根因是 `docs/evidence/`（1.5G 本地归档）在同一 session 内先被我加进 `.gitignore` 又撤回，导致它在本地不被 knip 扫描、但 fresh clone 也不存在 `docs/evidence/*/raw/**`，于是 knip 的显式 ignore 在 CI 触发 "Remove from ignore" hint（`--treat-config-hints-as-errors`）。修复：`/docs/evidence/` 进 `.gitignore`（根治：knip 尊重 gitignore），knip 的显式忽略删除；`docs/evidence` 追踪文件为 0，无历史丢失。
+
+### 22.2 outbox 死信（C5）
+
+`domain_event_outbox_status` 枚举追加 `dead`（迁移 0053），`drainDomainEventOutbox` 在 `attempts >= 10` 后置终态、不再占批次槽位，保留 `attempts + lastError`；每轮日志含 `dead` 计数。测试：纯函数边界 + result 形状。
+
+### 22.3 FK 索引（F4）
+
+新增 4 个 `(tenant_id, …)` 索引：`corrective_actions_site_idx`、`journal_entries_supervisor_idx`、`safe_distance_records_operator/supervisor_idx`（迁移 0053，随 `db:generate` 快照同步）。
+
+### 22.4 其余 5 项
+
+| #                           | 修复                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| avg_section 稀释均值        | 只对真正携带值的行取平均（空白格不再除零稀释）+ 3 用例                                      |
+| PDF 模板脚本硬化（F8）      | `<head>` 注 `script-src 'none'` CSP；`document.fonts.ready` 是 CDP 求值不受影响 + 1 用例    |
+| reconciler 计数虚增（N3）   | `enqueueDocumentVersionRender` 返回 `{created}`；仍活跃的旧任务不再计为新 enqueue           |
+| bt-freeze-driver 死门（N9） | 死常量改真实环境判定（非 production 或显式 opt-in），`db` 句柄传真实值；测试改真实断言      |
+| AI 队列证据（S7）           | 确定性 jobId/retention 改为 options 最后写入防覆盖；`db_maintenance` 去重加 1h TTL          |
+| 邮件重复发送（S4）          | “已发送”落账写入加 3 次重试，从源头收窄重复风险；残余窗口如实记录                           |
+| isolate-alert 假总线（C8）  | 从 `@beaconhs/events` 主入口摘除，迁到 `@beaconhs/events/testing/*` 子路径，调用方/测试同步 |
+
+### 22.5 门禁
+
+format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0（含 migration-drift PASS）。
+
+### 22.6 部署
+
+- 镜像 `beaconhs@sha256:39d981d3…`，部署 ID `bb2d82990114…-20261101-001`，Gate 5 **PASS**，web 日志 `[schema] match: applied 53`
+- 上线前先以新镜像执行 `APP_ROLE=migrate`（0053）：生产迁移计数 53，`domain_event_outbox_status` 含 `dead`，4 个新索引（`corrective_actions_site_idx` 等）均已创建并核验
+- web/worker 日志无错误，公网 `/login` 200
+- CI 工作流改动（`.github/workflows/ci.yml` + `security.yml` 监听 `hse-platform`）已随 commit `1b268c92` 提交；需用户 `git push origin hse-platform` 后首次真正跑 CI 确认全绿
