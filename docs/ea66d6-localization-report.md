@@ -726,3 +726,57 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / build 0。`test --force` 24/25，
 - 镜像 `beaconhs@sha256:26b0dd1f…`，部署 ID `90bcf9f2…-20261101-001`，Gate 5 PASS，web 日志 `[schema] match: applied 52`（本轮无新迁移）
 - 未登录探针 `/verify/person/<t>` 与 `/login` 均返回 200；限流按 token 300/10min，6 次探针当然未触发（限流生效已由单测覆盖）
 - F1 修复的线上行为需登录态验证（无 `people.read.all` 的用户搜不到人员），已由回归测试覆盖，等待手测
+
+---
+
+## 21. 第三轮深度审计修复（EA-66D.22）
+
+两路只读审计（后台作业/调度/事件/合规/报表；数据层/表单引擎/渲染/i18n）共确认 30+ 项，本轮修复 16 项，其余评估后列为债务。
+
+### 21.1 CI 从未运行（严重）
+
+仓库默认分支是 `hse-platform`，但 `.github/workflows/ci.yml` 与 `security.yml` 只监听 `main` —— 之前所有 push **既不跑六门禁也不跑 gitleaks**。已改为同时监听两分支；`deploy-dev` 复用工作流自身硬编码 `refs/heads/main`，故给它加 `github.ref == 'refs/heads/main'` 条件，避免 hse-platform 的 CI 变红。
+
+### 21.2 Worker / 调度 / 事件（9 项）
+
+| #   | 修复                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------- |
+| C1  | 安静时段的 Web Push 由「静默丢弃」改为延迟投递（`enqueuePush` 支持 delay）                                          |
+| C2  | 日志 AI 分析异常现在 finalize 为 failed 并 rethrow；`enqueueIfStale` 会淘汰超期的 `running` 行，不再永久卡死该周期  |
+| C3  | worker 健康检查记录真实失败原因（DB/Redis/密钥/注册表）                                                             |
+| C4  | 文档渲染失败状态写入失败不再被吞（AggregateError 保留双错误）；临时产物清理加日志                                   |
+| C6  | 报表调度补上停机期间**每一个**错过的 occurrence（每 tick 上限 10，游标留在未处理处供下轮续追），新增 5 个纯函数测试 |
+| C7  | worker 关闭加 45s 硬期限（unref timer）+ `unhandledRejection`/`uncaughtException` 上报                              |
+| N1  | 租户持久化的坏 cron 从 `errors` 拆为 `configErrors`：只告警，不再让整个分钟 tick 每轮失败重试；运行时错误仍抛       |
+| N2  | 存储型 retention 值非有限数时回退保守默认值，避免 `interval 'Infinity days'` 让每日维护永久失败                     |
+| S6  | rate-limit 的 Redis `connect()` promise 竞态修复（失败才清空共享 promise）                                          |
+
+### 21.3 数据 / 包（6 项）
+
+| #   | 修复                                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | `report_hazid_signatures` 追加 `person_uuid`（真实 people.id），scope 绑定该列 —— 此前持 `hazid.read.self` 的工人**永远看到零行**，因为 `person_id` 存的是 "Last, First" 姓名却拿去和 UUID 比较。用追加列而非改类型，保住已种子租户报表定义与 custom-field 选项的显示语义 |
+| F2  | forms-core `in`/`notIn` 改用 `looseEquals`：此前设计器存字符串、答案存数字/布尔时永不匹配（`notIn` 恒真），可隐藏必填字段、误触发自动化                                                                                                                                   |
+| F3  | D10 回归守卫改为捕获完整别名表达式（旧的 `(\S+) AS` 被 `CASE … END AS` 绕过），并为该视图加正断言                                                                                                                                                                         |
+| F6  | design-studio `fontFamily` 过滤 CSS 元字符并 HTML 转义，防 style 属性越界/注入                                                                                                                                                                                            |
+| F7  | FODT 数字实体加 Unicode 码点边界，越界保留字面量而非抛 RangeError                                                                                                                                                                                                         |
+| F9  | 修正 entities.ts 里指向不存在迁移的过时注释                                                                                                                                                                                                                               |
+
+### 21.4 测试
+
+新增 `report-scheduler.test.ts`（5）、forms-core 数值用例、reporting-view 守卫 2 例、parity 期望更新；根因修复两个既有全量并行 5 秒超时抖动（sharp 原生加载 / freeze-gate 共享时钟），改为 30s 套件超时——**六门禁全绿 26/26**。
+
+### 21.5 评估后未修（如实列为债务）
+
+- **C5** outbox 无限重试无死信：需给 `domain_event_outbox_status` 枚举加终态 + 迁移 + 运维可见面，工作量大
+- **C8** `@beaconhs/events` 导出的 isolated-alert 假总线：仅测试/证据链使用且 env-gated，移除会破坏 G2 历史证据，需单独清理
+- **F4** `corrective_actions.site_org_unit_id` 等 29 个 FK 缺索引：需迁移 0053
+- **F8** PDF 模板 JS 未禁用：禁用可能影响 `document.fonts.ready` 与合法模板，需专门验证
+- **N3/N9**、S1–S5/S7：nit 或需运行时/部署清单确认的疑点
+
+### 21.6 部署
+
+- 镜像 `beaconhs@sha256:cadee5e2…`，部署 ID `7eb7cbcaffa8…-20261101-001`，Gate 5 **PASS**，web 日志 `[schema] match: applied 52`
+- 上线前先以新镜像执行 `APP_ROLE=migrate` 应用视图变更：生产 `report_hazid_signatures.person_uuid` 列为 `uuid` 已核验存在；迁移账本仍为 52（无需新迁移）
+- 公网 `/login` 200，各容器健康
+- CI 工作流改动需用户 `git push origin hse-platform` 后才会首次真正触发六门禁与 gitleaks（此前从未运行）
