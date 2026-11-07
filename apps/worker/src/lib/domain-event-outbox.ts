@@ -3,7 +3,7 @@ import { db, withSuperAdmin, withTenant, type Database } from '@beaconhs/db'
 import { domainEventOutbox } from '@beaconhs/db/schema'
 import { assertDomainEventIdentity, deliverDomainNotification } from '@beaconhs/events'
 import { publishIntegrationEvent } from '@beaconhs/integrations'
-import { domainEventRetryAt } from './domain-event-outbox-policy'
+import { domainEventRetryAt, MAX_DOMAIN_EVENT_ATTEMPTS } from './domain-event-outbox-policy'
 import { dispatchDomainEventWebCommand } from './domain-event-web-command'
 
 // A web command may legitimately run for up to two minutes. Keep the claimed
@@ -18,11 +18,37 @@ type DomainEventOutboxScanResult = {
   claimed: number
   published: number
   retried: number
+  dead: number
 }
 
 class DomainEventLeaseLost extends Error {
   constructor() {
     super('Domain event publishing lease was superseded')
+  }
+}
+
+/**
+ * Decide the row update after a publish failure. Pure so the terminal-dead
+ * boundary is testable without a database. Once attempts reach the cap the
+ * event is `dead` (terminal, still carries lastError) instead of being
+ * released back to `pending` forever.
+ */
+export function domainEventFailureUpdate(args: {
+  attempts: number
+  message: string
+  failedAt: Date
+}): {
+  status: 'dead' | 'pending'
+  availableAt: Date
+  claimedAt: null
+  lastError: string
+} {
+  const terminal = args.attempts >= MAX_DOMAIN_EVENT_ATTEMPTS
+  return {
+    status: terminal ? 'dead' : 'pending',
+    availableAt: terminal ? args.failedAt : domainEventRetryAt(args.attempts, args.failedAt),
+    claimedAt: null,
+    lastError: args.message,
   }
 }
 
@@ -59,7 +85,12 @@ async function renewDomainEventLease(
 export async function drainDomainEventOutbox(
   now: Date = new Date(),
 ): Promise<DomainEventOutboxScanResult> {
-  const result: DomainEventOutboxScanResult = { claimed: 0, published: 0, retried: 0 }
+  const result: DomainEventOutboxScanResult = {
+    claimed: 0,
+    published: 0,
+    retried: 0,
+    dead: 0,
+  }
   const staleBefore = new Date(now.getTime() - CLAIM_TIMEOUT_MS)
   const claimed = await withSuperAdmin(db, async (tx) => {
     const rows = await tx
@@ -139,15 +170,17 @@ export async function drainDomainEventOutbox(
           const message = (error instanceof Error ? error.message : String(error))
             .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, ' ')
             .slice(0, 4_000)
+          const terminal = event.attempts >= MAX_DOMAIN_EVENT_ATTEMPTS
           const [released] = await withSuperAdmin(db, (tx) =>
             tx
               .update(domainEventOutbox)
-              .set({
-                status: 'pending',
-                availableAt: domainEventRetryAt(event.attempts, failedAt),
-                claimedAt: null,
-                lastError: message,
-              })
+              .set(
+                domainEventFailureUpdate({
+                  attempts: event.attempts,
+                  message,
+                  failedAt,
+                }),
+              )
               .where(
                 and(
                   eq(domainEventOutbox.id, event.id),
@@ -157,7 +190,10 @@ export async function drainDomainEventOutbox(
               )
               .returning({ id: domainEventOutbox.id }),
           )
-          if (released) result.retried += 1
+          if (released) {
+            if (terminal) result.dead += 1
+            else result.retried += 1
+          }
         }
       }),
     )

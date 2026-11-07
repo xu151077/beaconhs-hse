@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getIsolatedAlertReceiver, resetIsolatedAlertReceiver } from '@beaconhs/events'
+import {
+  getIsolatedAlertReceiver,
+  resetIsolatedAlertReceiver,
+} from '@beaconhs/events/testing/isolated-alert-receiver'
 import {
   emitIsolatedAlertApplicationEvent,
   isolatedAlertEntrypointEnabled,

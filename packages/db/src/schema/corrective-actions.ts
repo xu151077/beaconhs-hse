@@ -115,6 +115,10 @@ export const correctiveActions = pgTable(
       t.sourceFormResponseId,
     ),
     ownerIdx: index('corrective_actions_owner_idx').on(t.tenantId, t.ownerTenantUserId),
+    // Site-scoped readers filter on site_org_unit_id (SITE_COLUMNS[0] for the
+    // `ca_` prefix and the global search). RLS narrows to the tenant via
+    // tenantIdx, but without this the site predicate scans every tenant row.
+    siteIdx: index('corrective_actions_site_idx').on(t.tenantId, t.siteOrgUnitId),
     sourceResponseFk: foreignKey({
       name: 'corrective_actions_tenant_source_response_fk',
       columns: [t.tenantId, t.sourceFormResponseId],

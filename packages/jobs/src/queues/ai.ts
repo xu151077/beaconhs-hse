@@ -43,9 +43,12 @@ function getAiQueue(): Queue<AiJobData> {
 export async function enqueueAiJob(data: AiJobData, options?: JobsOptions) {
   assertAiJobData(data)
   return getAiQueue().add(data.kind, data, {
+    ...options,
+    // The deterministic jobId and retention are contract, not caller-tunable:
+    // spreading options first prevents a caller from overriding them and
+    // accidentally creating duplicate analysis runs for the same period.
     jobId: `journal-analysis|${data.tenantId}|${data.days}`,
     removeOnComplete: true,
     removeOnFail: true,
-    ...options,
   })
 }

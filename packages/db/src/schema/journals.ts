@@ -146,6 +146,9 @@ export const journalEntries = pgTable(
     personDateIdx: index('journal_entries_person_date_idx').on(t.tenantId, t.personId, t.entryDate),
     siteIdx: index('journal_entries_site_idx').on(t.tenantId, t.siteOrgUnitId),
     statusIdx: index('journal_entries_status_idx').on(t.tenantId, t.status),
+    // Supervisor is a person/self-scope binding used by the journals read
+    // ladder; index it alongside the existing person index.
+    supervisorIdx: index('journal_entries_supervisor_idx').on(t.tenantId, t.supervisorPersonId),
     searchIdx: index('journal_entries_search_idx').using('gin', t.searchVector),
   }),
 )

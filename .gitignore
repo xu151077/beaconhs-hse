@@ -79,6 +79,13 @@ apps/web/e2e/**-results.json
 # public pnpm workspace and lockfile; install and run it independently.
 packages/etl/
 
+# Local-only operational evidence (source archives, build output, manifests).
+# ~1.5G of tarballs + byte-exact raw snapshots under docs/evidence; kept on
+# this machine, never committed. Knip honors .gitignore, so it also keeps the
+# dead-code scan out — an explicit knip ignore would trip "Remove from
+# ignore" on a fresh clone where the directory does not exist.
+/docs/evidence/
+
 # Local debugging scratch: MCP console logs, docker build secrets scratch, and
 # opencode backup configs. Kept on this machine, never committed. (The large
 # docs/evidence archive dir and repo-root .tmp-* scratch dirs are intentionally

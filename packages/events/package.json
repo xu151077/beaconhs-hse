@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./internal-auth": "./src/internal-auth.ts",
-    "./outbox": "./src/outbox.ts"
+    "./outbox": "./src/outbox.ts",
+    "./testing/isolated-alerts": "./src/isolated-alert-dispatch.ts",
+    "./testing/isolated-alert-receiver": "./src/isolated-alert-receiver.ts"
   },
   "scripts": {
     "test": "vitest run",

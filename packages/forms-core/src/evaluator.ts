@@ -286,8 +286,14 @@ export function evaluateFormulaTree(
     case 'avg_section': {
       const rows = ctx.rows[expr.sectionKey] ?? []
       if (rows.length === 0) return null
-      const sum = rows.reduce<number>((acc, row) => acc + coerceNumber(row[expr.rowFieldKey]), 0)
-      return sum / rows.length
+      // Only rows that actually CARRY the value count. A blank cell coerces to
+      // 0 in sum_section (correct for a total) but must not dilute a mean —
+      // three rows [10, 20, blank] average 15, not 10.
+      const values = rows
+        .map((row) => row[expr.rowFieldKey])
+        .filter((value) => value !== null && value !== undefined && value !== '')
+        .map(coerceNumber)
+      return values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
     }
 
     case 'min_section': {

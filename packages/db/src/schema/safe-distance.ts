@@ -95,6 +95,13 @@ export const safeDistanceRecords = pgTable(
     methodIdx: index('safe_distance_records_method_idx').on(t.tenantId, t.method),
     siteIdx: index('safe_distance_records_site_idx').on(t.tenantId, t.siteOrgUnitId),
     occurredIdx: index('safe_distance_records_occurred_idx').on(t.tenantId, t.occurredAt),
+    // These are PERSON_COLUMNS/self-tier bindings in the scope engine; without
+    // an index a self-scoped reader scans all of the tenant's assessments.
+    operatorIdx: index('safe_distance_records_operator_idx').on(t.tenantId, t.operatorPersonId),
+    supervisorIdx: index('safe_distance_records_supervisor_idx').on(
+      t.tenantId,
+      t.supervisorTenantUserId,
+    ),
   }),
 )
 

@@ -28,6 +28,7 @@
  */
 
 import {
+  db,
   readFreezeState,
   applyTransition,
   ensureFreezeRow,
@@ -39,8 +40,17 @@ import { STORAGE_FREEZE_PERMISSIONS } from '@beaconhs/db'
 import type { Database } from '@beaconhs/db'
 import { createHash } from 'node:crypto'
 
-// Compile-time gating: this file is excluded from production builds
-const TEST_ONLY_DRIVER = true
+/**
+ * This is a DRILL/E2E operator driver, not a production entrypoint (it is not
+ * a build.mjs entry and is never bundled into the image). The old constant
+ * `TEST_ONLY_DRIVER = true` made `if (!TEST_ONLY_DRIVER)` UNREACHABLE — a gate
+ * that could never fire. Keep it runnable on drill hosts (NODE_ENV !=
+ * production) while refusing to mutate a production database if the file is
+ * ever copied there by hand, unless explicitly opted in.
+ */
+function driverAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.BEACONHS_BT_FREEZE_DRIVER === '1'
+}
 
 // Isolated test tenant
 const TEST_TENANT_ID = process.env.E2E_TEST_TENANT_ID ?? 'ea5a149b-ea76-48e0-abbe-fa360f520d8e'
@@ -49,7 +59,7 @@ const TEST_TENANT_ID = process.env.E2E_TEST_TENANT_ID ?? 'ea5a149b-ea76-48e0-abb
 const ACTOR_ID = process.env.E2E_FREEZE_ACTOR ?? 'bt-freeze-driver'
 
 // Export for testing
-export { TEST_ONLY_DRIVER, TEST_TENANT_ID, ACTOR_ID }
+export { driverAllowed, TEST_TENANT_ID, ACTOR_ID }
 
 // Commands
 type Command = 'status' | 'request' | 'drain' | 'freeze' | 'reconcile' | 'release'
@@ -131,10 +141,11 @@ async function buildReconciliationManifest(
 }
 
 async function main(): Promise<void> {
-  // Compile-time gating: this code is excluded from production builds
-  if (!TEST_ONLY_DRIVER) {
-    console.error('ERROR: bt-freeze-driver.ts is excluded from production builds.')
-    console.error('This driver is test-only and should not run in production.')
+  if (!driverAllowed()) {
+    console.error(
+      'ERROR: bt-freeze-driver is a drill/E2E tool and must not run against production.',
+    )
+    console.error('Set BEACONHS_BT_FREEZE_DRIVER=1 only on an isolated drill host.')
     process.exit(1)
   }
 
@@ -164,7 +175,7 @@ async function main(): Promise<void> {
 }
 
 async function executeCommand(command: Command): Promise<string> {
-  return await withSuperAdmin(undefined as unknown as Database, async (tx: Database) => {
+  return await withSuperAdmin(db, async (tx: Database) => {
     switch (command) {
       case 'status': {
         const row = await readFreezeState(tx, TEST_TENANT_ID)

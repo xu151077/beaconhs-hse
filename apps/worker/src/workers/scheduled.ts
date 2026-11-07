@@ -106,9 +106,9 @@ export async function processScheduledTick(job: Job<ScheduledTick>): Promise<voi
     }
     case 'domain_event_outbox_scan': {
       const result = await drainDomainEventOutbox()
-      if (result.claimed > 0) {
+      if (result.claimed > 0 || result.dead > 0) {
         console.log(
-          `[scheduled] domain_event_outbox: ${result.published} published / ${result.retried} retrying`,
+          `[scheduled] domain_event_outbox: ${result.published} published / ${result.retried} retrying / ${result.dead} dead (terminal, needs operator review)`,
         )
       }
       return

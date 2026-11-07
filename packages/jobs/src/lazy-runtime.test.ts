@@ -243,7 +243,9 @@ describe('lazy jobs runtime', () => {
     const maintenanceCall = mocks.queueAdd.mock.calls.find(
       ([name]) => name === 'manual:db_maintenance',
     )
-    expect(maintenanceCall?.[2]).toEqual({ deduplication: { id: 'db-maintenance' } })
+    expect(maintenanceCall?.[2]).toEqual({
+      deduplication: { id: 'db-maintenance', ttl: 60 * 60 * 1000 },
+    })
   })
 
   it('reconciles the exact scheduled registry without leaving shadow repeat definitions', async () => {

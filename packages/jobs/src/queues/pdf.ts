@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Queue, QueueEvents, type JobsOptions } from 'bullmq'
+import { Queue, QueueEvents, type Job, type JobsOptions } from 'bullmq'
 import { getBlockingConnection, getConnection } from '../connection'
 import {
   assertIdentifier,
@@ -307,21 +307,26 @@ function pdfJobId(data: PdfJobData): string {
   }
 }
 
-async function addPdfJob(data: PdfJobData, opts?: JobsOptions) {
+async function addPdfJob(
+  data: PdfJobData,
+  opts?: JobsOptions,
+): Promise<{ job: Job; created: boolean }> {
   assertPdfJobData(data)
   const pdfQueue = getPdfQueue()
   const jobId = pdfJobId(data)
   const existing = await pdfQueue.getJob(jobId)
   if (existing) {
     const state = await existing.getState()
-    if (state !== 'completed' && state !== 'failed') return existing
+    // An active job is NOT a new enqueue: the reconciler must not count it as
+    // recovered work (and must not report inflated progress).
+    if (state !== 'completed' && state !== 'failed') return { job: existing, created: false }
 
     // Completed PDF jobs are render records, not caches. Clear the old job so
     // an explicit PDF request can generate a fresh artifact on demand.
     await existing.remove()
   }
 
-  return pdfQueue.add(data.kind, data, { ...opts, jobId })
+  return { job: await pdfQueue.add(data.kind, data, { ...opts, jobId }), created: true }
 }
 
 export async function enqueuePdf(data: PdfJobData, deterministicJobId?: string) {
@@ -423,6 +428,7 @@ export async function enqueuePdfEmail(
 /** Render a just-published document version's PDF + text in the background. */
 export async function enqueueDocumentVersionRender(
   data: Extract<PdfJobData, { kind: 'document_version_render' }>,
-) {
-  await addPdfJob(data, { attempts: 2 })
+): Promise<{ created: boolean }> {
+  const { created } = await addPdfJob(data, { attempts: 2 })
+  return { created }
 }

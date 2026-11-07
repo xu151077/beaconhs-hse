@@ -5,7 +5,10 @@
  * enqueue email, SMS, webhook, or production notification work.
  */
 
-import { dispatchIsolatedAlert, type IsolatedAlertChannel } from '@beaconhs/events'
+import {
+  dispatchIsolatedAlert,
+  type IsolatedAlertChannel,
+} from '@beaconhs/events/testing/isolated-alerts'
 
 export type IsolatedAlertApplicationEvent = {
   alertId: string

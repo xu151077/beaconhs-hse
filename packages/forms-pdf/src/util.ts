@@ -425,7 +425,7 @@ export async function setPdfContent(
   if (Buffer.byteLength(html) > MAX_DOCUMENT_HTML_BYTES) {
     throw new Error('PDF HTML exceeds the 16 MiB render limit')
   }
-  const documentHtml = injectPdfBase(html, configuredAppOrigin())
+  const documentHtml = injectPdfBase(html, configuredAppOrigin(), PDF_CSP_META)
   await page.setContent(documentHtml, { waitUntil: 'load', timeout: 30_000 })
   if (options.waitForFonts) await page.evaluateHandle('document.fonts.ready')
   const state = resourceStates.get(page)
@@ -444,9 +444,20 @@ export async function setPdfContent(
   }
 }
 
+/**
+ * Tenant-authored PDF templates are raw HTML by design (that is the feature),
+ * but inline/event-handler scripts have no reason to execute during rendering.
+ * A CSP meta in <head> blocks them while leaving `document.fonts.ready`
+ * (a CDP evaluation, not page script) and image/font loading untouched.
+ * Request interception already blocks network exfiltration; this closes the
+ * last in-page execution path.
+ */
+export const PDF_CSP_META =
+  '<meta http-equiv="Content-Security-Policy" content="script-src \'none\'; object-src \'none\'">'
+
 /** Insert the application base URL after the first real `<head>` opening tag. */
-export function injectPdfBase(html: string, appOrigin: string): string {
-  const base = `<base href="${escapeHtml(appOrigin)}/">`
+export function injectPdfBase(html: string, appOrigin: string, extraHead = ''): string {
+  const base = `<base href="${escapeHtml(appOrigin)}/">${extraHead}`
   const lower = html.toLowerCase()
   let cursor = 0
   while (cursor < lower.length) {

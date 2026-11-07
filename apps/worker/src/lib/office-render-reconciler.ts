@@ -68,8 +68,14 @@ export async function reconcileOfficeRenders(): Promise<OfficeRenderReconcileRes
       ),
     )
     for (const outcome of settled) {
-      if (outcome.status === 'fulfilled') result.enqueued += 1
-      else result.errors += 1
+      if (outcome.status === 'fulfilled') {
+        // Only a genuinely new job is recovered work. A still-active job
+        // returned by addPdfJob was already queued and must not inflate the
+        // enqueued metric on every 5-minute reconcile pass.
+        if (outcome.value.created) result.enqueued += 1
+      } else {
+        result.errors += 1
+      }
     }
   }
   return result

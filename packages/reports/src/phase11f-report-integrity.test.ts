@@ -268,10 +268,11 @@ describe('Phase 11-F introduced no new architecture', () => {
       // EA-12 drops three unreferenced columns; it adds no report relation and
       // does not change any report projection.
       '0051_ea12_drop_dead_columns',
-      // EA-66D.20 adds the platform_settings.open_source jsonb column for the
-      // open-source disclosure link; it adds no report relation and does not
-      // change any report projection.
+      // EA-66D.20 adds the platform_settings.open_source jsonb column.
       '0052_old_nextwave',
+      // EA-66D.23 adds scope-filter indexes and a terminal outbox enum value;
+      // no report relation or projection is touched.
+      '0053_bent_the_spike',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))

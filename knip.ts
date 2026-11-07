@@ -2,17 +2,14 @@ import type { KnipConfig } from 'knip'
 
 const config: KnipConfig = {
   $schema: 'https://unpkg.com/knip@5/schema.json',
-  // `docs/evidence/<phase>/raw/**` holds byte-exact snapshots of files as they
-  // were when a phase ran, so a snapshot of `knip.ts` or of an audit script is
-  // an archive, not a shipped entry point. The live files those snapshots were
-  // taken from are still scanned normally.
-  //
-  // This lives at the TOP level rather than in a workspace's own `ignore`
-  // because the root workspace's ignore list is deliberately restricted to the
-  // operator scratch directories: `deadcode-scope-contract.test.ts` asserts
-  // that, so that a real source directory can never hide from the scan by
-  // being added to a workspace ignore list.
-  ignore: ['docs/evidence/*/raw/**'],
+  // Note: `docs/evidence/**` (a gitignored, operator-local archive dir) has NO
+  // ignore entry here. Its snapshots must never ship, and an explicit ignore
+  // would trip knip's "Remove from ignore" config hint on a fresh clone where
+  // the directory does not exist — which is exactly how CI failed deadcode.
+  // Knip honors .gitignore, so the local archive is never scanned. The root
+  // workspace's ignore list is likewise limited to operator scratch dirs;
+  // `deadcode-scope-contract.test.ts` asserts that, so no real source
+  // directory can hide from the scan via an ignore list.
   workspaces: {
     '.': {
       entry: [

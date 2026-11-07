@@ -7,6 +7,35 @@ import { isNotificationCategoryEnabled } from '@beaconhs/events'
 import type { EmailJobData } from '@beaconhs/jobs'
 import { requireEmailTransport, resolveEmailDelivery } from '../lib/resolve-email-transport'
 
+/**
+ * Mark a successfully sent email. The provider has ALREADY accepted the
+ * message at this point, so a transient DB hiccup here would otherwise fall
+ * into the catch, mark the row `failed`, and let BullMQ's retry contact the
+ * provider a second time — a duplicate email. Retry the (idempotent) bookkeeping
+ * write a few times before surrendering to that path.
+ *
+ * This narrows the window; fully eliminating it needs a provider-side
+ * idempotency key. The remaining window is documented rather than hidden.
+ */
+async function markEmailSent(logId: string, providerMessageId: string): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await withSuperAdmin(db, (tx) =>
+        tx
+          .update(emailLog)
+          .set({ status: 'sent', providerMessageId, sentAt: new Date() })
+          .where(eq(emailLog.id, logId)),
+      )
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)))
+    }
+  }
+  throw lastError
+}
+
 // Email worker.
 //
 // On every dispatch we instrument an `email_log` row so the support team
@@ -179,16 +208,7 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
     })
 
     if (logId) {
-      await withSuperAdmin(db, (tx) =>
-        tx
-          .update(emailLog)
-          .set({
-            status: 'sent',
-            providerMessageId: result.id,
-            sentAt: new Date(),
-          })
-          .where(eqLogId(logId)),
-      )
+      await markEmailSent(logId, result.id)
     }
     await updateReportDelivery(reportRunDeliveryId, {
       status: 'sent',

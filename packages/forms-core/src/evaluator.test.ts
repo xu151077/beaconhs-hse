@@ -293,6 +293,27 @@ describe('evaluateFormulaTree', () => {
     ).toBe(0)
   })
 
+  it('avg_section averages only rows that carry the value', () => {
+    const ctx = makeCtx({
+      rows: {
+        loads: [{ weight: 10 }, { weight: 20 }, { weight: '' }, { rigging: 5 }, { weight: null }],
+      },
+    })
+    // Blank cells count as 0 in sum_section, but must NOT dilute the mean.
+    expect(
+      evaluateFormulaTree({ kind: 'avg_section', sectionKey: 'loads', rowFieldKey: 'weight' }, ctx),
+    ).toBe(15)
+    expect(
+      evaluateFormulaTree(
+        { kind: 'avg_section', sectionKey: 'loads', rowFieldKey: 'unknown' },
+        ctx,
+      ),
+    ).toBeNull()
+    expect(
+      evaluateFormulaTree({ kind: 'avg_section', sectionKey: 'missing', rowFieldKey: 'x' }, ctx),
+    ).toBeNull()
+  })
+
   it('concat joins values with separator', () => {
     const ctx = makeCtx({ values: { first: 'Alice', last: 'Smith' } })
     expect(

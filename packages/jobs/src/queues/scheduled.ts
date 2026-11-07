@@ -95,8 +95,11 @@ export async function enqueueScheduled(name: string, data: ScheduledTick, option
         ? {
             ...omitJobId(options),
             // A repeat occurrence and a platform "run now" click must never
-            // execute retention deletes/ANALYZE concurrently.
-            deduplication: { id: 'db-maintenance' },
+            // execute retention deletes/ANALYZE concurrently. An explicit TTL
+            // (well beyond the longest maintenance run) also bounds a stale
+            // deduplication key surviving a Redis restart — without it the key
+            // could suppress every future manual/repeat run indefinitely.
+            deduplication: { id: 'db-maintenance', ttl: 60 * 60 * 1000 },
           }
         : options
   return getScheduledQueue().add(name, data, normalizedOptions)

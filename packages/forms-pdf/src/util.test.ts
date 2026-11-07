@@ -4,6 +4,7 @@ import { MAX_SECURE_FETCH_RESPONSE_BYTES } from '@beaconhs/sync/egress'
 import {
   injectPdfBase,
   optimizePdfImageResource,
+  PDF_CSP_META,
   PDF_RESOURCE_LIMITS,
   pdfResourceDecision,
 } from './util'
@@ -21,6 +22,18 @@ describe('PDF document base injection', () => {
         '<base href="https://app.test/">',
       ),
     ).toBe(true)
+  })
+
+  it('injects a script-blocking CSP into the rendered document head', () => {
+    // Tenant PDF HTML is trusted for markup but must never execute scripts.
+    const html = injectPdfBase(
+      '<html><head><title>X</title></head><body><script>alert(1)</script></body></html>',
+      'https://app.test',
+      PDF_CSP_META,
+    )
+    expect(html).toContain("script-src 'none'")
+    expect(html.indexOf('Content-Security-Policy')).toBeLessThan(html.indexOf('<script>'))
+    expect(html.indexOf('Content-Security-Policy')).toBeLessThan(html.indexOf('<title>'))
   })
 })
 

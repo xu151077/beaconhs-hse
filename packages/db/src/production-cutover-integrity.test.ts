@@ -151,6 +151,9 @@ describe('production cutover migration integrity', () => {
       '0051_ea12_drop_dead_columns.sql',
       // Platform open-source disclosure link (platform_settings.open_source).
       '0052_old_nextwave.sql',
+      // Bounded outbox retries (domain_event_outbox_status 'dead') + scope
+      // filter indexes for corrective_actions / journals / safe_distance.
+      '0053_bent_the_spike.sql',
     ])
 
     const journal = JSON.parse(readFileSync(new URL('_journal.json', metaFolder), 'utf8')) as {
@@ -210,6 +213,7 @@ describe('production cutover migration integrity', () => {
       { idx: 50, tag: '0050_repair_0049_multipart_upload_id' },
       { idx: 51, tag: '0051_ea12_drop_dead_columns' },
       { idx: 52, tag: '0052_old_nextwave' },
+      { idx: 53, tag: '0053_bent_the_spike' },
     ])
     for (let index = 1; index < journal.entries.length; index++) {
       expect(journal.entries[index]!.when).toBeGreaterThan(journal.entries[index - 1]!.when)
