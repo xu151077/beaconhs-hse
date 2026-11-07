@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   Boxes,
   Database,
+  Link2,
   Mail,
   MessageSquare,
   Plus,
@@ -65,6 +66,12 @@ const TILES: Tile[] = [
     title: 'Issue reporting',
     desc: 'In-app product reports to the GitHub tracker',
     icon: <CircleDot size={18} />,
+  },
+  {
+    href: '/platform/source',
+    title: 'Open source',
+    desc: 'Public source repository URL shown on every Dashboard',
+    icon: <Link2 size={18} />,
   },
   {
     href: '/platform/email-log',

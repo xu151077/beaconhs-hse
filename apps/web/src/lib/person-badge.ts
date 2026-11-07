@@ -11,7 +11,7 @@ import QRCode from 'qrcode'
 import { primaryPersonTitleName } from '@beaconhs/db'
 import { attachments, departments, people, tenants } from '@beaconhs/db/schema'
 import { renderDesignDocumentPdf, renderDesignDocumentPngs } from '@beaconhs/forms-pdf'
-import { presignGet, resolveTenantLogoUrl } from '@beaconhs/storage'
+import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import type { RequestContext } from '@beaconhs/tenant'
 import {
   directPrintProvider,
@@ -21,6 +21,7 @@ import {
 import { appBaseUrl } from '@/lib/app-base-url'
 import { normalizePersonBadgeDesign } from '@/lib/person-badge-design'
 import type { RenderedCredentialPdf, RenderedCredentialPrint } from '@/lib/training-credential-pdf'
+import { storageObjectUrl } from '../lib/storage-gateway'
 
 /** Return the person's badge token, generating + persisting one on first use. */
 async function ensurePersonBadgeToken(
@@ -81,12 +82,11 @@ async function preparePersonBadge(ctx: RequestContext, personId: string) {
     tenantLogoUrl: await resolveTenantLogoUrl({
       tenantId: row.tenant.id,
       logoUrl: row.tenant.branding.logoUrl,
+      buildUrl: storageObjectUrl,
     }),
     recipientFullName: `${row.person.firstName} ${row.person.lastName}`,
     recipientEmployeeNo: row.person.employeeNo,
-    recipientPhotoUrl: row.photoKey
-      ? await presignGet({ key: row.photoKey, expiresInSeconds: 900 })
-      : null,
+    recipientPhotoUrl: row.photoKey ? await storageObjectUrl(row.photoKey) : null,
     personTitle: row.jobTitle,
     personDepartment: row.departmentName,
     verifyUrl,

@@ -52,7 +52,6 @@ import {
   getObject,
   headObject,
   newAttachmentKey,
-  presignGet,
   putObject,
   resolveTenantLogoUrl,
 } from '@beaconhs/storage'
@@ -65,10 +64,6 @@ import { escapeHtml } from '../lib/escape-html'
 // providers reject anything near 25 MB).
 const MAX_EMAIL_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const MAX_REPORT_PDF_BYTES = 200 * 1024 * 1024
-
-// Presigned download links in the email stay valid for 7 days — the same
-// policy as hazid signed-report bundles. The run record keeps the durable copy.
-const PDF_LINK_EXPIRY_SECONDS = 7 * 24 * 3600
 
 export async function processReportRun(job: Job<ReportRunJobData>): Promise<void> {
   assertReportRunJobData(job.data)
@@ -288,29 +283,27 @@ export async function processReportRun(job: Job<ReportRunJobData>): Promise<void
     const subject =
       snapshot.emailSubject?.trim() ||
       `${snapshot.scheduleName || snapshot.definition.name} — ${rangeLabel}`
+    // The email links to the APPLICATION, never to the object store. A presigned
+    // object-store URL would require the store to be reachable from the public
+    // internet, and the recipient's browser would then talk to it directly.
     const runLink = `${appBaseUrl()}/reports/schedules/${scheduleId}/runs/${runId}`
-    const pdfLink = await presignGet({
-      key: artifact.r2Key,
-      expiresInSeconds: PDF_LINK_EXPIRY_SECONDS,
-    })
     const attachPdf = artifact.pdf !== null
     const footnote = attachPdf
-      ? 'The PDF is attached to this email and stored on the run record. The download link is valid for 7 days.'
-      : 'The PDF was too large to attach — use the download link (valid for 7 days) or the run record in the app.'
+      ? 'The PDF is attached to this email and stored on the run record.'
+      : 'The PDF was too large to attach — open the run record in the app to download it.'
     const customMessage = snapshot.emailMessage?.trim() ?? ''
     const customHtml = customMessage
       ? `<p>${escapeHtml(customMessage).replace(/\r?\n/g, '<br/>')}</p>`
       : ''
     const html = `${customHtml}<p>Your scheduled report <strong>${escapeHtml(snapshot.scheduleName || snapshot.definition.name)}</strong> is ready.</p>
       <p>${escapeHtml(rangeLabel)}<br/>Rows: ${artifact.rowCount}</p>
-      <p><a href="${escapeHtml(runLink)}">View in app</a> &middot; <a href="${escapeHtml(pdfLink)}">Download PDF</a></p>
+      <p><a href="${escapeHtml(runLink)}">View the report in the app</a></p>
       <p style="color:#666;font-size:12px;">${footnote}</p>`
     const text = `${customMessage ? `${customMessage}\n\n` : ''}Your scheduled report "${snapshot.scheduleName || snapshot.definition.name}" is ready.
 ${rangeLabel}
 Rows: ${artifact.rowCount}
 
-View in app: ${runLink}
-Download PDF (valid for 7 days): ${pdfLink}`
+View the report in the app: ${runLink}`
 
     const attachments_ = attachPdf
       ? [

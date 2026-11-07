@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuth } from '@beaconhs/auth'
 import { inspectInviteForUser, type InviteAccessState } from '@beaconhs/auth/invites'
+import { appBaseUrl } from '@/lib/app-base-url'
 import { ACTIVE_ROLE_COOKIE, ACTIVE_TENANT_COOKIE } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 function statusRedirect(req: NextRequest, state: InviteAccessState): NextResponse {
-  const url = new URL('/invite/status', req.url)
+  const url = new URL('/invite/status', appBaseUrl())
   url.searchParams.set('state', state)
   return NextResponse.redirect(url)
 }
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return statusRedirect(req, invite.state)
   }
 
-  const response = NextResponse.redirect(new URL('/dashboard', req.url))
+  const response = NextResponse.redirect(new URL('/dashboard', appBaseUrl()))
   response.cookies.set(ACTIVE_TENANT_COOKIE, invite.tenantId, {
     httpOnly: true,
     sameSite: 'lax',

@@ -54,8 +54,7 @@ export function TabNav({
     return (
       <nav
         className={cn(
-          'flex [scrollbar-width:none] flex-nowrap items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
-          'sm:flex-wrap sm:overflow-x-visible',
+          'flex flex-wrap items-center gap-1.5',
           // Rounded chips read cramped flush against the header divider; the
           // underline variant is meant to sit on it, so only pills pad below.
           'pb-1.5 sm:pb-2',
@@ -113,11 +112,11 @@ export function TabNav({
   return (
     <nav
       className={cn(
-        // Phones get a single scrollable row (tabs off-screen instead of a
-        // 4-row wall); from sm up the strip wraps like before.
+        // The strip wraps at every breakpoint: on a phone, scrolling pills
+        // off-screen hid active tabs behind the edge. Wrapping keeps every
+        // tab visible without a horizontal scroll.
         'flex items-center gap-1 border-b border-slate-200 dark:border-slate-800',
-        '[scrollbar-width:none] flex-nowrap overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
-        'sm:flex-wrap sm:overflow-x-visible',
+        'flex-wrap',
         className,
       )}
       role="tablist"

@@ -10,7 +10,8 @@ import { GeneratedText, useGeneratedTranslations, GeneratedValue } from '@/i18n/
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Minus, Plus } from 'lucide-react'
 import { cn } from '@beaconhs/ui'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
+import { startPdfLoadWatchdog } from '@/lib/pdf-preview-policy'
 
 const ZOOMS = [0.75, 1, 1.25, 1.5, 2]
 
@@ -110,23 +111,46 @@ export function PdfViewer({ url, className }: { url: string; className?: string 
 
   useEffect(() => {
     let cancelled = false
+    let timedOut = false
+    let task: PDFDocumentLoadingTask | null = null
+
+    // Bounds the load and, on expiry, destroys the pdf.js worker. Destroying the
+    // task is what stops the runaway recovery walk described in
+    // pdf-preview-policy; the error surface below explains the failure instead of
+    // the tab dying with it.
+    const stopWatchdog = startPdfLoadWatchdog(() => {
+      if (cancelled) return
+      timedOut = true
+      void task?.destroy().catch(() => {})
+      setResource({ url, doc: null, error: 'Could not load the PDF' })
+    })
+
     void (async () => {
       try {
         const pdfjs = await loadPdfjs()
-        const loaded = await pdfjs.getDocument({ url }).promise
-        if (!cancelled) setResource({ url, doc: loaded, error: null })
+        if (cancelled || timedOut) return
+        task = pdfjs.getDocument({ url })
+        const loaded = await task.promise
+        stopWatchdog()
+        if (cancelled || timedOut) return
+        setResource({ url, doc: loaded, error: null })
       } catch (err) {
-        if (!cancelled) {
-          setResource({
-            url,
-            doc: null,
-            error: err instanceof Error ? err.message : 'Could not load the PDF',
-          })
-        }
+        stopWatchdog()
+        if (cancelled || timedOut) return
+        setResource({
+          url,
+          doc: null,
+          error: err instanceof Error ? err.message : 'Could not load the PDF',
+        })
       }
     })()
+
     return () => {
       cancelled = true
+      stopWatchdog()
+      // Release the worker and the parsed document; a viewer that is replaced or
+      // unmounted must not leave a loading task holding memory.
+      void task?.destroy().catch(() => {})
     }
   }, [url])
 

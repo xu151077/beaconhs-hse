@@ -8,10 +8,25 @@ import {
 
 import { GeneratedText } from '@/i18n/generated'
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
-import { Button, Input, Label, SearchSelect, type SelectOption } from '@beaconhs/ui'
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Input,
+  Label,
+  SearchSelect,
+  type SelectOption,
+} from '@beaconhs/ui'
+import type { ProviderSettingsResult } from '@beaconhs/i18n/messages'
 import { listAiModels } from '@/lib/ai-settings-actions'
+
+/** Save actions in this family return expected-validation copy instead of throwing. */
+type ProviderSettingsAction = (
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+) => Promise<ProviderSettingsResult>
 
 // Serializable slice of a provider spec (no SDK code reaches the client bundle).
 export type ProviderSpecLite = {
@@ -61,11 +76,12 @@ export function AiSettingsForm({
   initial,
   scope,
 }: {
-  action: (formData: FormData) => void | Promise<void>
+  action: ProviderSettingsAction
   specs: ProviderSpecLite[]
   initial: AiFormInitial
   scope: 'tenant' | 'platform'
 }) {
+  const [state, formAction, pending] = useActionState(action, null)
   const tGeneratedValue = useGeneratedValueTranslations()
   const tGenerated = useGeneratedTranslations()
   const [provider, setProvider] = useState(initial.provider)
@@ -209,7 +225,16 @@ export function AiSettingsForm({
   }
 
   return (
-    <form action={action} className="space-y-5">
+    <form action={formAction} className="space-y-5">
+      <GeneratedValue
+        value={
+          state?.error ? (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          ) : null
+        }
+      />
       <label className="flex items-center gap-2.5">
         <input
           type="checkbox"
@@ -478,7 +503,7 @@ export function AiSettingsForm({
       />
 
       <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
-        <Button type="submit">
+        <Button type="submit" disabled={pending}>
           <GeneratedValue
             value={
               scope === 'platform' ? (

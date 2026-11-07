@@ -12,10 +12,12 @@ import { pdfResponse } from '@/lib/training-credential-pdf'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function GET(
+async function getHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -45,3 +47,5 @@ export async function GET(
   })
   return pdfResponse(rendered)
 }
+
+export const GET = withRouteErrors(getHandler)

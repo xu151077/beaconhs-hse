@@ -8,12 +8,15 @@ import { assertCan } from '@beaconhs/tenant'
 import { getObjectStream } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
+import { contentDisposition } from '@/lib/content-disposition'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   request: NextRequest,
   routeCtx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -49,14 +52,22 @@ export async function GET(
   })
 
   const obj = await getObjectStream({ key: att.key })
-  const filename = att.filename.replace(/[^\w.\- ]+/g, '_') || 'document.docx'
   return new NextResponse(obj.stream, {
     headers: {
       'Content-Type':
         obj.contentType ??
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       ...(obj.contentLength ? { 'Content-Length': String(obj.contentLength) } : {}),
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      // The shared builder is the single source of truth for download
+      // filenames: it keeps the DB-stored original name and encodes Unicode
+      // via RFC 5987 so Chinese document titles survive the round trip.
+      'Content-Disposition': contentDisposition(
+        'attachment',
+        att.filename || 'document.docx',
+        'document.docx',
+      ),
     },
   })
 }
+
+export const GET = withRouteErrors(getHandler)

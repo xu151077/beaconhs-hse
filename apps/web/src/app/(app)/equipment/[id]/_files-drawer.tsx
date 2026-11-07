@@ -16,7 +16,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Upload } from 'lucide-react'
 import { Button, FileUploader, Input, Label, Select, UrlDrawer } from '@beaconhs/ui'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 
 const EQUIPMENT_FILE_KINDS = [
@@ -171,6 +171,7 @@ export function EquipmentFileDrawer({
                 <FileUploader
                   requestUploadAction={requestUpload}
                   finalizeUploadAction={finalizeUpload}
+                  requestMultipartPartAction={requestMultipartPartUrl}
                   kind="document"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.heic,.webp"
                   onUploaded={(f) =>

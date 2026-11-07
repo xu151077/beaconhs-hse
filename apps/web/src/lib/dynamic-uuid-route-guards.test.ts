@@ -68,6 +68,7 @@ function handlerChunks(source: string, isPage: boolean): string[] {
     ...source.matchAll(
       /export const (?:GET|POST|PUT|PATCH|DELETE)\s*=\s*(?:withRouteErrors\()?\s*(?:async\s*)?\(/g,
     ),
+    ...source.matchAll(/async function (?:get|post|put|patch|delete)Handler\s*\(/g),
   ].map((match) => match.index)
   return starts.map((start, index) => source.slice(start, starts[index + 1] ?? source.length))
 }

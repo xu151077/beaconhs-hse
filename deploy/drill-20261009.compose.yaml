@@ -1,0 +1,193 @@
+# Isolated deployment-drill Compose for BeaconHS (NOT production, NOT dev).
+#
+# Project name (directory-independent, must be unique per drill):
+#   beaconhs-drill-20261009
+# Image (built on the drill host from the synced tree):
+#   beaconhs:drill-20261009
+# Run: docker compose -f deploy/drill-20261009.compose.yaml \
+#        --project-name beaconhs-drill-20261009 up -d
+# All host port bindings are loopback-only. Operator access from outside the
+# drill host goes through SSH tunnels, never a public port.
+#
+# Required host env (test-only values, generated per drill — never production):
+#   DRILL_POSTGRES_PASSWORD, DRILL_REDIS_URL is in-network only.
+#   DRILL_BETTER_AUTH_SECRET (>= 32 chars), DRILL_ATTACHMENT_CAPABILITY_SECRET,
+#   DRILL_APP_URL (http://127.0.0.1:3001 on the drill host)
+
+x-app-env: &app-env
+  NODE_ENV: production
+  APP_VERSION: ${APP_VERSION:?APP_VERSION must be the real 40-hex commit SHA}
+  DATABASE_URL: postgresql://beaconhs_app:${DRILL_APP_PASSWORD:?set drill app password}@postgres:5432/beaconhs
+  SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:${DRILL_SUPER_PASSWORD:?set drill super password}@postgres:5432/beaconhs
+  MIGRATION_DATABASE_URL: postgresql://beaconhs_migrator:${DRILL_MIGRATOR_PASSWORD:?set drill migrator password}@postgres:5432/beaconhs
+  DATABASE_OWNER_ROLE: beaconhs_owner
+  REDIS_URL: redis://redis:6379
+  BETTER_AUTH_SECRET: ${DRILL_BETTER_AUTH_SECRET:?required}
+  ATTACHMENT_CAPABILITY_SECRET: ${DRILL_ATTACHMENT_CAPABILITY_SECRET:?required}
+  APP_URL: ${DRILL_APP_URL:?required}
+  BETTER_AUTH_URL: ${DRILL_APP_URL:?required}
+  BETTER_AUTH_TRUSTED_ORIGINS: ${DRILL_APP_URL:?required}
+  # R2_ENDPOINT is the BROWSER-facing presign address, served same-origin
+  # through the drill gateway (:3002, mirroring the production tunnel which
+  # serves MinIO under the app origin). Same-origin keeps CSP 'self' and
+  # SigV4 paths intact without touching product code.
+  R2_ENDPOINT: http://127.0.0.1:3002
+  R2_INTERNAL_ENDPOINT: http://minio:9000
+  R2_ACCESS_KEY_ID: drillminio
+  R2_SECRET_ACCESS_KEY: ${DRILL_MINIO_SECRET:?required}
+  R2_BUCKET: beaconhs-drill
+  R2_PRIVATE_BUCKET_CONFIRMED: "false"
+  HOSTNAME: 0.0.0.0
+  PORT: "3000"
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_FROM: BeaconHS Drill <drill@beaconhs.local>
+  # Browser reaches Collabora same-origin through the drill gateway (:3002
+  # routes /browser|/cool|/hosting), mirroring production's tunnel topology,
+  # so CSP frame-src 'self' covers the editor iframe. Server-to-server WOPI
+  # callbacks stay on the container network.
+  COLLABORA_URL: http://127.0.0.1:3002
+  COLLABORA_WOPI_URL: http://web:3000
+  VAPID_PUBLIC_KEY: ""
+  VAPID_PRIVATE_KEY: ""
+  VAPID_SUBJECT: mailto:drill@beaconhs.local
+
+services:
+  web:
+    image: beaconhs:drill-20261009
+    environment:
+      <<: *app-env
+      APP_ROLE: web
+    ports:
+      - '127.0.0.1:3001:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:3000/api/health/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      mailpit: { condition: service_started }
+
+  worker:
+    image: beaconhs:drill-20261009
+    environment:
+      <<: *app-env
+      APP_ROLE: worker
+      INTERNAL_WEB_URL: http://web:3000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      web: { condition: service_started }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DRILL_POSTGRES_PASSWORD:?set drill db password}
+      POSTGRES_DB: beaconhs
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../scripts/cluster/provision.sql:/opt/beaconhs/provision.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d beaconhs']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    # Resolves from the drill-local registry mirror (content-identical to the
+    # pinned upstream digest, verified on push/pull). The upstream
+    # `minio/minio` repository no longer exists on Docker Hub, so a digest
+    # reference to it cannot resolve on a fresh daemon.
+    image: 127.0.0.1:5000/beaconhs-drill/minio:b187417eee0a-drill-20261009
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: drillminio
+      MINIO_ROOT_PASSWORD: ${DRILL_MINIO_SECRET:?required}
+    ports:
+      - '127.0.0.1:9000:9000'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - '127.0.0.1:8025:8025'
+      - '127.0.0.1:1025:1025'
+
+  collabora:
+    image: collabora/code@sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c
+    environment:
+      aliasgroup1: http://web:3000
+      extra_params: >-
+        --o:ssl.enable=false
+        --o:ssl.termination=true
+        --o:net.frame_ancestors=http://127.0.0.1:3002
+        --o:welcome.enable=false
+        --o:home_mode.enable=true
+        --o:storage.wopi.max_file_size=1073741824
+    ports:
+      - '127.0.0.1:9980:9980'
+
+  # One-shot: reconciles the BullMQ repeatable-job registry into Redis, then
+  # exits 0. restart:no so a clean exit is never treated as a crash.
+  # Re-run by hand when schedules change:
+  #   docker compose -f deploy/drill-20261009.compose.yaml --project-name beaconhs-drill-20261009 run --rm scheduler
+  scheduler:
+    image: beaconhs:drill-20261009
+    environment:
+      <<: *app-env
+      APP_ROLE: scheduler
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  # One-shot bucket bootstrap (idempotent): creates the bucket, strips
+  # anonymous policies, installs expiry rules. restart:no, like production.
+  storage-init:
+    image: beaconhs:drill-20261009
+    environment:
+      NODE_ENV: production
+      APP_ROLE: storage-init
+      # BROWSER-facing presign address (see x-app-env above). Server-side I/O
+      # uses INTERNAL only.
+      R2_ENDPOINT: http://127.0.0.1:3002
+      R2_INTERNAL_ENDPOINT: http://minio:9000
+      R2_ACCESS_KEY_ID: drillminio
+      R2_SECRET_ACCESS_KEY: ${DRILL_MINIO_SECRET:?required}
+      R2_BUCKET: beaconhs-drill
+      R2_PRIVATE_BUCKET_CONFIRMED: "false"
+    restart: "no"
+    depends_on:
+      minio: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

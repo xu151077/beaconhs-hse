@@ -19,13 +19,14 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { spawnCorrectiveActionForSubject } from '../spawn'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { fmtDate, fmtDateTime, personName, titleize, yesNo } from '../format'
 import type { FlowSubjectAdapter } from '../types'
 import { photoDocumentUrl } from '@/lib/photo-document-url'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 function answerLabel(a: string | null): string {
   if (!a) return ''
@@ -256,7 +257,7 @@ export function createEquipmentInspectionFlowAdapter(
         })),
         photos: await Promise.all(
           [...photosById.values()].map(async (p) => {
-            const url = await presignGet({ key: p.r2Key, expiresInSeconds: 900 })
+            const url = await storageObjectUrl(p.r2Key)
             return {
               url: photoDocumentUrl({
                 url,

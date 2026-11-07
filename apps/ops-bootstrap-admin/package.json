@@ -1,0 +1,15 @@
+{
+  "name": "@beaconhs/ops-bootstrap-admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@beaconhs/auth": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

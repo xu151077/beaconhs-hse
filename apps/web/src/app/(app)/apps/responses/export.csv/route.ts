@@ -34,11 +34,13 @@ import {
 } from '../_export-columns'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 const SORTS = ['submitted_at', 'created_at', 'status'] as const
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -207,3 +209,5 @@ function responseRow(
     }),
   )
 }
+
+export const GET = withRouteErrors(getHandler)

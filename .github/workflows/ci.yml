@@ -77,6 +77,30 @@ jobs:
           ALTER SCHEMA public OWNER TO beaconhs_owner;
           REVOKE ALL ON SCHEMA public FROM PUBLIC;
           SQL
+      # The live @beaconhs/db suites are mutually destructive: the seed
+      # bootstrap truncates every tenant row and finishes with no tenant, while
+      # phase11e asserts on the seeded demo rows. They therefore get one
+      # database each, plus a third runtime database for the RLS/freeze suites.
+      # The names deliberately contain the `ci` segment that the suites' scratch
+      # identity guard requires; pointing a suite at `beaconhs` fails closed.
+      - name: Provision isolated scratch databases for live DB suites
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          for db in beaconhs_ci_owner beaconhs_ci_seeded beaconhs_ci_runtime; do
+            psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -c "CREATE DATABASE ${db} OWNER beaconhs_owner;"
+            psql -h localhost -U postgres -d "$db" -v ON_ERROR_STOP=1 <<SQL
+          REVOKE ALL ON DATABASE ${db} FROM PUBLIC;
+          GRANT CONNECT ON DATABASE ${db} TO beaconhs_migrator, beaconhs_app, beaconhs_super, beaconhs_backup;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE ${db} TO beaconhs_migrator;
+          ALTER SCHEMA public OWNER TO beaconhs_owner;
+          REVOKE ALL ON SCHEMA public FROM PUBLIC;
+          GRANT USAGE, CREATE ON SCHEMA public TO beaconhs_owner;
+          GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super, beaconhs_backup;
+          SQL
+          done
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
@@ -88,11 +112,65 @@ jobs:
           scripts/cluster/dokploy-curl.test.sh
           scripts/ci/require-current-main.test.sh
           scripts/ci/workflow-repository-immutability.test.sh
+          scripts/ci/verify-server-action-key-gate.test.sh
+          node --test scripts/ci/replica-coverage.test.mjs
+          scripts/ci/build-local-image-key-gate.test.sh
+          node --test scripts/ci/verify-source-origin.test.mjs
+          node --test scripts/ci/build-identity-gate.test.mjs
+          node --test scripts/ci/deploy-control-hardening.test.mjs
       - name: Apply the production migration path
         run: pnpm --filter @beaconhs/db exec tsx src/migrate.ts
       - name: Prove migrations are idempotent
         run: pnpm --filter @beaconhs/db exec tsx src/migrate.ts
+      - name: Migrate and seed the live-suite scratch databases
+        run: |
+          set -euo pipefail
+          for db in beaconhs_ci_owner beaconhs_ci_seeded beaconhs_ci_runtime; do
+            DATABASE_URL="postgresql://beaconhs_app:beaconhs_app@localhost:5432/${db}" \
+            SUPERADMIN_DATABASE_URL="postgresql://beaconhs_super:beaconhs_super@localhost:5432/${db}" \
+            MIGRATION_DATABASE_URL="postgresql://beaconhs_migrator:beaconhs_migrator@localhost:5432/${db}" \
+            DATABASE_OWNER_ROLE=beaconhs_owner \
+            pnpm --filter @beaconhs/db exec tsx src/migrate.ts
+          done
+          # phase11e asserts on the rows `db:seed` creates; the other two
+          # databases must stay migrated-only.
+          DATABASE_URL="postgresql://beaconhs_app:beaconhs_app@localhost:5432/beaconhs_ci_seeded" \
+          SUPERADMIN_DATABASE_URL="postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_seeded" \
+          MIGRATION_DATABASE_URL="postgresql://beaconhs_migrator:beaconhs_migrator@localhost:5432/beaconhs_ci_seeded" \
+          pnpm --filter @beaconhs/db exec tsx src/seed.ts
       - run: pnpm test
+      # Run the live suites explicitly, each with the identity and starting
+      # state it needs. `pnpm test` above intentionally has no scratch URL, so
+      # these assertions would otherwise remain skipped.
+      - name: Live database suites — seed bootstrap (owner identity)
+        env:
+          SEED_TEST_SCRATCH_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_owner
+          SEED_TEST_SCRATCH_OWNER_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_owner
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_owner
+          SUPERADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_owner
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_owner
+        run: pnpm --filter @beaconhs/db exec vitest run --project db-owner
+      - name: Live database suites — seeded integrity
+        env:
+          SEED_TEST_SCRATCH_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/beaconhs_ci_seeded
+          DATABASE_URL: postgresql://beaconhs_app:beaconhs_app@localhost:5432/beaconhs_ci_seeded
+          SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_seeded
+          MIGRATION_DATABASE_URL: postgresql://beaconhs_migrator:beaconhs_migrator@localhost:5432/beaconhs_ci_seeded
+        run: pnpm --filter @beaconhs/db exec vitest run --project db-seeded
+      - name: Live database suites — tenant and RLS isolation
+        env:
+          SEED_TEST_SCRATCH_DATABASE_URL: postgresql://beaconhs_app:beaconhs_app@localhost:5432/beaconhs_ci_runtime
+          SEED_TEST_SCRATCH_SUPERADMIN_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+          DATABASE_URL: postgresql://beaconhs_app:beaconhs_app@localhost:5432/beaconhs_ci_runtime
+          SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+          MIGRATION_DATABASE_URL: postgresql://beaconhs_migrator:beaconhs_migrator@localhost:5432/beaconhs_ci_runtime
+        run: pnpm --filter @beaconhs/db exec vitest run --project db-runtime
+      - name: Live database suites — storage freeze persistence
+        env:
+          SEED_TEST_SCRATCH_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+          DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+          SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+        run: pnpm --filter @beaconhs/db exec vitest run --project db-freeze
       - run: pnpm build
 
   deploy-dev:

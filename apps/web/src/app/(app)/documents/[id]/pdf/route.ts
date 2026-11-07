@@ -13,10 +13,12 @@ import { recordAudit } from '@/lib/audit'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
-export async function GET(
+async function getHandler(
   request: Request,
   routeCtx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -56,3 +58,5 @@ export async function GET(
   }
   return response
 }
+
+export const GET = withRouteErrors(getHandler)

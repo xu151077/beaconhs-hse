@@ -1,9 +1,11 @@
 import { getGeneratedTranslations } from '@/i18n/generated.server'
 import { requireRequestContext } from '@/lib/auth'
 import { getTranslations } from 'next-intl/server'
+import { ExternalLink } from 'lucide-react'
 import { PageContainer } from '@/components/page-layout'
 import { loadDashboardMetrics } from './_metrics'
 import { loadDashboardLayout } from './_load-layout'
+import { getPlatformOpenSourceSettings } from '@/lib/open-source-config'
 import { DashboardGrid } from './_dashboard-grid'
 import { WidgetCard } from './_widget-views'
 import { WIDGETS, WIDGET_CARD_KEY } from './_widget-registry'
@@ -36,13 +38,15 @@ export const dynamic = 'force-dynamic'
 export default async function DashboardPage() {
   const ctx = await requireRequestContext()
   const t = await getTranslations('Dashboard')
+  const tOpenSource = await getTranslations('OpenSource')
   const today = new Date()
   const todayIso = today.toISOString().slice(0, 10)
 
-  const [{ layout, role }, data, systemCards] = await Promise.all([
+  const [{ layout, role }, data, systemCards, openSource] = await Promise.all([
     loadDashboardLayout(ctx),
     loadDashboardMetrics(ctx, today),
     ensureSystemCards(ctx),
+    getPlatformOpenSourceSettings(),
   ])
 
   // Drop org/aggregate cards a self-tier viewer may not see — the security
@@ -126,9 +130,33 @@ export default async function DashboardPage() {
         <DashboardHeader greeting={greeting} tenantSummary={tenantSummary} />
 
         <DashboardGrid initialLayout={visibleLayout} nodes={nodes} role={role} mode="view" />
+
+        {openSource.url ? (
+          <footer className="flex justify-center pt-2 pb-4">
+            <a
+              href={openSource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-500 underline-offset-4 hover:text-teal-700 hover:underline dark:text-slate-400 dark:hover:text-teal-400"
+            >
+              <span className="shrink-0">{tOpenSource('linkLabel')}</span>
+              <span className="truncate font-mono">{displaySourceHost(openSource.url)}</span>
+              <ExternalLink size={12} className="shrink-0" aria-hidden="true" />
+            </a>
+          </footer>
+        ) : null}
       </div>
     </PageContainer>
   )
+}
+
+function displaySourceHost(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`
+  } catch {
+    return url
+  }
 }
 
 function buildGreeting(

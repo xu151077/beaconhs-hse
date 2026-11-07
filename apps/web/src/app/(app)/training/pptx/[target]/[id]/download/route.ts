@@ -47,14 +47,20 @@ export async function GET(
   })
 
   const obj = await getObjectStream({ key })
-  const filename = master.attachment.filename.replace(/[^\w.\- ]+/g, '_') || 'slides.pptx'
+  const originalFilename = master.attachment.filename || 'slides.pptx'
+  const sanitizedFilename =
+    originalFilename
+      .replace(/["\r\n]/g, '_')
+      .replace(/^[^a-zA-Z0-9]/, '_')
+      .substring(0, 200) || 'slides.pptx'
+  const encodedFilename = encodeURIComponent(originalFilename)
   return new NextResponse(obj.stream, {
     headers: {
       'Content-Type':
         obj.contentType ??
         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       ...(obj.contentLength ? { 'Content-Length': String(obj.contentLength) } : {}),
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${sanitizedFilename}"; filename*=utf-8''${encodedFilename}`,
     },
   })
 }

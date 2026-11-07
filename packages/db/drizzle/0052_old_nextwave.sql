@@ -1,0 +1,1 @@
+ALTER TABLE "platform_settings" ADD COLUMN IF NOT EXISTS "open_source" jsonb DEFAULT '{}'::jsonb NOT NULL;

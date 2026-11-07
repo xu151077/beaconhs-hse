@@ -20,3 +20,17 @@ private/
 docs/migration/*.json
 packages/db/src/scripts/dokploy-*.ts
 packages/etl/
+
+# Playwright E2E artifacts are machine-generated and not hand-formatted.
+**/test-results/
+**/playwright-report/
+apps/web/e2e/**-results.json
+
+# Raw OCI evidence blobs. These are byte-exact extracts from image manifests,
+# configs, attestations and provenance. Reformatting them would change their
+# SHA-256 and break the digest-to-blob correspondence that makes them evidence.
+# Only the human-written README is formatted.
+docs/evidence/*/**/*.json
+docs/evidence/*/**/Dockerfile
+docs/evidence/*/SHA256SUMS
+docs/evidence/*/**/*.log

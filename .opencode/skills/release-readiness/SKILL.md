@@ -39,11 +39,13 @@ permissions deny these. Fix the cause.
 ## Checklist
 
 ### Tests
+
 - [ ] `pnpm test` passes across all packages.
 - [ ] New behaviour has tests proportional to its risk.
 - [ ] Tests were confirmed to fail when the change is reverted.
 
 ### Migration
+
 - [ ] If the schema changed: migration applied and verified.
 - [ ] New tenant tables are in `TENANT_SCOPED_TABLES`.
 - [ ] Migration is idempotent where the existing style allows.
@@ -51,6 +53,7 @@ permissions deny these. Fix the cause.
 - [ ] Rollback path stated, or its absence stated explicitly.
 
 ### Security
+
 - [ ] Permissions enforced on the **action**, not only the page.
 - [ ] Tenant identity derived server-side.
 - [ ] No secret, presigned URL, or PII logged.
@@ -58,28 +61,32 @@ permissions deny these. Fix the cause.
 - [ ] Uploads and capability URLs re-check permission at issue time.
 
 ### Permissions
+
 - [ ] New keys are in `PERMISSION_CATALOGUE` and granted to the right roles.
 - [ ] Nav entries carry `requiredPermission` where a gate is intended.
 - [ ] Visibility tier and scope behaviour verified, not assumed.
 - [ ] Manual articles explain the permission to a non-technical user.
 
 ### Documentation
+
 - [ ] Manual article added or updated for every user-facing change.
 - [ ] Walkthrough steps updated if a `data-walkthrough` target moved.
 - [ ] `docs/project-development-state.md` reflects the new state.
 - [ ] `path:line` citations verified by reading the lines.
 
 ### Build and deploy
+
 - [ ] `pnpm build` passes.
 - [ ] `pnpm deadcode:check` passes — no unused files, exports, or types.
 - [ ] `docker-compose.yml` still byte-identical to `HEAD` unless a change was
       explicitly requested:
-      ```sh
-      git diff --quiet HEAD -- docker-compose.yml && echo IDENTICAL || echo CHANGED
-      ```
+  ```sh
+  git diff --quiet HEAD -- docker-compose.yml && echo IDENTICAL || echo CHANGED
+  ```
 - [ ] Environment variables the change needs are documented (by **name**).
 
 ### Rollback
+
 - [ ] How to undo this is written down.
 - [ ] Data changes are reversible, or their irreversibility is stated.
 

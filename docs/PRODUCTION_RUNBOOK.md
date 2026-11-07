@@ -8,6 +8,14 @@ is intentionally separate from the historical implementation plan.
 Do not accept production traffic until all of these are true:
 
 - `main` is protected and every required CI/security check is green.
+- A first platform administrator exists and has signed in. `db:migrate` creates no
+  user, sign-up is disabled, and every account is created by an already
+  authenticated admin, so a database with no administrator has no path to a first
+  login while still reporting healthy — see "First administrator" below.
+- At least one tenant exists. `db:migrate` and `bootstrap:admin` create none, and
+  while no active tenant exists every authenticated route redirects to
+  `/auth/continue`, including the page that would create the first tenant — see
+  "First Tenant Provisioning" below.
 - PostgreSQL uses TLS, continuous WAL archiving/PITR, encrypted off-host
   backups, and a restore drill from the same backup system.
 - Redis has AOF persistence, protected storage, and restart/restore monitoring.
@@ -24,6 +32,154 @@ Do not accept production traffic until all of these are true:
   its alert route and a synthetic error have been verified.
 - An operator has approved recovery targets. A practical baseline is an RPO of
   15 minutes and an RTO of 4 hours; tighten these if the business requires it.
+
+## First administrator
+
+`pnpm db:migrate` creates no user and no tenant. Sign-up is disabled
+(`emailAndPassword.disableSignUp`), and every account is created by an already
+authenticated tenant or platform admin, so a freshly migrated database has exactly
+one way forward: someone with shell access creates the first administrator.
+
+This is deliberately **not** `pnpm db:seed`. The seed creates a demo tenant
+("Acme Industrial") with demo people, incidents, corrective actions, inspections,
+equipment, PPE, documents, courses and form templates. That is right for a
+development database and wrong for a production one.
+
+Run this once, after `db:migrate`, from a checkout on the operator's workstation:
+
+```bash
+# Dry run first: reports what would happen and writes nothing.
+pnpm --filter @beaconhs/auth bootstrap:admin -- --email admin@your-company.com
+
+# Then write. The password is printed once and is not recoverable.
+pnpm --filter @beaconhs/auth bootstrap:admin -- \
+  --email admin@your-company.com --name "Ada Lovelace" --apply
+```
+
+To choose the password instead of accepting the generated one, pipe it so it never
+reaches `argv` or a shell history:
+
+```bash
+pnpm --filter @beaconhs/auth bootstrap:admin -- \
+  --email admin@your-company.com --password-stdin --apply < password.txt
+shred -u password.txt
+```
+
+What it does:
+
+- Writes one `user` row with `isSuperAdmin` and one `account` row with
+  `providerId = 'credential'` — the same two rows Better Auth's own sign-up route
+  writes, hashed with Better Auth's own scrypt hasher. `disableSignUp` is not
+  changed and no route, permission key, role, scope or migration is involved.
+- Needs only `DATABASE_URL`. `user` and `account` carry no RLS, so the runtime
+  role is sufficient; the migration and cross-tenant credentials are not required
+  and should not be present in the operator's shell for this command.
+- Creates **no** tenant, org unit, role, form template or demo record. The
+  database still has zero tenants afterwards, which is correct.
+
+What it refuses, in every mode:
+
+- If any super-admin already exists, it writes nothing and exits 0. A second run
+  can never create a second administrator or overwrite a password.
+- If the requested address already belongs to a user, it writes nothing and exits
+  1. It never promotes an existing account, so an operator typo cannot escalate an
+     arbitrary user.
+- Without `--apply` it is a dry run.
+
+Afterwards:
+
+1. Sign in at `/login` with the printed password and **change it immediately**.
+2. Create the first real tenant under `/platform/tenants`. It starts with no roles,
+   no org units, no PPE or inspection types and no form templates beyond the lift
+   plan, so provision those before inviting staff.
+3. Invite the tenant's administrator from `/platform/users`, and delete the
+   bootstrap account once a named administrator exists.
+
+## First Tenant Provisioning
+
+A platform with no tenant cannot be used through its own UI, so the first workspace is
+created with a command rather than a form. This is not a workaround. `getRequestContext()`
+returns `null` for a super-admin while no active tenant exists — by design, because the
+app shell requires a tenant-bound `RequestContext` even for platform administration —
+and `/platform/tenants/new`, the only page that could create a tenant, is itself gated
+behind `requireRequestContext()`. On a freshly migrated database, therefore, every
+authenticated route redirects to `/auth/continue` and the platform cannot create its own
+first workspace.
+
+Run this once, after `bootstrap:admin`:
+
+```bash
+# Dry run first: reports the current state and writes nothing.
+pnpm --filter @beaconhs/db provision:first-tenant -- --name "Northwind Construction"
+
+# Then write.
+pnpm --filter @beaconhs/db provision:first-tenant -- \
+  --name "Northwind Construction" --slug northwind --region ca-central-1 --apply
+```
+
+Useful flags: `--slug` (defaults to a slug derived from `--name`, using the same
+derivation as the UI), `--region` (defaults to `ca-central-1`), and `--language <locale>`
+(repeatable, defaults to `en`).
+
+What it creates — and what it deliberately does not. Everything below happens inside one
+transaction, so a seeder failure rolls the whole workspace back rather than leaving a
+half-provisioned tenant:
+
+- One `tenants` row.
+- The four built-in roles from `BUILTIN_ROLES`. Without these the tenant is unusable:
+  `roles` is the only way a non-super-admin can hold a permission, and `/admin/users`
+  reads its role picker from that table.
+- The reference catalogue, so the tenant can record something on day one:
+  - 5 document types and 5 document categories
+  - 4 PPE types with 20 inspection criteria
+  - the HAZID libraries — 5 hazard types, 12 hazards, 3 sets, 8 tasks, 4 assessment types
+  - 2 training assessment types with 13 questions
+  - the incident taxonomy — 6 classifications (one nested) and 6 injury types
+- One day-one `audit_log` entry in that new tenant's own log.
+- 4 form templates: the Lift Plan the product designates as required on day one, plus the
+  three HAZID embedded builder apps (confined-space entry, arc-flash work, fall
+  protection). The HAZID ones are required, not decorative —
+  `hazid_assessment_type_apps.template_id` is a real foreign key, so a HAZID library
+  without them would not link up.
+- A completeness check on both the roles and the catalogue, still inside the transaction.
+  If either is incomplete the tenant is rolled back rather than committed unusable.
+
+Every catalogue is written by the same exported seeder `pnpm db:seed` uses, so the
+repository holds one definition of each, not two.
+
+What it deliberately does **not** create:
+
+- **No** demo data of any kind, and **no** default company name: `--name` is required.
+- **No** org units, people, memberships, incidents, inspections, equipment, PPE items,
+  training history, hours-worked figures or notifications. A tenant created here has
+  `org_units = 0`, `people = 0`, `tenant_users = 0` and `incidents = 0`. Populating a new
+  workspace's business records is deliberate operator work, not part of creating it.
+- **No** inspection types. They are deferred on purpose: that seeder reads
+  `inspection_banks` and imports criteria from the banks it finds, and those banks are
+  demo content created against a seeded admin user and org units. An inspection type with
+  an empty checklist is worse than none, so the initializer is left out whole rather than
+  half applied. Lifting it requires inspection banks to become extractable reference
+  data first.
+- **No** membership for the platform administrator. None has ever been created at tenant
+  creation, and none is needed: a super-admin with no membership in a workspace still
+  resolves a working context and can administer it.
+
+Idempotent by refusal. If the platform already has any tenant, the command writes nothing
+and exits 0. It will not create a second tenant, will not overwrite the first, and will
+not touch any credential.
+
+Credentials: `SUPERADMIN_DATABASE_URL` is required. That is inherited from the existing
+provisioning code rather than chosen here — `audit_log` is a FORCE-RLS tenant-scoped table
+and the tenant the day-one audit row must reference has just been created, so the runtime
+role has no possible RLS scope for it. The migration credential is **not** required.
+
+Then, and only then:
+
+1. Sign in at `/login`.
+2. Confirm `/platform/tenants` lists the new workspace.
+3. **Create every further tenant through `/platform/tenants/new`.** That is the supported
+   path once a workspace exists and the super-admin can resolve a tenant context. Do not
+   re-run `provision:first-tenant` for tenant 2..N; it refuses by design.
 
 ## Database roles
 
@@ -82,6 +238,7 @@ DOKPLOY_URL
 R2_ACCESS_KEY_ID
 R2_BUCKET
 R2_ENDPOINT
+R2_INTERNAL_ENDPOINT
 R2_SECRET_ACCESS_KEY
 VAPID_PRIVATE_KEY
 VAPID_PUBLIC_KEY
@@ -91,6 +248,34 @@ VAPID_SUBJECT
 `R2_PRIVATE_BUCKET_CONFIRMED` is additionally required when `R2_ENDPOINT` is a
 Cloudflare `r2.cloudflarestorage.com` endpoint. It is unused for the private dev
 MinIO-compatible endpoint.
+
+### Storage endpoints: browser vs. server
+
+Storage has **two** endpoints and they are not interchangeable.
+
+| Variable               | Used by                                                                                                                  | Production value            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| `R2_ENDPOINT`          | Presigned PUT/GET URLs the **browser** calls, and the CSP allowlist                                                      | `https://hse.xuhaoqing.top` |
+| `R2_INTERNAL_ENDPOINT` | All server-side S3 I/O — `putObject`, `getObject`, `headObject`, `deleteObject`, multipart create/complete, bucket setup | `http://minio:9000`         |
+
+The split exists so ordinary server-side object traffic does not hairpin out to the
+public hostname and back through the tunnel on every call. It also means
+`storage-init` bootstraps the bucket while the Cloudflare Tunnel is stopped.
+
+Rules:
+
+- **`R2_INTERNAL_ENDPOINT` is mandatory in production.** With `NODE_ENV=production`
+  and the variable unset, the app refuses to start with an actionable error. It never
+  silently falls back to `R2_ENDPOINT`, because that would restore the tunnel
+  dependency invisibly. Outside production it falls back to `R2_ENDPOINT`.
+- Both endpoints keep `forcePathStyle=true`, the same credentials, the same bucket,
+  and the same tenant key shape (`t/<tenantId>/...`).
+- Presigned URLs are always minted against `R2_ENDPOINT`, so the browser receives
+  `https://hse.xuhaoqing.top/beaconhs/...`. The internal endpoint is never
+  browser-reachable and is never added to the CSP allowlist.
+- **Host-run local dev must use a `localhost` address for both.** The Docker service
+  name `minio` does not resolve on the host, so `R2_INTERNAL_ENDPOINT=http://minio:9000`
+  breaks a locally run web/worker. Only containers should use the service name.
 
 Production email providers are configured in **Platform email** and their
 credentials are encrypted in PostgreSQL with a key derived from the runtime
@@ -134,6 +319,10 @@ retired names and are not consumed by the workflow or containers. Remove stale
 repository entries rather than reintroducing any of them.
 
 ## PostgreSQL backup and recovery
+
+> A rehearsed end-to-end procedure — including the mandatory grant reapplication
+> after a restore, the readiness/version checks and the RPO/RTO record — is in
+> `docs/backup-restore-runbook.md`.
 
 ### Required provider/cluster controls
 
@@ -218,6 +407,81 @@ backup-tool changes.
   age unreferenced objects through a quarantine window before deletion.
 - Back up or replicate irreplaceable objects to a separate account/region.
 - Never reuse broad company-wide object credentials for BeaconHS.
+
+## Live database test suites
+
+Five `@beaconhs/db` suites across four vitest projects talk to a real PostgreSQL. They are
+skipped unless `SEED_TEST_SCRATCH_DATABASE_URL` is set. `pnpm test` deliberately leaves it
+unset, so CI sets it and runs each project explicitly; a connection mistake therefore fails
+loudly instead of hiding behind a skip. Each suite needs a **specific credential**, and two
+of them destroy each other's fixtures, so they cannot share a database.
+
+| Project      | Suite                                          | Credential it needs                                                              | Starting state                |
+| ------------ | ---------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------- |
+| `db-owner`   | `seed-bootstrap-contract`                      | owner-capable (`SEED_TEST_SCRATCH_OWNER_URL`) — it runs `db:seed` and `TRUNCATE` | migrated only                 |
+| `db-seeded`  | `phase11e-seed-integrity`                      | owner-capable                                                                    | migrated **and** `db:seed`-ed |
+| `db-runtime` | `tenant-provisioning`, `tenant-reference-data` | runtime + BYPASSRLS (`SEED_TEST_SCRATCH_SUPERADMIN_URL`)                         | migrated only                 |
+| `db-freeze`  | `storage-freeze-operations`                    | BYPASSRLS, on the **same** database its `DATABASE_URL` names                     | migrated only                 |
+
+Every suite refuses a `SEED_TEST_SCRATCH_DATABASE_URL` whose database name is not an
+isolated test database (the name must contain `test`, `scratch`, or `ci` as a segment).
+Pointing one at `beaconhs` fails closed before any row is touched, because these suites
+truncate and delete tenants.
+
+Point the owner suites at `beaconhs_app` and they fail with `permission denied for table
+verification`. That is a misconfigured credential, not a product fault — the runtime role
+deliberately owns nothing.
+
+`db-runtime` additionally drives `bootstrap:admin` as a subprocess with `NODE_ENV=production`,
+so it needs `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and `APP_URL` in the environment, and a
+reachable `REDIS_URL` for the magic-link job. CI provides all four; a bare shell does not.
+
+`phase11e` asserts on rows the demo seed creates, and `seed-bootstrap-contract` truncates
+all tenant data and finishes with no tenant at all. Measured: with zero tenants
+`phase11e` fails `expected null to be truthy` on `firstTenantId()`; after a re-seed it is
+40/40. They are mutually destructive even when serialised, so `db-owner` and `db-seeded`
+must use different databases.
+
+Every database needs the same grants as the main one, or `db:migrate` fails at
+`CREATE SCHEMA`:
+
+```sql
+ALTER DATABASE <db> OWNER TO beaconhs_owner;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO beaconhs_owner;
+GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super, beaconhs_backup;
+GRANT CONNECT, CREATE, TEMPORARY ON DATABASE <db> TO beaconhs_migrator;
+```
+
+Run the four projects separately, each with its own environment. DB-B is shared by
+`db-runtime` and `db-freeze`, which must run one after the other (each serialises its own
+files, and the provisioning suite deletes every tenant).
+
+```bash
+# DB-A — seed bootstrap (owner identity, seeds and truncates itself)
+SEED_TEST_SCRATCH_DATABASE_URL="$OWNER_URL" SEED_TEST_SCRATCH_OWNER_URL="$OWNER_URL" \
+  DATABASE_URL="$OWNER_URL" SUPERADMIN_DATABASE_URL="$OWNER_URL" MIGRATION_DATABASE_URL="$OWNER_URL" \
+  pnpm --filter @beaconhs/db exec vitest run --project db-owner
+
+# DB-A2 — must be migrated AND seeded before the run
+SEED_TEST_SCRATCH_DATABASE_URL="$OWNER_URL" \
+  DATABASE_URL="$RUNTIME_URL" SUPERADMIN_DATABASE_URL="$SUPER_URL" MIGRATION_DATABASE_URL="$MIGRATOR_URL" \
+  pnpm --filter @beaconhs/db exec vitest run --project db-seeded
+
+# DB-B — tenant provisioning and RLS isolation (runtime identity)
+SEED_TEST_SCRATCH_DATABASE_URL="$RUNTIME_URL" SEED_TEST_SCRATCH_SUPERADMIN_URL="$SUPER_URL" \
+  DATABASE_URL="$RUNTIME_URL" SUPERADMIN_DATABASE_URL="$SUPER_URL" MIGRATION_DATABASE_URL="$MIGRATOR_URL" \
+  BETTER_AUTH_SECRET="$TEST_AUTH_SECRET" BETTER_AUTH_URL="$APP_URL" APP_URL="$APP_URL" REDIS_URL="$REDIS_URL" \
+  pnpm --filter @beaconhs/db exec vitest run --project db-runtime
+
+# DB-B — storage freeze persistence (BYPASSRLS on the same database as DATABASE_URL)
+SEED_TEST_SCRATCH_DATABASE_URL="$SUPER_URL" \
+  DATABASE_URL="$SUPER_URL" SUPERADMIN_DATABASE_URL="$SUPER_URL" \
+  pnpm --filter @beaconhs/db exec vitest run --project db-freeze
+```
+
+Expected: 14, 40, 36 and 16 passing, with no skips. Run on the host, so the URLs must use
+`localhost`, not `host.docker.internal` — the latter resolves only inside a container.
 
 ## Redis and job recovery
 

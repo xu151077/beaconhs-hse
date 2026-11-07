@@ -36,6 +36,8 @@ import { parseListParams, pickString } from '@/lib/list-params'
 import { parseDateFilter } from '../_datetime'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 // Mirrors the filters/sort of the native records list (/inspections/records)
@@ -44,7 +46,7 @@ const SORTS = ['occurred_at', 'reference', 'type', 'status'] as const
 
 const STATUS_VALUES = ['draft', 'in_progress', 'submitted', 'closed'] as const
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -204,3 +206,5 @@ export async function GET(req: NextRequest) {
     ),
   })
 }
+
+export const GET = withRouteErrors(getHandler)

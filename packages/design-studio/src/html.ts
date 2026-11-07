@@ -77,7 +77,7 @@ function renderPagesHtml(
     @page { size: ${pageSize}; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body { font-family: 'Archivo', Arial, sans-serif; }
+    body { font-family: 'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; }
     .ds-page {
       position: relative;
       overflow: hidden;
@@ -156,7 +156,7 @@ function baseStyle(element: DesignElement): string {
 
 function textStyle(element: TextElement | DataFieldElement): string {
   return [
-    `font-family:${element.fontFamily ?? "'Archivo', Arial, sans-serif"}`,
+    `font-family:${element.fontFamily ?? "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"}`,
     `font-size:${element.fontSize ?? 12}pt`,
     `font-weight:${element.fontWeight ?? '600'}`,
     `font-style:${element.fontStyle ?? 'normal'}`,

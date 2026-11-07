@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation'
 import { Download, FileUp, Loader2, Play, Plus, X } from 'lucide-react'
 import { Button, FileUploader, cn } from '@beaconhs/ui'
 import { MAX_PPTX_FILE_BYTES } from '@beaconhs/office/limits'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { confirmDialog } from '@/lib/confirm'
 import { CollaboraEmbed } from '@/components/collabora-embed'
@@ -69,6 +69,7 @@ export function SlideDeckEditor({
       <FileUploader
         requestUploadAction={requestUpload}
         finalizeUploadAction={finalizeUpload}
+        requestMultipartPartAction={requestMultipartPartUrl}
         kind="document"
         accept=".pptx"
         maxSize={MAX_PPTX_FILE_BYTES}

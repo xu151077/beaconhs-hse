@@ -210,7 +210,7 @@ export default async function DocumentCategoriesPage({
               currentParams={sp}
               paramKey="hierarchy"
               label={tGenerated('m_1cc321f2024ad6')}
-              allLabel="All levels"
+              allLabel={tGenerated('m_03c6fba4e193ea')}
               options={[
                 { value: 'top', label: 'Top level', count: counts.top },
                 { value: 'nested', label: 'Nested', count: counts.nested },

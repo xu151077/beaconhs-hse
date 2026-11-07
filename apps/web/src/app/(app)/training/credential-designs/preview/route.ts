@@ -22,6 +22,7 @@ import {
   RequestBodyTimeoutError,
   RequestBodyTooLargeError,
 } from '@/lib/request-body'
+import { storageObjectUrl } from '../../../../../lib/storage-gateway'
 
 const MAX_DESIGN_BYTES = CREDENTIAL_OUTPUT_LIMITS.maxJsonBytes
 const MAX_DESIGN_READ_MS = 15_000
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
     tenantLogoUrl: await resolveTenantLogoUrl({
       tenantId: ctx.tenantId,
       logoUrl: tenant?.branding?.logoUrl,
+      buildUrl: storageObjectUrl,
     }),
     recipientFullName: 'Avery Chen',
     recipientEmployeeNo: 'BH-1048',

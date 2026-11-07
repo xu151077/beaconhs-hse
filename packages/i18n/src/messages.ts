@@ -2,6 +2,7 @@ import type { AppLocale } from './index'
 import en from './messages/en.json'
 import es from './messages/es.json'
 import fr from './messages/fr.json'
+import zh from './messages/zh.json'
 import { systemMessageKey } from './system-key'
 
 export { systemMessageKey } from './system-key'
@@ -9,7 +10,15 @@ export { systemMessageKey } from './system-key'
 export type AppMessages = typeof en
 type SystemMessageValues = Readonly<Record<string, unknown>>
 
-const messagesByLocale = { en, es, fr } as const
+const messagesByLocale = { en, es, fr, zh } as const
+
+/**
+ * Validation copy returned by the provider-settings Server Actions. Expected user
+ * input failures are returned, not thrown, so the three reactive settings forms can
+ * render them in-form instead of tripping the route error boundary. Failures that
+ * indicate a broken system (permissions, database, unknown) still propagate.
+ */
+export type ProviderSettingsResult = { ok?: boolean; error?: string }
 
 export function getAppMessages(locale: AppLocale): AppMessages {
   return messagesByLocale[locale] as AppMessages

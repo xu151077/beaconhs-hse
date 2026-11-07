@@ -12,7 +12,12 @@ import {
   trainingEnrollments,
   trainingLessons,
 } from '@beaconhs/db/schema'
-import { deleteObject, newAttachmentKey, putObject } from '@beaconhs/storage'
+import {
+  deleteObject,
+  newAttachmentKey,
+  putObject,
+  assertStorageWriteAllowed,
+} from '@beaconhs/storage'
 import { PPTX_MIME_TYPE } from '@beaconhs/office/limits'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
@@ -40,6 +45,7 @@ type PptxSession =
         | 'no_master'
         | 'unknown_target'
         | 'workspace_unavailable'
+        | 'workspace_frozen'
         | 'impersonation_blocked'
         | 'access_denied'
     }
@@ -64,6 +70,20 @@ export async function getPptxEditorSession(
 
   const master = await loadDeckMaster(ctx.db, target, targetId)
   if (!master) return { ok: false, error: 'no_master' }
+
+  // Phase 6T-B: Check freeze state before minting a WOPI token.
+  // The attachment's key names the tenant; if the gate refuses, the session
+  // creation fails.
+  const attachmentKey = newAttachmentKey({
+    tenantId: ctx.tenantId,
+    kind: 'document',
+    filename: master.attachment.filename ?? 'presentation.pptx',
+  })
+  try {
+    await assertStorageWriteAllowed({ operation: 'wopiToken', key: attachmentKey })
+  } catch (error) {
+    return { ok: false, error: 'workspace_frozen' }
+  }
 
   const editUrl = await getCollaboraEditUrl()
   if (!editUrl) return { ok: false, error: 'not_configured' }

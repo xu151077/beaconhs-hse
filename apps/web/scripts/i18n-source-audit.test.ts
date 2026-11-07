@@ -11,7 +11,7 @@ describe('normalizeProse', () => {
 
 describe('generated message catalogues', () => {
   it('contain no duplicate generated-message keys', () => {
-    for (const locale of ['en', 'fr', 'es']) {
+    for (const locale of ['en', 'fr', 'es', 'zh']) {
       const raw = readFileSync(
         new URL(`../../../packages/i18n/src/messages/${locale}.json`, import.meta.url),
         'utf8',

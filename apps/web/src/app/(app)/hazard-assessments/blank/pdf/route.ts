@@ -14,9 +14,11 @@ import { getModuleTemplateByKey } from '@/lib/pdf-templates'
 import { renderOnDemandPdfResponse } from '@/lib/pdf-route'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request): Promise<Response> {
+async function getHandler(request: Request): Promise<Response> {
   if (isRouterPrefetch(request)) return new Response(null, { status: 204 })
 
   const ctx = await requireRequestContext()
@@ -67,3 +69,5 @@ export async function GET(request: Request): Promise<Response> {
   }
   return response
 }
+
+export const GET = withRouteErrors(getHandler)

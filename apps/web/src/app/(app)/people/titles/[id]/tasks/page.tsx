@@ -340,7 +340,7 @@ export default async function TitleTasksPage({
                           { value: 'active', label: 'Active' },
                           { value: 'archived', label: 'Archived' },
                         ]}
-                        allLabel="All"
+                        allLabel={tGenerated('m_17201516610431')}
                       />
                     </TableToolbar>
                     <GeneratedValue

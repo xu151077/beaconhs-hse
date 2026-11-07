@@ -1,0 +1,15 @@
+{
+  "name": "@beaconhs/ops-migrate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@beaconhs/db": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

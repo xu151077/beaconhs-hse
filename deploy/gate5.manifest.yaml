@@ -1,0 +1,120 @@
+# EA-65.1 — trusted expectation for the Compose deployment (Gate 5).
+#
+# Reviewed together with deploy/local-production.compose.yaml. If the two
+# disagree, the gate returns NOT VERIFIED: neither file can be trusted over the
+# other, so the deployment is not proven.
+#
+# Format: a strict YAML subset — top-level keys, `services:` and two levels of
+# mapping. No anchors, lists, flow style or inline comments. The parser rejects
+# anything outside the subset rather than guessing.
+#
+# service fields
+#   role                        the service's unique role; must equal its name
+#   image_class                 gated | pinned
+#   expected_image              pinned only: repository, no tag and no digest
+#   expected_digest             pinned only: canonical sha256:<64 hex>
+#   expected_container_count    positive integer
+#   required                    true | false
+#   one_shot                    true | false
+#   health                      required | none
+#   expected_exit_code          0..255; required iff one_shot is true
+#   deployment_label_required   must be true
+#   image_digest_label_required must be true
+#
+# Gated services take their identity from the run's --image/--digest. They must
+# not declare expected_image or expected_digest: the approved gated digest is a
+# run input, not a second manifest value. Pinned services must declare both, so
+# their identity is fixed in this reviewed file and is never compared to the
+# gated EXPECTED_REF.
+#
+# `worker` carries a healthcheck in the compose file
+# (deploy/local-production.compose.yaml:132-137), so health is `required`.
+# `collabora` has none, so it is `none`. The gate cross-checks this against
+# `docker compose config`, so a change in either file fails closed.
+
+project: beaconhs-local-prod
+compose_file: deploy/local-production.compose.yaml
+
+services:
+  web:
+    role: web
+    image_class: gated
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: required
+    deployment_label_required: true
+    image_digest_label_required: true
+  worker:
+    role: worker
+    image_class: gated
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: required
+    deployment_label_required: true
+    image_digest_label_required: true
+  scheduler:
+    role: scheduler
+    image_class: gated
+    expected_container_count: 1
+    required: true
+    one_shot: true
+    health: none
+    expected_exit_code: 0
+    deployment_label_required: true
+    image_digest_label_required: true
+  storage-init:
+    role: storage-init
+    image_class: gated
+    expected_container_count: 1
+    required: true
+    one_shot: true
+    health: none
+    expected_exit_code: 0
+    deployment_label_required: true
+    image_digest_label_required: true
+  postgres:
+    role: postgres
+    image_class: pinned
+    expected_image: postgres
+    expected_digest: sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: required
+    deployment_label_required: true
+    image_digest_label_required: true
+  redis:
+    role: redis
+    image_class: pinned
+    expected_image: redis
+    expected_digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: required
+    deployment_label_required: true
+    image_digest_label_required: true
+  minio:
+    role: minio
+    image_class: pinned
+    expected_image: minio/minio
+    expected_digest: sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: required
+    deployment_label_required: true
+    image_digest_label_required: true
+  collabora:
+    role: collabora
+    image_class: pinned
+    expected_image: collabora/code
+    expected_digest: sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c
+    expected_container_count: 1
+    required: true
+    one_shot: false
+    health: none
+    deployment_label_required: true
+    image_digest_label_required: true

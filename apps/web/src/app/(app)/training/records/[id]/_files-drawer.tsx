@@ -10,7 +10,7 @@ import {
   useGeneratedTranslations,
   useGeneratedValueTranslations,
 } from '@/i18n/generated'
-import { requestUpload, finalizeUpload } from '@/lib/uploads'
+import { requestUpload, finalizeUpload, requestMultipartPartUrl } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { addTrainingRecordFile } from '../_actions'
 
@@ -141,6 +141,7 @@ export function TrainingRecordFilesDrawer({
           <FileUploader
             requestUploadAction={requestUpload}
             finalizeUploadAction={finalizeUpload}
+            requestMultipartPartAction={requestMultipartPartUrl}
             kind="document"
             accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.heic,.webp"
             label={tGenerated('m_06dc5804d9c769')}

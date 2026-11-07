@@ -5,6 +5,8 @@
     "NODE_ENV",
     "DATABASE_URL",
     "REDIS_URL",
+    "R2_ENDPOINT",
+    "R2_INTERNAL_ENDPOINT",
     "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
@@ -22,7 +24,9 @@
     "VAPID_PRIVATE_KEY",
     "VAPID_SUBJECT",
     "SENTRY_DSN",
-    "APP_URL"
+    "APP_URL",
+    "PUBLIC_APP_URL",
+    "DEPLOYMENT_VERSION"
   ],
   "tasks": {
     "build": {

@@ -15,11 +15,13 @@ import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 const SORTS = ['name', 'code', 'delivery_type', 'valid_for_months'] as const
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -108,3 +110,5 @@ export async function GET(req: NextRequest) {
     ),
   })
 }
+
+export const GET = withRouteErrors(getHandler)

@@ -331,7 +331,7 @@ export default async function InspectionRecordsPage({
                 currentParams={sp}
                 paramKey="type"
                 placeholder={tGenerated('m_1611fa8f360b83')}
-                allLabel="All inspection types"
+                allLabel={tGenerated('m_1611fa8f360b83')}
                 searchPlaceholder={tGenerated('m_0cfac222b97518')}
               />
               <RemoteSearchFilter
@@ -340,7 +340,7 @@ export default async function InspectionRecordsPage({
                 currentParams={sp}
                 paramKey="site"
                 placeholder={tGenerated('m_1a37e747f6006b')}
-                allLabel="All locations"
+                allLabel={tGenerated('m_1a37e747f6006b')}
                 searchPlaceholder={tGenerated('m_016e087c3c8544')}
               />
               <RemoteSearchFilter
@@ -349,7 +349,7 @@ export default async function InspectionRecordsPage({
                 currentParams={sp}
                 paramKey="inspector"
                 placeholder={tGenerated('m_1b8e5ee2723809')}
-                allLabel="All inspectors"
+                allLabel={tGenerated('m_1b8e5ee2723809')}
                 searchPlaceholder={tGenerated('m_13bf3655817e8d')}
               />
               <FilterChips

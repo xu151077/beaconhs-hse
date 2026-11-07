@@ -27,6 +27,13 @@ private
 # Local Dokploy helpers embed cluster credentials and must never enter an image
 # layer, cache, or remote BuildKit context.
 packages/db/src/scripts/dokploy-*.ts
+# Host-side secret files (build secrets are injected via BuildKit
+# `--mount=type=secret`, never via the build context).
+.docker/
+# Operator backup/scratch copies of compose and editor configs.
+*.bak
+*.backup
+*.before-pat-test
 coverage
 playwright-report
 test-results

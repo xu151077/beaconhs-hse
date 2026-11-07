@@ -14,6 +14,8 @@ import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { isUuid, parseListParams, pickString } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 const SORTS = ['title', 'category', 'status', 'next_review_on'] as const
@@ -21,7 +23,7 @@ const SORTS = ['title', 'category', 'status', 'next_review_on'] as const
 const STATUS_VALUES = ['draft', 'published', 'archived', 'under_review'] as const
 type DocumentStatus = (typeof STATUS_VALUES)[number]
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const url = new URL(req.url)
@@ -122,3 +124,5 @@ export async function GET(req: NextRequest) {
     ),
   })
 }
+
+export const GET = withRouteErrors(getHandler)

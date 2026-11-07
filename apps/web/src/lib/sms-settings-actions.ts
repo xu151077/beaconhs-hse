@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { getTranslations } from 'next-intl/server'
 import { assertCan, type RequestContext } from '@beaconhs/tenant'
+import type { ProviderSettingsResult } from '@beaconhs/i18n/messages'
 import {
   isSmsProvider,
   isSmsPolicyMode,
@@ -34,34 +36,69 @@ function gatePlatform(ctx: RequestContext) {
     throw new Error('Only platform super-admins can change global SMS settings.')
 }
 
-function readTrimmedField(fd: FormData, name: string, maxLength: number): string {
+/** Localised copy for the provider-settings validation surface. */
+type Translator = (
+  key: 'invalidSmsProvider' | 'invalidSmsPolicy' | 'fieldTooLong',
+  values?: { field?: string; max?: number },
+) => string
+
+/**
+ * Marks a rejected user configuration — an unknown provider or an over-long
+ * field. These are expected outcomes of editing the form, so the actions return
+ * them for in-form display. Anything else (permissions, database, unknown faults)
+ * keeps propagating to the route error boundary rather than being flattened into
+ * a message that would hide the real failure.
+ */
+class ValidationFailure extends Error {}
+
+/** Aborts parsing at the first bad field; the message reaches the caller intact. */
+class FieldTooLongError extends Error {}
+
+function readTrimmedField(fd: FormData, name: string, maxLength: number, t: Translator): string {
   const value = String(fd.get(name) ?? '').trim()
   if (value.length > maxLength) {
-    throw new Error(`${name} must be ${maxLength} characters or fewer.`)
+    throw new FieldTooLongError(t('fieldTooLong', { field: name, max: maxLength }))
   }
   return value
 }
 
-function parseInput(fd: FormData): SmsSettingsInput {
+function parseInput(fd: FormData, t: Translator): SmsSettingsInput {
   const providerRaw = String(fd.get('provider') ?? '')
-  if (!isSmsProvider(providerRaw)) throw new Error('Select a valid SMS provider.')
+  if (!isSmsProvider(providerRaw)) {
+    throw new ValidationFailure(t('invalidSmsProvider'))
+  }
   const provider: SmsProvider = providerRaw
-  return {
-    enabled: fd.get('enabled') === 'on',
-    provider,
-    fromNumber: readTrimmedField(fd, 'fromNumber', 100),
-    twilioAccountSid: readTrimmedField(fd, 'twilioAccountSid', 320),
-    vonageApiKey: readTrimmedField(fd, 'vonageApiKey', 320),
-    plivoAuthId: readTrimmedField(fd, 'plivoAuthId', 320),
-    telnyxMessagingProfileId: readTrimmedField(fd, 'telnyxMessagingProfileId', 320),
-    secret: readTrimmedField(fd, 'secret', 4_096) || undefined,
+  try {
+    return {
+      enabled: fd.get('enabled') === 'on',
+      provider,
+      fromNumber: readTrimmedField(fd, 'fromNumber', 100, t),
+      twilioAccountSid: readTrimmedField(fd, 'twilioAccountSid', 320, t),
+      vonageApiKey: readTrimmedField(fd, 'vonageApiKey', 320, t),
+      plivoAuthId: readTrimmedField(fd, 'plivoAuthId', 320, t),
+      telnyxMessagingProfileId: readTrimmedField(fd, 'telnyxMessagingProfileId', 320, t),
+      secret: readTrimmedField(fd, 'secret', 4_096, t) || undefined,
+    }
+  } catch (error) {
+    if (error instanceof FieldTooLongError) throw new ValidationFailure(error.message)
+    throw error
   }
 }
 
-export async function saveTenantSms(formData: FormData) {
+export async function saveTenantSms(
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+): Promise<ProviderSettingsResult> {
   const ctx = await requireRequestContext()
   gateTenant(ctx)
-  const input = parseInput(formData)
+  const t: Translator = await getTranslations('ProviderSettings')
+  let input: SmsSettingsInput
+  try {
+    input = parseInput(formData, t)
+  } catch (error) {
+    if (error instanceof ValidationFailure) return { error: error.message }
+    throw error
+  }
   const change = await saveTenantSmsSettings(ctx, input)
   await recordAudit(ctx, {
     entityType: 'tenant',
@@ -75,6 +112,7 @@ export async function saveTenantSms(formData: FormData) {
     },
   })
   revalidatePath('/admin/sms')
+  return { ok: true }
 }
 
 export async function clearTenantSms() {
@@ -91,13 +129,25 @@ export async function clearTenantSms() {
   revalidatePath('/admin/sms')
 }
 
-export async function savePlatformSms(formData: FormData) {
+export async function savePlatformSms(
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+): Promise<ProviderSettingsResult> {
   const ctx = await requireRequestContext()
   gatePlatform(ctx)
-  const input = parseInput(formData)
+  const t: Translator = await getTranslations('ProviderSettings')
   const modeRaw = String(formData.get('mode') ?? 'tenant_optional')
-  if (!isSmsPolicyMode(modeRaw)) throw new Error('Select a valid platform SMS policy.')
+  if (!isSmsPolicyMode(modeRaw)) {
+    return { error: t('invalidSmsPolicy') }
+  }
   const mode: SmsPolicyMode = modeRaw
+  let input: SmsSettingsInput
+  try {
+    input = parseInput(formData, t)
+  } catch (error) {
+    if (error instanceof ValidationFailure) return { error: error.message }
+    throw error
+  }
   const change = await savePlatformSmsSettings({ ...input, mode })
   await recordAudit(ctx, {
     entityType: 'platform_sms_settings',
@@ -107,6 +157,7 @@ export async function savePlatformSms(formData: FormData) {
     metadata: { provider: input.provider, mode, enabled: input.enabled, ...change },
   })
   revalidatePath('/platform/sms')
+  return { ok: true }
 }
 
 /**

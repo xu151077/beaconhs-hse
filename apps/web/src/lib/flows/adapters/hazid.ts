@@ -21,13 +21,14 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { spawnCorrectiveActionForSubject } from '../spawn'
 import { fmtDateTime, personName, yesBlank, yesNo } from '../format'
 import type { FlowSubjectAdapter } from '../types'
 import { photoDocumentUrl } from '@/lib/photo-document-url'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 function riskScore(l: number | null, s: number | null): number | string {
   return l != null && s != null ? l * s : ''
@@ -288,14 +289,12 @@ export function createHazidFlowAdapter(
             cs_rescue: yesBlank(s.row.csRescue),
             signed_at: fmtDateTime(s.row.signedAt),
             attachment_id: s.row.signatureAttachmentId ?? null,
-            image: s.signatureKey
-              ? await presignGet({ key: s.signatureKey, expiresInSeconds: 900 })
-              : '',
+            image: s.signatureKey ? await storageObjectUrl(s.signatureKey) : '',
           })),
         ),
         photos: await Promise.all(
           photos.map(async (p) => {
-            const url = await presignGet({ key: p.r2Key, expiresInSeconds: 900 })
+            const url = await storageObjectUrl(p.r2Key)
             return {
               url: photoDocumentUrl({
                 url,

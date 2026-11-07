@@ -28,6 +28,10 @@ export const platformSettings = pgTable('platform_settings', {
   // unbounded high-volume tables (audit_log, kiosk_scans, *_log, notifications,
   // compliance_dispatches). Shape = DbMaintenanceSettings in db/maintenance.ts.
   database: jsonb('database').$type<Record<string, unknown>>().default({}).notNull(),
+  // Open-source disclosure: public URL of this system's source repository,
+  // shown as a compliance link at the bottom of every Dashboard. Shape =
+  // OpenSourceSettings in apps/web/src/lib/open-source-config.ts.
+  openSource: jsonb('open_source').$type<Record<string, unknown>>().default({}).notNull(),
   ...timestamps,
 })
 

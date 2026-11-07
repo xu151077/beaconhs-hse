@@ -128,4 +128,9 @@ const COPY: Record<AppLocale, { empty: string; by: string; showChanges: string }
     by: 'por',
     showChanges: 'mostrar cambios',
   },
+  zh: {
+    empty: '暂无活动记录。',
+    by: '由',
+    showChanges: '查看变更',
+  },
 }

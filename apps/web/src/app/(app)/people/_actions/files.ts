@@ -7,8 +7,9 @@
 // any number of forms / inspections / lift plans want to render it inline.
 
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
-import { personFiles } from '@beaconhs/db/schema'
+import { and, eq, isNull } from 'drizzle-orm'
+import { attachments, personFiles, people } from '@beaconhs/db/schema'
+import { isUuid } from '@/lib/list-params'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
 import { assertCanActOnPerson } from '../_lib/person-access'
@@ -27,7 +28,20 @@ export async function addPersonFile(args: {
   assertCanActOnPerson(ctx, args.personId)
   const label = args.label.trim()
   if (!label) return { ok: false, error: 'Label is required' }
+  if (!isUuid(args.attachmentId)) return { ok: false, error: 'File not found.' }
   const kind = ALLOWED_KINDS.has(args.kind) ? args.kind : 'other'
+
+  // The attachment must exist under this tenant before linking, so a caller
+  // cannot bind an arbitrary or missing id (which would otherwise surface as
+  // a raw database error).
+  const [attachment] = await ctx.db((tx) =>
+    tx
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(and(eq(attachments.id, args.attachmentId), eq(attachments.tenantId, ctx.tenantId)))
+      .limit(1),
+  )
+  if (!attachment) return { ok: false, error: 'File not found.' }
 
   const [row] = await ctx.db((tx) =>
     tx
@@ -50,6 +64,58 @@ export async function addPersonFile(args: {
     action: 'create',
     summary: `Uploaded ${kind.replace('_', ' ')}: ${label}`,
     metadata: { personFileId: row.id, attachmentId: args.attachmentId, kind },
+  })
+
+  revalidatePath(`/people/${args.personId}`)
+  return { ok: true }
+}
+
+/**
+ * Set (or clear) the person's portrait photo.
+ *
+ * The portrait is taken from the uploaded attachment; it is what the ID badge
+ * renders. The attachment must be an image belonging to this tenant — the
+ * upload already validated its type and size, this stamps the reference.
+ */
+export async function setPersonPhoto(args: {
+  personId: string
+  attachmentId: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await requireRequestContext()
+  if (!isUuid(args.personId)) return { ok: false, error: 'Person not found.' }
+  if (args.attachmentId && !isUuid(args.attachmentId)) {
+    return { ok: false, error: 'Photo not found.' }
+  }
+  assertCanActOnPerson(ctx, args.personId)
+
+  const attachmentId = args.attachmentId
+  if (attachmentId) {
+    const [att] = await ctx.db((tx) =>
+      tx
+        .select({ id: attachments.id, kind: attachments.kind })
+        .from(attachments)
+        .where(and(eq(attachments.id, attachmentId), eq(attachments.tenantId, ctx.tenantId)))
+        .limit(1),
+    )
+    if (!att) return { ok: false, error: 'Photo not found.' }
+    if (att.kind !== 'image') return { ok: false, error: 'The portrait must be an image file.' }
+  }
+
+  const updated = await ctx.db((tx) =>
+    tx
+      .update(people)
+      .set({ photoAttachmentId: args.attachmentId })
+      .where(and(eq(people.id, args.personId), isNull(people.deletedAt)))
+      .returning({ id: people.id }),
+  )
+  if (!updated[0]) return { ok: false, error: 'Person not found.' }
+
+  await recordAudit(ctx, {
+    entityType: 'person',
+    entityId: args.personId,
+    action: 'update',
+    summary: args.attachmentId ? 'Set portrait photo' : 'Removed portrait photo',
+    metadata: { attachmentId: args.attachmentId },
   })
 
   revalidatePath(`/people/${args.personId}`)

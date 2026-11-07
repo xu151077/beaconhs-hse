@@ -46,6 +46,7 @@ import { parseListParams, pickString } from '@/lib/list-params'
 import { resolveCourseCredentialOutput, resolveCredentialOutput } from '@/lib/credential-designs'
 import { WorkspaceNoIdentity } from '../_no-identity'
 import { WalletStack, type WalletCard, type WalletDesign } from './_wallet-stack'
+import { storageObjectUrl } from '../../../../lib/storage-gateway'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -350,6 +351,7 @@ export default async function MyWalletPage({
   const tenantLogoUrl = await resolveTenantLogoUrl({
     tenantId: ctx.tenantId,
     logoUrl: tenant?.branding?.logoUrl,
+    buildUrl: storageObjectUrl,
   })
   const recipientFullName = `${person.firstName} ${person.lastName}`
 

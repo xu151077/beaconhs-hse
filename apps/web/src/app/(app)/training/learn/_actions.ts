@@ -159,8 +159,6 @@ export async function enrollInCourse(courseId: string, personIdArg?: string) {
             completionReviewedAt: null,
             completionReviewedByTenantUserId: null,
             completionReviewNote: null,
-            dueOn: requirement?.dueOn ?? null,
-            expiresOn: null,
             recordId: null,
             deletedAt: null,
           })
@@ -191,7 +189,6 @@ export async function enrollInCourse(courseId: string, personIdArg?: string) {
         status: 'in_progress',
         source,
         assignedByTenantUserId: assigning ? (ctx.membership?.id ?? null) : null,
-        dueOn: requirement?.dueOn ?? null,
         startedAt: new Date(),
       })
       .returning({ id: trainingEnrollments.id })

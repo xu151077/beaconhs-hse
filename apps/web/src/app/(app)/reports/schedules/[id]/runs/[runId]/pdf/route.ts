@@ -14,9 +14,11 @@ import { storedPdfArtifactResponse } from '@/lib/pdf-route'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   request: Request,
   { params }: { params: Promise<{ id: string; runId: string }> },
 ): Promise<Response> {
@@ -71,3 +73,5 @@ export async function GET(
     return NextResponse.json({ error: 'PDF artifact is missing from storage' }, { status: 410 })
   }
 }
+
+export const GET = withRouteErrors(getHandler)

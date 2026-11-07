@@ -1,8 +1,8 @@
-// Document version rendering. Publishing a document snapshots its DOCX master
+// Document version rendering. Publishing a document snapshots its office master
 // into an immutable document_versions row; this worker turns that snapshot
 // into the artifacts readers consume:
 //
-//   docx ─(soffice --headless)→ version PDF (what the read/acknowledge view
+//   docx/pptx/xlsx ─(soffice --headless)→ version PDF (what the read/acknowledge view
 //   shows — identical pagination on every device) + extracted plain text
 //   (search / AI assistant).
 //
@@ -22,14 +22,17 @@ import {
 import { audit } from '@beaconhs/audit'
 import { sofficeConvert } from '@beaconhs/office'
 import {
+  DOCX_MIME_TYPE,
+  MAX_OFFICE_SOURCE_BYTES,
+  officeSourceExtension,
+} from '@beaconhs/office/limits'
+import {
   CONTROLLED_HEADER_BAND_PT,
   reserveFirstPageBand,
   setDocxPageSize,
 } from '@beaconhs/office/docx-page-size'
 
 const MAX_TEXT_CHARS = 1_500_000
-const MAX_OFFICE_INPUT_BYTES = 100 * 1024 * 1024
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 function renderErrorMessage(error: unknown): string {
   return (error instanceof Error ? error.message : 'Document render failed')
@@ -44,15 +47,22 @@ function assertOfficeInput(
   },
   bytes?: Buffer,
 ): void {
-  if (attachment.contentType !== DOCX_MIME) {
-    throw new Error('Document render source is not a Word document')
+  if (officeSourceExtension(attachment.contentType) === null) {
+    throw new Error('Document render source is not a Word, PowerPoint or Excel file')
   }
-  if (attachment.sizeBytes <= 0 || attachment.sizeBytes > MAX_OFFICE_INPUT_BYTES) {
+  if (attachment.sizeBytes <= 0 || attachment.sizeBytes > MAX_OFFICE_SOURCE_BYTES) {
     throw new Error('Document render source exceeds the 100 MB conversion limit')
   }
   if (bytes && bytes.length !== attachment.sizeBytes) {
     throw new Error('Document render source size does not match its attachment record')
   }
+}
+
+/** LibreOffice import extension for a source MIME, refused when it is not office. */
+function sourceExtension(contentType: string): 'docx' | 'pptx' | 'xlsx' {
+  const extension = officeSourceExtension(contentType)
+  if (!extension) throw new Error('Document render source is not a Word, PowerPoint or Excel file')
+  return extension
 }
 
 /**
@@ -76,10 +86,22 @@ const DOCUMENT_PAGE_SIZE = 'letter'
  * book: a book pins exact versions, so a render that did not reserve it can
  * never be given the space later without re-rendering an approved snapshot.
  */
+/** DOCX-only entry point kept for the letter-conversion maintenance script. */
 export async function renderDocxToPdf(docx: Buffer): Promise<Buffer> {
-  const letter = await setDocxPageSize(docx, DOCUMENT_PAGE_SIZE)
-  const reserved = await reserveFirstPageBand(letter, CONTROLLED_HEADER_BAND_PT)
-  return sofficeConvert(reserved, 'document.docx', 'pdf')
+  return renderOfficeSourceToPdf(docx, DOCX_MIME_TYPE)
+}
+
+async function renderOfficeSourceToPdf(bytes: Buffer, contentType: string): Promise<Buffer> {
+  const extension = sourceExtension(contentType)
+  if (extension === 'docx') {
+    const letter = await setDocxPageSize(bytes, DOCUMENT_PAGE_SIZE)
+    const reserved = await reserveFirstPageBand(letter, CONTROLLED_HEADER_BAND_PT)
+    return sofficeConvert(reserved, 'document.docx', 'pdf')
+  }
+  // PowerPoint and Excel have no house paper size or controlled header band:
+  // their own slide / sheet geometry is the document. LibreOffice still owns
+  // the conversion so the PDF of record keeps the platform's rendering path.
+  return sofficeConvert(bytes, `source.${extension}`, 'pdf')
 }
 
 export async function renderDocumentVersion(args: {
@@ -135,7 +157,7 @@ export async function renderDocumentVersion(args: {
       if (!att) return null
       return { versionNumber: version.version, version, doc, source: att }
     })
-    if (!data) throw new Error('Version snapshot or its DOCX file not found')
+    if (!data) throw new Error('Version snapshot or its office file not found')
     if (data.version.renderStatus === 'complete' && data.version.pdfAttachmentId) return
 
     assertOfficeInput(data.source)
@@ -143,8 +165,10 @@ export async function renderDocumentVersion(args: {
 
     const docx = await getObject({ key: data.source.key })
     assertOfficeInput(data.source, docx)
-    const pdf = await renderDocxToPdf(docx)
-    const text = (await sofficeConvert(docx, 'document.docx', 'txt:Text'))
+    const pdf = await renderOfficeSourceToPdf(docx, data.source.contentType)
+    const text = (
+      await sofficeConvert(docx, `source.${sourceExtension(data.source.contentType)}`, 'txt:Text')
+    )
       .toString('utf8')
       .slice(0, MAX_TEXT_CHARS)
 
@@ -241,12 +265,12 @@ export async function renderDocumentMasterPdf(args: {
       .limit(1)
     return att ? { doc, source: att } : null
   })
-  if (!data) throw new Error('This document has no Word file to render')
+  if (!data) throw new Error('This document has no office file to render')
 
   assertOfficeInput(data.source)
   const docx = await getObject({ key: data.source.key })
   assertOfficeInput(data.source, docx)
-  const pdf = await renderDocxToPdf(docx)
+  const pdf = await renderOfficeSourceToPdf(docx, data.source.contentType)
 
   const stamp = Date.now()
   const base =

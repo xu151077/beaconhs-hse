@@ -567,14 +567,18 @@ connection). UI at `/admin/integrations`.
 
 # 11. i18n — `packages/i18n`
 
-- `SUPPORTED_LOCALES = ['en','fr','es']` (`src/index.ts:1`), `DEFAULT_LOCALE='en'`.
-- Message catalogues imported statically (`src/messages/{en,fr,es}.json`), typed off `en`.
+- `SUPPORTED_LOCALES = ['en','fr','es','zh']` (`src/index.ts:9`), `DEFAULT_LOCALE='en'`.
+  Locales are **2-letter ISO-639-1 codes** — Chinese is `zh`, not `zh-CN`. Do not introduce a
+  second naming convention: the value is persisted in three columns, each CHECK-constrained.
+- Message catalogues imported statically (`src/messages/{en,fr,es,zh}.json`), typed off `en`.
+  `zh` is Simplified only; `localeFromAcceptLanguage` refuses `zh-TW`/`zh-HK`/`zh-MO`/`zh-Hant` so a
+  Traditional-Chinese preference is never served the wrong script (`src/index.ts:47`).
 - **Resolution order (`:69-103`): user override → tenant default → platform default**, with
   `normalizeLocalePolicy` forcing the default into the enabled set and dropping stale values.
 - **Locale is per-tenant** — `tenants.default_language` + `tenants.enabled_languages` (jsonb),
-  with a CHECK `<@ '["en","fr","es"]'` (`drizzle/0006_tenant_language_policy.sql`). Edited at
-  `(app)/admin/settings/page.tsx:56-60`. Per-user override in `users.locale`, applied only if
-  still tenant-enabled.
+  with a CHECK `<@ '["en","fr","es","zh"]'` (`drizzle/0006_tenant_language_policy.sql`, widened by
+  `drizzle/0045_add_zh_locale.sql`). Edited at `(app)/admin/settings/page.tsx:56-60`. Per-user
+  override in `tenant_users.locale_override`, applied only if still tenant-enabled.
 - Exposed on `RequestContext` as `locale`, `defaultLocale`, `enabledLocales`, `localeOverride`
   (`packages/tenant/src/index.ts:48-51`), resolved in `apps/web/src/lib/auth.ts:33-42`.
 - **Hashed message keys** (`m_1f0a25de4c8df0`) + `<GeneratedText>` / `<GeneratedValue>`
@@ -583,9 +587,19 @@ connection). UI at `/admin/integrations`.
 - Tenant-authored multilingual content: `localizeText(value, locale, fallback, tenantDefault)`
   (`:113-128`).
 
-> **Adding a locale is a cross-cutting change**, not a config toggle: `SUPPORTED_LOCALES`, three
-> JSON catalogues, the DB CHECK constraints on `tenants`, and the `RequestContext` contract. For
-> a Chinese-language HSE deployment this is a real project in its own right.
+> **Adding a locale is a cross-cutting change**, not a config toggle: `SUPPORTED_LOCALES`,
+> `LOCALE_OPTIONS`, one JSON catalogue per locale (including its own entry in every catalogue's
+> `Languages` section, since the switcher renders `Languages.<locale>` and a missing entry throws
+> rather than falling back), the `Languages` label in **all** existing catalogues, and the three
+> DB CHECK constraints (`tenants.default_language`, `tenants.enabled_languages`,
+> `tenant_users.locale_override`). `pnpm db:generate` must be re-run to refresh the snapshot or
+> `pnpm --filter @beaconhs/db check:migration-drift` fails. The `RequestContext` contract is
+> unchanged. Terminology for `zh` is pinned by `docs/i18n-zh-glossary.md`.
+>
+> Adding a locale does **not** localise the email/PDF channels: notification and automated-email
+> copy in `packages/events` and `apps/worker/src/lib` is English-only for every locale, and email
+> template bodies are tenant-authored rows in `email_templates.source_html`. Reports are the
+> exception — `apps/worker/src/workers/reports.ts:169` already resolves `createSystemTranslator(locale)`.
 
 ---
 

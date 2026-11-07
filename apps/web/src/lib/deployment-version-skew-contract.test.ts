@@ -21,6 +21,9 @@ describe('self-hosted Next.js version-skew protection', () => {
     expect(dockerfile).toContain(
       'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/next_server_actions_key)"',
     )
+    // A placeholder key makes actions rendered by one build undecryptable by the
+    // next. Keep the contract test explicit so a local unblock cannot land.
+    expect(dockerfile).not.toContain('NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="placeholder-key"')
     expect(devWorkflow).toContain(
       'next_server_actions_key=${{ secrets.DEV_NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}',
     )

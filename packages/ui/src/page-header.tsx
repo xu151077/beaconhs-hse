@@ -31,12 +31,13 @@ export function PageHeader({
           className="text-xs text-slate-500 hover:text-teal-700 dark:text-slate-400 dark:hover:text-teal-300"
         />
       ) : null}
-      {/* One row at every breakpoint: title on the left (truncates to make
-          room), actions pinned right. Phones drop the description to keep the
-          header to a single line; sm+ shows it below and bottom-aligns the
-          actions. */}
-      <header className="flex items-center justify-between gap-3 sm:items-end sm:gap-4">
-        <div className="min-w-0 space-y-1">
+      {/* Desktop: one row — title left (truncates), actions pinned right.
+          Phones: the actions move below the title at full width, because a
+          phone cannot fit a title plus a button group on one line (the group
+          used to overflow past the viewport). The description stays hidden on
+          phones to keep the header short. */}
+      <header className="flex flex-wrap items-center justify-between gap-3 sm:items-end sm:gap-4">
+        <div className="min-w-0 flex-1 basis-40 space-y-1">
           <h1 className="truncate text-xl font-semibold text-slate-900 sm:text-2xl dark:text-slate-100">
             {t(title)}
           </h1>
@@ -47,7 +48,9 @@ export function PageHeader({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
+            {actions}
+          </div>
         ) : null}
       </header>
     </div>

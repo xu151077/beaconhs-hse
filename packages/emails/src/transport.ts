@@ -43,6 +43,10 @@ export type RawEmailConfig = {
   // single sealed secret (api key / server token / smtp password)
   keyCiphertext?: string
   keyNonce?: string
+  // When true, skip the public-address egress check on SMTP hosts.
+  // Intended for on-prem / Docker-internal SMTP where the host resolves
+  // to a private IP (172.16.0.0/12, 10.0.0.0/8, 192.168.0.0/16).
+  allowNonPublic?: boolean
 }
 
 /** Platform-wide email policy. */
@@ -208,6 +212,7 @@ export type EmailTransport =
       password?: string
       from: string
       replyTo?: string
+      allowNonPublic?: boolean
     }
   | {
       provider: 'smtp'
@@ -268,6 +273,7 @@ function buildTransport(c: PlainEmailConfig): EmailTransport | null {
         password: secret,
         from,
         replyTo,
+        allowNonPublic: c.allowNonPublic,
       }
     }
     default:
@@ -705,7 +711,10 @@ async function sendSmtp(
   } else {
     let resolved
     try {
-      resolved = await resolvePublicHost(t.host, { timeoutMs: TRANSPORT_TIMEOUT_MS })
+      resolved = await resolvePublicHost(t.host, {
+        timeoutMs: TRANSPORT_TIMEOUT_MS,
+        allowNonPublic: t.allowNonPublic === true,
+      })
       if (resolved.ipLiteral) {
         throw new Error(
           'External SMTP host must be a DNS name so its TLS identity can be verified.',
@@ -719,7 +728,14 @@ async function sendSmtp(
       family: resolved.family,
       port: t.port,
       secure: t.secure,
-      requireTLS: !t.secure,
+      // Credentials must never travel plaintext: on a STARTTLS (`secure:
+      // false`) connection with a username, force the upgrade so Nodemailer
+      // fails the connection when the server does not offer STARTTLS instead
+      // of falling back to plaintext AUTH. Unauthenticated internal relays
+      // (no username) keep opportunistic mode so TLS-less test relays work.
+      // With `secure: true` the connection is TLS from the first byte and
+      // `requireTLS` has no additional effect (Nodemailer skips STARTTLS).
+      requireTLS: t.secure || Boolean(t.username),
       auth: t.username ? { user: t.username, pass: t.password! } : undefined,
       tls: { rejectUnauthorized: true, servername: resolved.hostname },
       connectionTimeout: TRANSPORT_TIMEOUT_MS,

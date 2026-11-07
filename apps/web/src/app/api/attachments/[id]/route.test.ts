@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
   row: null as { r2Key: string } | null,
   authCalls: 0,
   authenticated: true,
+  headCalls: 0,
+  streamCalls: 0,
+  headResult: null as { contentLength: number; contentType: string | null } | null,
 }))
 
 vi.mock('../../../../lib/auth', () => ({
@@ -24,8 +27,28 @@ vi.mock('../../../../lib/auth', () => ({
     }
   },
 }))
+
+// The route must never mint an object-store URL: it streams the bytes itself.
 vi.mock('@beaconhs/storage', () => ({
-  presignGet: async () => 'https://storage.example/signed',
+  headObject: async () => {
+    state.headCalls++
+    return state.headResult
+  },
+  getObjectStream: async () => {
+    state.streamCalls++
+    return {
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('file-bytes'))
+          controller.close()
+        },
+      }),
+      contentLength: 10,
+      contentType: 'application/pdf',
+    }
+  },
+  contentDisposition: (mode: string, filename: string, fallback: string) =>
+    `${mode}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
 }))
 
 import { GET } from './route'
@@ -41,6 +64,9 @@ describe('attachment capability route', () => {
     state.row = null
     state.authCalls = 0
     state.authenticated = true
+    state.headCalls = 0
+    state.streamCalls = 0
+    state.headResult = { contentLength: 10, contentType: 'application/pdf' }
   })
 
   it('rejects ID-only and invalid capabilities before tenant lookup', async () => {
@@ -60,11 +86,27 @@ describe('attachment capability route', () => {
     expect(state.authCalls).toBe(1)
   })
 
-  it('redirects only after both capability and tenant lookup succeed', async () => {
+  it('streams the bytes instead of redirecting to the object store', async () => {
     state.row = { r2Key: 't/tenant/private.pdf' }
     const response = await request(attachmentUrl(ID))
-    expect(response.status).toBe(307)
-    expect(response.headers.get('location')).toBe('https://storage.example/signed')
+    expect(response.status).toBe(200)
+    // A redirect would hand the browser a URL that reaches the object store
+    // directly, which the internal-only object-storage architecture forbids.
+    expect(response.headers.get('location')).toBeNull()
+    expect(response.headers.get('content-type')).toBe('application/pdf')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(state.headCalls).toBe(1)
+    expect(state.streamCalls).toBe(1)
+    expect(await response.text()).toBe('file-bytes')
+  })
+
+  it('answers 404 when the object is gone from the store', async () => {
+    state.row = { r2Key: 't/tenant/private.pdf' }
+    state.headResult = null
+    const response = await request(attachmentUrl(ID))
+    expect(response.status).toBe(404)
+    expect(state.streamCalls).toBe(0)
   })
 })

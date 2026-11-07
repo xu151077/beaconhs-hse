@@ -29,6 +29,7 @@ import { Presentation } from 'lucide-react'
 import { cn } from '@beaconhs/ui'
 import { LogoMark } from '@/components/brand-logo'
 import { useTheme } from '@/components/theme-provider'
+import { STORAGE_FROZEN_TITLE, STORAGE_FROZEN_DETAIL } from '@/lib/storage-freeze-copy'
 
 export type CollaboraSession =
   | { ok: true; actionUrl: string; accessToken: string; accessTokenTtl: number }
@@ -39,6 +40,7 @@ export type CollaboraSession =
         | 'no_master'
         | 'unknown_target'
         | 'workspace_unavailable'
+        | 'workspace_frozen'
         | 'impersonation_blocked'
         | 'access_denied'
     }
@@ -297,6 +299,8 @@ export const CollaboraEmbed = forwardRef<
                   ) : (
                     <GeneratedText id="m_0784f424ad139f" />
                   )
+                ) : session.error === 'workspace_frozen' ? (
+                  STORAGE_FROZEN_TITLE
                 ) : session.error === 'workspace_unavailable' ? (
                   <GeneratedText id="m_054c1502bfc137" />
                 ) : session.error === 'impersonation_blocked' ? (
@@ -321,6 +325,8 @@ export const CollaboraEmbed = forwardRef<
                   ) : (
                     <GeneratedText id="m_00f626c4fa0e34" />
                   )
+                ) : session.error === 'workspace_frozen' ? (
+                  STORAGE_FROZEN_DETAIL
                 ) : session.error === 'workspace_unavailable' ? (
                   <GeneratedText
                     id="m_130320500eeb16"

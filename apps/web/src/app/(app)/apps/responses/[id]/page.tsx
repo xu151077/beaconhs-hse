@@ -3,6 +3,8 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
 import { DownloadLink } from '@/components/download-link'
+import { ConfirmButton } from '@/components/confirm-button'
+import { deleteFormResponseAction } from '../_actions'
 import { notFound } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { aliasedTable, and, asc, count, desc, eq, ilike, isNull, or } from 'drizzle-orm'
@@ -16,6 +18,7 @@ import {
   Plus,
   Send,
   ShieldAlert,
+  Trash2,
   Undo2,
 } from 'lucide-react'
 import {
@@ -574,6 +577,7 @@ export default async function FormResponsePage({
   const canEditRecord = canOperateApp && canEditResponsePayload(ctx, response)
   const canCreateCorrectiveAction = canOperateApp && can(ctx, 'ca.create')
   const canCreateIncident = canOperateApp && can(ctx, 'incidents.create')
+  const canDeleteResponse = can(ctx, 'forms.response.delete')
   const canManageRecord =
     canOperateApp &&
     (ctx.isSuperAdmin || ctx.permissions.has('*') || can(ctx, 'forms.response.read.all') || isOwner)
@@ -814,6 +818,19 @@ export default async function FormResponsePage({
                 }
               />
               <RecordActionBar responseId={id} buttons={manualButtons} />
+              <GeneratedValue
+                value={
+                  canDeleteResponse ? (
+                    <form action={deleteFormResponseAction}>
+                      <input type="hidden" name="responseId" value={id} />
+                      <input type="hidden" name="returnTo" value="/apps/responses" />
+                      <ConfirmButton variant="destructive" message={tGenerated('m_13330801e55d2d')}>
+                        <Trash2 size={14} /> <GeneratedText id="m_11773f3c3f7558" />
+                      </ConfirmButton>
+                    </form>
+                  ) : null
+                }
+              />
               <GeneratedValue
                 value={
                   !locked ? (

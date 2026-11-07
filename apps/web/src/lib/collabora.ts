@@ -15,15 +15,29 @@
 
 import { SaxesParser, type SaxesTagNS } from 'saxes'
 
-/** Office app inside Collabora: Impress (slides) or Writer (documents). */
-type CollaboraApp = 'presentation' | 'text'
+import { DOCX_MIME_TYPE, PPTX_MIME_TYPE, XLSX_MIME_TYPE } from '@beaconhs/office/limits'
+
+/** Office app inside Collabora: Writer, Impress or Calc. */
+export type CollaboraApp = 'presentation' | 'text' | 'spreadsheet'
 type CollaboraAction = 'edit' | 'view'
 
 const APP_MIME: Record<CollaboraApp, string> = {
-  presentation: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  text: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  presentation: PPTX_MIME_TYPE,
+  text: DOCX_MIME_TYPE,
+  spreadsheet: XLSX_MIME_TYPE,
 }
-const APP_EXT: Record<CollaboraApp, string> = { presentation: 'pptx', text: 'docx' }
+const APP_EXT: Record<CollaboraApp, string> = {
+  presentation: 'pptx',
+  text: 'docx',
+  spreadsheet: 'xlsx',
+}
+
+/** The Collabora app that edits a given office source MIME. */
+export function collaboraAppForMime(mime: string): CollaboraApp {
+  if (mime === PPTX_MIME_TYPE) return 'presentation'
+  if (mime === XLSX_MIME_TYPE) return 'spreadsheet'
+  return 'text'
+}
 const RECOGNIZED_APP_MIMES = new Set(Object.values(APP_MIME))
 const DISCOVERY_TTL_MS = 10 * 60 * 1000
 const MAX_DISCOVERY_BYTES = 1024 * 1024

@@ -13,9 +13,11 @@ import { listEntries } from '../_data'
 import type { JournalDefinition, JournalFilters, JournalStatus } from '../_types'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const ctx = await requireExportContext()
@@ -83,3 +85,5 @@ export async function GET(req: NextRequest) {
     ),
   })
 }
+
+export const GET = withRouteErrors(getHandler)

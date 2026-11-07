@@ -87,7 +87,7 @@ export function LibraryTabs({
                   currentParams={currentParams}
                   paramKey="status"
                   label={tGenerated('m_0b9da892d6faf0')}
-                  allLabel="All statuses"
+                  allLabel={tGenerated('m_10ce64191d8b55')}
                   options={[
                     { value: 'published', label: 'Published' },
                     { value: 'draft', label: 'Draft' },

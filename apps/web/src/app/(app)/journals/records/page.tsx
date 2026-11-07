@@ -159,7 +159,7 @@ export default async function JournalRecordsPage({
               currentParams={sp}
               paramKey="status"
               label={tGenerated('m_0b9da892d6faf0')}
-              allLabel="Any status"
+              allLabel={tGenerated('m_08a3d19309f061')}
               options={STATUS_OPTIONS.map((o) => ({ ...o, count: facets.statusCounts[o.value] }))}
             />
             <FilterChips
@@ -167,7 +167,7 @@ export default async function JournalRecordsPage({
               currentParams={sp}
               paramKey="definition"
               label={tGenerated('m_074ba2f160c506')}
-              allLabel="Any type"
+              allLabel={tGenerated('m_1369af3f5dccda')}
               options={TYPE_OPTIONS}
             />
             <RemoteSearchFilter
@@ -176,7 +176,7 @@ export default async function JournalRecordsPage({
               currentParams={sp}
               paramKey="person"
               placeholder={tGenerated('m_102255d7ce7611')}
-              allLabel="All authors"
+              allLabel={tGenerated('m_102255d7ce7611')}
               searchPlaceholder={tGenerated('m_0a8edb9f718779')}
               ariaLabel="Filter journal records by author"
             />
@@ -186,7 +186,7 @@ export default async function JournalRecordsPage({
               currentParams={sp}
               paramKey="site"
               placeholder={tGenerated('m_1a37e747f6006b')}
-              allLabel="All locations"
+              allLabel={tGenerated('m_1a37e747f6006b')}
               searchPlaceholder={tGenerated('m_1545cf488b21b6')}
               ariaLabel="Filter journal records by location"
             />
@@ -196,7 +196,7 @@ export default async function JournalRecordsPage({
               currentParams={sp}
               paramKey="tag"
               placeholder={tGenerated('m_0834b9f57a434d')}
-              allLabel="Any tag"
+              allLabel={tGenerated('m_0834b9f57a434d')}
               searchPlaceholder={tGenerated('m_11dafb1e93f6ca')}
               ariaLabel="Filter journal records by tag"
             />

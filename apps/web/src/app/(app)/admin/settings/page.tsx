@@ -28,6 +28,7 @@ import { recordAudit } from '@/lib/audit'
 import { levelLabel } from '@/lib/org-hierarchy'
 import { appBaseUrl } from '@/lib/app-base-url'
 import { PageContainer } from '@/components/page-layout'
+import { storageObjectUrl } from '../../../../lib/storage-gateway'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -179,6 +180,7 @@ export default async function AdminSettingsPage() {
   const tenantLogoUrl = await resolveTenantLogoUrl({
     tenantId: tenant.id,
     logoUrl: tenant.branding.logoUrl,
+    buildUrl: storageObjectUrl,
   })
 
   return (

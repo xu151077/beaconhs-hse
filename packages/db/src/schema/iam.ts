@@ -339,6 +339,28 @@ export const PERMISSION_CATALOGUE = [
   'admin.nav.manage',
   // Configure external data-sync connections (/admin/integrations).
   'admin.integrations.manage',
+  // Storage write-freeze (Phase 6Q stage E1).
+  //
+  // Six SEPARATE keys rather than one `admin.storage.freeze.manage`, because the
+  // danger of a freeze is not requesting one — it is unfreezing by accident, or one
+  // operator both freezing and releasing. Splitting request / confirm / reconcile /
+  // release means a role can be granted "freeze the tenant if you must" without also
+  // being able to hand it back, and the release half can be withheld entirely.
+  //
+  // `...freeze.recover` is the emergency path and is deliberately NOT implied by any
+  // other key. It exists to clear FAILED / RECOVERY_REQUIRED, which no ordinary
+  // permission may do.
+  //
+  // IMPORTANT: stage E1 persists and authorises this state model. Nothing in
+  // `packages/storage` reads it yet, so holding these permissions does NOT freeze
+  // anything. Enforcement is stage E2.
+  'admin.storage.freeze.request',
+  'admin.storage.freeze.drain',
+  'admin.storage.freeze.confirm',
+  'admin.storage.freeze.reconcile',
+  'admin.storage.freeze.release',
+  'admin.storage.freeze.fail',
+  'admin.storage.freeze.recover',
 ] as const
 
 export type CataloguePermission = (typeof PERMISSION_CATALOGUE)[number]

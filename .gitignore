@@ -15,6 +15,10 @@ build/
 .env.*.local
 !.env.example
 
+# Captured real-credential dotfiles from prod-verify / rollback work — never commit.
+/.env.orig
+/.env.prod-verify
+
 # Logs
 *.log
 npm-debug.log*
@@ -61,7 +65,25 @@ private/
 # Local ops helpers that embed cluster creds — never commit.
 packages/db/src/scripts/dokploy-*.ts
 
+# Playwright E2E artifacts (screenshots, traces, HTML/JSON reports) and any
+# locally captured auth state. Regenerated on every run; never committed.
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+apps/web/e2e/.auth/
+apps/web/e2e/**-results.json
+
 # Private legacy-migration ETL — lives on the migration Mac only and contains
 # company-specific mappers. It links local packages but is excluded from the
 # public pnpm workspace and lockfile; install and run it independently.
 packages/etl/
+
+# Local debugging scratch: MCP console logs, docker build secrets scratch, and
+# opencode backup configs. Kept on this machine, never committed. (The large
+# docs/evidence archive dir and repo-root .tmp-* scratch dirs are intentionally
+# NOT gitignored: knip configs + contract tests rely on scanning them, and
+# they are simply never staged. Stage selectively; never `git add -A` blindly.)
+.playwright-mcp/
+.docker/
+.opencode/*.before-*

@@ -151,3 +151,13 @@ if [ "$keep_database" = 'true' ]; then
 else
   echo "Restore verified; disposable database will be removed: $database"
 fi
+
+# The restore deliberately runs with `--no-owner --no-privileges`: ownership is
+# reassigned to the schema owner, but the runtime roles lose every grant. That is
+# not a failed restore — it is an unusable one until the migrator rebuilds the
+# least-privilege grants, and readiness will return 503 until then. Say so here
+# rather than letting the operator discover it from a permission error.
+if [ "$keep_database" = 'true' ]; then
+  echo "Next: run 'pnpm db:migrate' against $database to reapply the runtime, maintenance and backup grants."
+  echo "      The restored database is not usable by the application until that completes."
+fi

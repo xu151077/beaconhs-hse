@@ -21,13 +21,22 @@ function s(v: unknown): Scalar {
 }
 
 function baseUrl(): string {
-  // Same resolution order as apps/web + apps/worker app-base-url helpers.
-  return (
-    process.env.PUBLIC_APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    ''
-  ).replace(/\/$/, '')
+  const raw = [
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+  ].find((value) => value?.trim())
+  if (!raw) return ''
+  let url: URL
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    throw new Error('PUBLIC_APP_URL/APP_URL must be an absolute HTTP(S) URL')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('PUBLIC_APP_URL/APP_URL must be an absolute HTTP(S) URL')
+  }
+  return url.origin
 }
 function link(path: string): string {
   const b = baseUrl()

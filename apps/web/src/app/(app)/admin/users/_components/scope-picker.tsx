@@ -19,6 +19,7 @@ import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Label, SearchSelect, Select } from '@beaconhs/ui'
 import type { RoleScope } from '@beaconhs/db/schema'
+import { toRoleScope } from '../_scope-serialization'
 
 type ScopeOption = { value: string; label: string; hint?: string }
 type ScopeType = RoleScope['type']
@@ -129,6 +130,7 @@ export function ScopePicker({
   people: ScopeOption[]
 }) {
   const tGenerated = useGeneratedTranslations()
+  const tGeneratedValue = useGeneratedValueTranslations()
   const [type, setType] = useState<ScopeType>(defaultScope?.type ?? 'self')
   const [siteIds, setSiteIds] = useState<string[]>(
     defaultScope?.type === 'sites' ? defaultScope.siteIds : [],
@@ -146,22 +148,18 @@ export function ScopePicker({
     defaultScope?.type === 'team' ? defaultScope.groupIds : [],
   )
 
-  const scope: RoleScope = useMemo(() => {
-    switch (type) {
-      case 'sites':
-        return { type, siteIds }
-      case 'crews':
-        return { type, crewIds }
-      case 'people':
-        return { type, personIds }
-      case 'team':
-        return { type, departmentIds, groupIds }
-      case 'self':
-        return { type }
-      default:
-        return { type: 'self' }
-    }
-  }, [type, siteIds, crewIds, personIds, departmentIds, groupIds])
+  const scope: RoleScope = useMemo(
+    () =>
+      toRoleScope({
+        type,
+        siteIds,
+        crewIds,
+        personIds,
+        departmentIds,
+        groupIds,
+      }),
+    [type, siteIds, crewIds, personIds, departmentIds, groupIds],
+  )
 
   const help = TYPE_OPTIONS.find((t) => t.value === type)?.help
 
@@ -175,7 +173,7 @@ export function ScopePicker({
         <Select value={type} onChange={(e) => setType(e.target.value as ScopeType)}>
           {TYPE_OPTIONS.map((t) => (
             <option key={t.value} value={t.value}>
-              {t.label}
+              {tGeneratedValue(t.label)}
             </option>
           ))}
         </Select>

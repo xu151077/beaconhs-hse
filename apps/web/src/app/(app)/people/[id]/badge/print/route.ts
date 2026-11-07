@@ -6,10 +6,12 @@ import { isUuid } from '@/lib/list-params'
 import { renderPersonBadgePngs } from '@/lib/person-badge'
 import { sendDirectPrint, DIRECT_PRINT_PROVIDER_LABELS } from '@/lib/direct-printing'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function POST(
+async function postHandler(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -42,3 +44,5 @@ export async function POST(
     )
   }
 }
+
+export const POST = withRouteErrors(postHandler)

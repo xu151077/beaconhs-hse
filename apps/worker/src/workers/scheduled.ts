@@ -25,6 +25,7 @@ import { runSessionOverdueFlows } from '../lib/session-overdue-flows'
 import { runDatabaseMaintenance } from '../lib/db-maintenance'
 import { drainDomainEventOutbox } from '../lib/domain-event-outbox'
 import { reconcileOfficeRenders } from '../lib/office-render-reconciler'
+import { reconcileStorageWriteArms } from '../lib/storage-write-arm-reconciler'
 import { scanJournalAnalysis } from '../lib/journal-analysis'
 import { drainStorageObjectDeletionOutbox } from '../lib/storage-object-deletion-outbox'
 import { reconcileExpiredAttachmentUploads } from '../lib/attachment-upload-reconciler'
@@ -123,6 +124,16 @@ export async function processScheduledTick(job: Job<ScheduledTick>): Promise<voi
       }
       if (uploads.errors > 0) {
         throw new Error(`Expired upload reconciliation had ${uploads.errors} error(s)`)
+      }
+      return
+    }
+    case 'storage_write_arms_reconcile': {
+      const result = await reconcileStorageWriteArms()
+      console.log(
+        `[scheduled] storage_write_arms: ${result.reconciled + result.quarantined} reconciled / ${result.quarantined} quarantined / ${result.deferred} deferred / ${result.errors} errors`,
+      )
+      if (result.errors > 0) {
+        throw new Error(`Storage write arm reconciliation had ${result.errors} error(s)`)
       }
       return
     }

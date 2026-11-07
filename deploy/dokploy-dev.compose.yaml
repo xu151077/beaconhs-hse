@@ -23,7 +23,13 @@ services:
       ATTACHMENT_CAPABILITY_SECRET: ${ATTACHMENT_CAPABILITY_SECRET}
       BETTER_AUTH_URL: ${APP_URL}
       APP_URL: ${APP_URL}
+      PUBLIC_APP_URL: ${APP_URL}
       R2_ENDPOINT: ${R2_ENDPOINT}
+      # Server-side S3 I/O only. Keep this on the private in-network address so
+      # put/get/head/delete never hairpin out to the public hostname, and so
+      # storage-init does not depend on the Cloudflare Tunnel. R2_ENDPOINT above
+      # stays the browser/presign endpoint.
+      R2_INTERNAL_ENDPOINT: ${R2_INTERNAL_ENDPOINT}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
@@ -77,11 +83,17 @@ services:
       SUPERADMIN_DATABASE_URL: ${SUPERADMIN_DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       R2_ENDPOINT: ${R2_ENDPOINT}
+      # Server-side S3 I/O only. Keep this on the private in-network address so
+      # put/get/head/delete never hairpin out to the public hostname, and so
+      # storage-init does not depend on the Cloudflare Tunnel. R2_ENDPOINT above
+      # stays the browser/presign endpoint.
+      R2_INTERNAL_ENDPOINT: ${R2_INTERNAL_ENDPOINT}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
       R2_PRIVATE_BUCKET_CONFIRMED: ${R2_PRIVATE_BUCKET_CONFIRMED}
       APP_URL: ${APP_URL}
+      PUBLIC_APP_URL: ${APP_URL}
       # Keep durable Flow dispatch on the private overlay network.
       INTERNAL_WEB_URL: http://web:3000
       # Worker fans push notifications out to subscribed devices.
@@ -104,17 +116,76 @@ services:
         condition: any
         delay: 5s
 
-  # One-shot storage security bootstrap. It removes anonymous MinIO/S3 bucket
-  # policies, installs pending-upload and transient-artifact expiry, and proves
-  # anonymous reads fail.
+  # Object storage. Self-hosted S3-compatible, private bucket, NO published ports:
+  # reachable only from the other services on `infra-net`, and from the outside
+  # world only through the Cloudflare Tunnel, which routes `^/<bucket>/` here.
+  #
+  # Why the bucket lives at the ROOT of the public hostname
+  # ------------------------------------------------------
+  # BeaconHS hands the browser a PRESIGNED url and the browser PUTs/GETs it
+  # directly. The AWS SDK signs the request path, and cloudflared forwards the
+  # path to the origin WITHOUT stripping or rewriting it. So the origin address
+  # and the signed path must agree. Measured in Phase 18-I: with a `/storage`
+  # prefix the proxy must strip it for MinIO to route, which makes MinIO recompute
+  # the signature over a different path — `SignatureDoesNotMatch` on every
+  # operation. Root-level (`R2_ENDPOINT=https://<public-host>`, path
+  # `/<bucket>/<key>`) verified working in Phase 18-J: PUT 200 + etag, GET 200 with
+  # byte-exact content, server-side put/head/delete all clean.
+  #
+  # A subpath is therefore not an option here, and neither is a second hostname.
+  #
+  # CREDENTIALS AND ENDPOINT come from the deployment environment, exactly as the
+  # R2_* variables always have: `packages/storage` reads `R2_ENDPOINT`,
+  # `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` regardless of vendor.
+  # NOTE there is only ONE endpoint: the same value is used for the server-side
+  # S3 client AND for the presigned urls handed to the browser. See the runbook.
+  minio:
+    # Pin the tested release and its linux/amd64 digest. `latest` can otherwise
+    # change independently of BeaconHS CI, and a MinIO major bump changes
+    # signature/lifecycle behaviour under a running deployment.
+    image: minio/minio@sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # Keep the console bound but unpublished — it is an operator tool, never
+      # reachable from the tunnel.
+    volumes:
+      - minio-data:/data
+    networks: [infra-net]
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.hostname==dokploy-mgr]
+      restart_policy:
+        condition: any
+        delay: 5s
+    # NOTE: deliberately NO `ports:`. Neither the S3 API (9000) nor the console
+    # (9001) is published to the host or the internet.
+
+  # One-shot storage security bootstrap. It creates the bucket if absent, removes
+  # anonymous MinIO/S3 bucket policies, installs pending-upload and
+  # transient-artifact expiry, and proves anonymous reads fail. Idempotent:
+  # HeadBucket, and CreateBucket only when it is genuinely missing.
   # Cloudflare R2 additionally requires the explicit private-bucket
-  # confirmation after public development/custom domains have been disabled.
+  # confirmation after public development/custom domains have been disabled; a
+  # self-hosted MinIO endpoint is detected by hostname and correctly skips it.
   storage-init:
     image: ${IMAGE}
     environment:
       APP_ROLE: storage-init
       NODE_ENV: production
       R2_ENDPOINT: ${R2_ENDPOINT}
+      # Server-side S3 I/O only, and the reason this role can bootstrap with the
+      # Cloudflare Tunnel stopped: bucket setup and the privacy probe both run on the
+      # private in-network address. R2_ENDPOINT above stays browser/presign only.
+      R2_INTERNAL_ENDPOINT: ${R2_INTERNAL_ENDPOINT}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
@@ -143,10 +214,13 @@ services:
       replicas: ${WRITER_REPLICAS}
       placement:
         constraints: [node.hostname==dokploy-mgr]
-      # One-shot: register BullMQ repeatable jobs, then exit.
+      # One-shot: register BullMQ repeatable jobs, then exit. Exit 0 is success
+      # and is not restarted; a failed registry read-back exits 1 and retries at
+      # most five times.
       restart_policy:
         condition: on-failure
         delay: 5s
+        max_attempts: 5
 
   # In-browser PowerPoint editor for PPTX-mastered training decks. Reached by
   # browsers and by the web app (discovery) through Traefik path routes on the
@@ -157,12 +231,17 @@ services:
     # otherwise change independently of BeaconHS CI and silently break WOPI.
     image: ${COLLABORA_IMAGE}
     environment:
-      aliasgroup1: ${APP_URL}
+      aliasgroup1: ${COLLABORA_URL}
       server_name: ${COLLABORA_SERVER_NAME}
       # TLS terminates at Traefik; frame_ancestors lets the app iframe the
       # editor; welcome dialogs are noise inside an embedded editor. The WOPI
       # load ceiling matches MAX_PPTX_FILE_BYTES (exactly 1 GiB).
-      extra_params: --o:ssl.enable=false --o:ssl.termination=true --o:net.frame_ancestors=${APP_URL} --o:welcome.enable=false --o:home_mode.enable=true --o:storage.wopi.max_file_size=1073741824
+      # The allow-list follows COLLABORA_URL, not APP_URL: the allow-list must
+      # name the origin browsers actually use to reach Collabora. The deploy
+      # workflow currently sets COLLABORA_URL=$APP_URL, so this is
+      # behaviour-preserving today while removing the trap where a separate
+      # Collabora host would be silently rejected by WOPI discovery.
+      extra_params: --o:ssl.enable=false --o:ssl.termination=true --o:net.frame_ancestors=${COLLABORA_URL} --o:welcome.enable=false --o:home_mode.enable=true --o:storage.wopi.max_file_size=1073741824
     volumes:
       # BeaconHS theme via the sanctioned branding.js hook. The deploy workflow
       # writes this file onto the swarm manager before deploying the stack.
@@ -181,3 +260,9 @@ networks:
     external: true
   dokploy-network:
     external: true
+
+volumes:
+  # Object storage for the self-hosted MinIO service above. Named rather than
+  # bind-mounted so the deploy runner's storage reclamation cannot delete tenant
+  # documents.
+  minio-data:

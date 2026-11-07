@@ -574,7 +574,16 @@ export const MODULE_FLOW_PROFILES: Record<string, FlowSubjectProfile> = {
       'duplicate_record',
       'export_pdf',
     ],
-    statusValues: ['open', 'assigned', 'in_progress', 'awaiting_parts', 'closed', 'cancelled'],
+    statusValues: [
+      'open',
+      'assigned',
+      'in_progress',
+      'awaiting_parts',
+      'repaired',
+      'verified',
+      'closed',
+      'cancelled',
+    ],
     fields: [
       { key: 'reference', label: 'Reference', kind: 'text' },
       { key: 'summary', label: 'Summary', kind: 'text' },

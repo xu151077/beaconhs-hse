@@ -273,7 +273,7 @@ Never re-create, and never parallel:
 | Tenant                  | `tenants` + `tenant_memberships`                                       | `packages/db/src/schema/core.ts`                 |
 | Organization / location | `org_units` (levels: customer / project / site / area)                 | `packages/db/src/schema/org.ts:24`               |
 | **Project**             | `org_units` where `level='project'` — there is **no** `projects` table | `packages/db/src/schema/org.ts`                  |
-| Role / Permission       | `roles`, `role_assignments`, `PERMISSION_CATALOGUE` (89 keys)          | `packages/db/src/schema/iam.ts`                  |
+| Role / Permission       | `roles`, `role_assignments`, `PERMISSION_CATALOGUE` (107 keys)         | `packages/db/src/schema/iam.ts`                  |
 | Object storage          | `packages/storage` + `apps/web/src/lib/uploads.ts`                     | verified E2E against MinIO                       |
 | Compliance engine       | `@beaconhs/compliance`                                                 | `packages/compliance`                            |
 | Report engine           | `@beaconhs/reports`                                                    | `packages/reports`                               |
@@ -423,20 +423,26 @@ Work is done when **all** of these hold:
 
 If an item cannot be verified, say so. Silently skipping a gate is not an option.
 
-## Known Defects — Record, Do Not Fix
+## Defect Register
 
-These are documented in `docs/hse-development-baseline.md` §21 and
-`docs/project-development-state.md`. Report them; do not fix them as a side
-effect of unrelated work, and do not silently work around them.
+Open defects are recorded here; do not fix one as a side effect of unrelated
+work, and do not silently work around it. Fixed entries stay with their evidence.
 
-| ID  | Defect                                                                                                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | `nav/registry.ts:185` and the module-admin registry reference `equipment.read.self`, which is not in `PERMISSION_CATALOGUE`         |
-| D2  | `nav/registry.ts:172` — the `people` nav entry has no permission gate; workforce master data is visible to every authenticated user |
-| D3  | Dead columns: `training_enrollments.expires_on` / `due_on`, `equipment_inspection_records.certificate`                              |
-| D4  | The PPE failed-inspection → corrective-action path omits `recordDomainEvent`, so those CAs are never notified                       |
-| D5  | Flow profile `equipment` `statusValues` omits `'repaired'` and `'verified'` (`apps/web/src/lib/flows/module-profiles.ts:577`)       |
-| D6  | Stale comment claiming four canonical form templates in `packages/db/src/seed.ts:1569-1570`                                         |
+| ID  | Status / defect                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------------------------------- |
+| D1  | **FIXED (EA-12).** Nav and module-admin permission references are valid catalogue keys, pinned by regression coverage. |
+| D2  | **FIXED (EA-12).** `/people` requires `people.read.all`; direct access and export are gated.                           |
+| D3  | **FIXED (EA-12).** Dead columns dropped from the schema and by migration `0051_ea12_drop_dead_columns.sql`.            |
+| D4  | **FIXED (EA-12).** PPE failed-inspection corrective actions now emit `corrective_action.created` and are notified.     |
+| D5  | **FIXED (EA-12).** Equipment flow profile includes all real work-order statuses, including `repaired` and `verified`.  |
+| D6  | **FIXED (EA-12).** Canonical-template comment now matches `CANONICAL_TEMPLATES`.                                       |
+
+Open defects, kept for a scoped follow-up:
+
+| ID  | Defect                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| D8  | 82 foreign keys exist in Postgres but not in the Drizzle snapshot chain. Systemic, pre-existing, out of scope for EA-12.                    |
+| D9  | `canSeeWidget` falls through to "visible to everyone" for a widget missing from `WIDGET_PERMISSIONS`. The trap remains for the next widget. |
 
 Environment and tooling issues also on record:
 
@@ -444,8 +450,6 @@ Environment and tooling issues also on record:
   so `pnpm dev` needs `--env-mode=loose`.
 - `packages/storage/src/index.ts:39-40` uses `??`, which does not fall back on an
   empty string, and `.env.example` ships empty R2 credentials.
-- `POST /api/v1` returns 500: no read permission mapped for the `compliance`
-  category.
 - This host has ~3.4 GB RAM; Next.js page compiles have OOM-killed the dev
   server under parallel load.
 

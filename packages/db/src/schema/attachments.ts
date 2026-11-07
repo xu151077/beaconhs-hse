@@ -81,6 +81,19 @@ export const attachmentUploadReservations = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     attachmentId: uuid('attachment_id'),
+    /**
+     * S3 multipart upload ID bound to this reservation.
+     *
+     * The S3 multipart upload ID is not persisted today, so the client can
+     * pass arbitrary values and the server would just sign URLs for them.
+     * This column ensures the multipartUploadId is the ONE the server created
+     * for this reservation, so the per-part signing action can enforce that
+     * binding.
+     *
+     * Nullable for backward compatibility with existing reservations (which are
+     * single-mode or already completed).
+     */
+    multipartUploadId: text('multipart_upload_id'),
     ...timestamps,
   },
   (t) => ({

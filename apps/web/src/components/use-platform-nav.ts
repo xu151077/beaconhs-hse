@@ -60,6 +60,12 @@ const PLATFORM_NAV_GROUPS: SidebarNavGroup[] = [
         iconKey: 'circle-dot',
       },
       {
+        href: '/platform/source',
+        label: 'Open source',
+        labelKey: 'PlatformNav.openSource',
+        iconKey: 'link',
+      },
+      {
         href: '/platform/email-log',
         label: 'Email log',
         labelKey: 'PlatformNav.emailLog',

@@ -46,7 +46,7 @@ import {
 import { Badge, Button, FileUploader, Input, Label, RichTextEditor, Select } from '@beaconhs/ui'
 import type { PracticalCriterion } from '@beaconhs/db/schema'
 import { normalizeDocumentHref } from '@beaconhs/forms-core'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { confirmDialog } from '@/lib/confirm'
 import { useReseededState } from '@/lib/use-reseeded-state'
@@ -1544,6 +1544,7 @@ function FilesPanel({
       <FileUploader
         requestUploadAction={requestUpload}
         finalizeUploadAction={finalizeUpload}
+        requestMultipartPartAction={requestMultipartPartUrl}
         kind="document"
         accept=".pdf,.docx,.doc,.pptx,.xlsx,.txt,.md,.mp4,.mov,.webm,.png,.jpg,.jpeg"
         onUploaded={(f) =>

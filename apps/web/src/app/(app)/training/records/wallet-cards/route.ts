@@ -73,11 +73,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
   })
 
+  const originalFilename = rendered.filename || 'wallet-cards.pdf'
+  const sanitizedFilename =
+    originalFilename
+      .replace(/["\r\n]/g, '_')
+      .replace(/^[^a-zA-Z0-9]/, '_')
+      .substring(0, 200) || 'wallet-cards.pdf'
+  const encodedFilename = encodeURIComponent(originalFilename)
   return new Response(new Uint8Array(rendered.bytes), {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Length': String(rendered.bytes.length),
-      'Content-Disposition': `attachment; filename="${rendered.filename}"`,
+      'Content-Disposition': `attachment; filename="${sanitizedFilename}"; filename*=utf-8''${encodedFilename}`,
       'Cache-Control': 'no-store',
       'X-Rendered-Records': String(rendered.rendered),
       'X-Skipped-Records': String(skipped),

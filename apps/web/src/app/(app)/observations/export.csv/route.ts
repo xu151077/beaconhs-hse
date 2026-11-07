@@ -18,12 +18,14 @@ import {
 } from '../../journals/_types'
 import { isUuid } from '@/lib/list-params'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 const STATUS_VALUES = ['draft', 'submitted', 'archived'] as const
 const DEFINITION_VALUES = ['positive_observation', 'negative_observation'] as const
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const ctx = await requireExportContext()
@@ -115,3 +117,5 @@ export async function GET(req: NextRequest) {
     ),
   })
 }
+
+export const GET = withRouteErrors(getHandler)

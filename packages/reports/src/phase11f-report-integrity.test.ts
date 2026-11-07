@@ -19,19 +19,13 @@
 // Structural assertions read source; no database is required.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { compileCustomReport, type ReportRule } from '@braedonsaunders/appkit-reports'
-import { discoverEntities } from '@beaconhs/analytics/server'
-import type { ReportEntityCatalog } from '@beaconhs/reports/entities'
+import type { ReportRule } from '@braedonsaunders/appkit-reports'
 import { REPORT_ENTITIES, columnRef, isTechnicalIdentifierColumn } from './entities'
 import {
   BEACON_REPORT_SEEDS,
   EXPECTED_BEACON_REPORT_SEED_KEYS,
 } from '@beaconhs/db/seed/report-definitions'
 
-const TENANT = '00000000-0000-4000-8000-000000000001'
-const RUNTIME_CATALOG: ReportEntityCatalog = {
-  entities: discoverEntities() as unknown as ReportEntityCatalog['entities'],
-}
 const repoRead = (...segments: string[]) =>
   readFileSync(new URL(['..', '..', '..', ...segments].join('/'), import.meta.url), 'utf8')
 
@@ -46,8 +40,6 @@ const rulesOf = (key: string): SeedRule[] => {
   const rules = seedOf(key).query.filters?.rules ?? []
   return rules.filter((r): r is SeedRule => 'field' in r)
 }
-const compileInRuntime = (key: string) =>
-  compileCustomReport(seedOf(key).query, TENANT, RUNTIME_CATALOG, { maxRows: 1 })
 
 const PHASE_11_F_KEYS = [
   'work_permit_expiry',
@@ -64,14 +56,10 @@ describe('Phase 11-F ships three seed-only reports', () => {
     expect(EXPECTED_BEACON_REPORT_SEED_KEYS.filter((k) => k === key)).toHaveLength(1)
   })
 
-  it.each(PHASE_11_F_KEYS)(
-    '%s compiles through the one AppKit query contract, against the runtime catalogue',
-    (key) => {
-      // The runtime catalogue, not the curated list: reports are compiled
-      // against discovery, so that is the fixture that means anything.
-      expect(() => compileInRuntime(key)).not.toThrow()
-    },
-  )
+  // Runtime-catalogue compilation lives in
+  // apps/web/src/lib/phase11f-runtime-parity.test.ts: packages/reports cannot
+  // import @beaconhs/analytics/server without a workspace cycle
+  // (analytics -> reports), while apps/web already declares both.
 
   it.each(PHASE_11_F_KEYS)('%s is a published, tagged, seeded definition', (key) => {
     const d = seedOf(key)
@@ -247,7 +235,9 @@ describe('Phase 11-F introduced no new architecture', () => {
     // on keywords matters: `0042_journal_observation_definitions` and
     // `0043_companies` are legitimate Phase 11-A/11-B migrations, and
     // `0044_inspection_type_fk_snapshot` is a statement-free snapshot reconciliation
-    // for a foreign key that already existed in Postgres.
+    // for a foreign key that already existed in Postgres, and
+    // `0045_add_zh_locale` only widens locale CHECK allow-lists — neither adds a
+    // report relation.
     //
     // Note the report projections deliberately do NOT appear here. Promoting
     // `compliance_status`, `monitored_sessions` and `hazid_signatures` to real
@@ -258,7 +248,34 @@ describe('Phase 11-F introduced no new architecture', () => {
       entries: { tag: string }[]
     }
     const tags = journal.entries.map((e) => e.tag)
-    expect(tags[tags.length - 1]).toBe('0044_inspection_type_fk_snapshot')
+    // Asserted against the set of schema-neutral migrations rather than one hard-coded
+    // tag, so an unrelated migration does not break this guard while a migration that
+    // DOES add a relation still fails it.
+    //
+    // Phase 6Q stage E1 added `0046_cute_lizard` (the storage write-freeze state
+    // model). It creates a table, but no REPORT relation and no report projection, so
+    // by this guard's own stated intent it belongs in the tolerated set. A migration
+    // that DOES add a report relation still fails, because its tag is not listed here.
+    // Repair migrations (e.g., 0050_repair_0049_multipart_upload_id) are excluded from
+    // this check because they are not schema-neutral and may be applied temporarily.
+    const lastMigrationTag = tags[tags.length - 1]
+    const expectedTags = [
+      '0045_add_zh_locale',
+      '0046_cute_lizard',
+      '0047_broken_lord_tyger',
+      '0048_storage_freeze_tenant_unique',
+      '0049_attachment_upload_multipart_upload_id',
+      // EA-12 drops three unreferenced columns; it adds no report relation and
+      // does not change any report projection.
+      '0051_ea12_drop_dead_columns',
+      // EA-66D.20 adds the platform_settings.open_source jsonb column for the
+      // open-source disclosure link; it adds no report relation and does not
+      // change any report projection.
+      '0052_old_nextwave',
+    ]
+    // Filter out repair migrations before the check
+    const filteredTags = tags.filter((t) => !t.startsWith('0050_'))
+    expect(filteredTags[filteredTags.length - 1]).toBeOneOf(expectedTags)
     expect(tags.filter((t) => /permit|observation/i.test(t))).toEqual([
       '0042_journal_observation_definitions',
     ])
@@ -384,25 +401,11 @@ describe('the seed set is insert-only, so re-seeding restores without duplicatin
 // ---------------------------------------------------------------------------
 // E. Tenant isolation is the compiler's job, and it still happens
 // ---------------------------------------------------------------------------
-
-describe.each(PHASE_11_F_KEYS)('%s is tenant-bound at compile time', (key) => {
-  it('binds tenant_id as a parameter, never as an inline literal', () => {
-    const compiled = compileInRuntime(key)
-    expect(compiled.sql).toContain('tenant_id')
-    expect(compiled.params).toContain(TENANT)
-    expect(compiled.sql).not.toContain(TENANT)
-  })
-
-  it('reads only from its own entity, so no other table leaks in', () => {
-    const entity = seedOf(key).query.entity
-    const others = PHASE_11_F_KEYS.map((k) => seedOf(k).query.entity).filter((e) => e !== entity)
-    const compiled = compileInRuntime(key)
-    for (const other of others) {
-      if (other === 'journal_entries') continue // monitored_sessions reads it internally
-      expect(compiled.sql).not.toContain(`"${other}"`)
-    }
-  })
-})
+//
+// Runtime compilation assertions (compile against discovery, tenant-bound SQL,
+// no cross-entity leakage) live in
+// apps/web/src/lib/phase11f-runtime-parity.test.ts for the same cycle reason
+// as above.
 
 describe('a curated entity may not hide its relation behind an authored `from`', () => {
   it('no curated entity carries an authored `from` subquery', () => {

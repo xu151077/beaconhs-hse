@@ -2,7 +2,7 @@
 //
 // What lives here:
 //   - shouldSpawnCorrectiveAction(): the severity-threshold guard
-//   - createCorrectiveActionForFailedPpeInspection(): mints + audits the CA
+//   - createCorrectiveActionForFailedPpeInspection(): mints + notifies + audits the CA
 //   - recordPpeIssueAction() / applyPpeStatusTransition(): the single path for
 //     every status change, writing the ledger row, the item state, and the
 //     who/when attribution in one transaction
@@ -14,6 +14,8 @@ import { and, asc, eq, sql } from 'drizzle-orm'
 import type { Database } from '@beaconhs/db'
 import type { RequestContext } from '@beaconhs/tenant'
 import { materializeEvidenceTargetObligations } from '@beaconhs/compliance'
+import { moduleFlowCommand, recordDomainEvent } from '@beaconhs/events'
+import { correctiveActionCreatedEvent } from '@beaconhs/integrations'
 import {
   correctiveActions,
   ppeIssues,
@@ -91,8 +93,32 @@ export async function createCorrectiveActionForFailedPpeInspection(
       assignedByTenantUserId: ctx.membership?.id ?? null,
       ownerTenantUserId: ctx.membership?.id ?? null,
     })
-    .returning({ id: correctiveActions.id })
+    .returning()
   if (!ca) throw new Error('Corrective action could not be created')
+  await recordDomainEvent(tx, {
+    tenantId: ctx.tenantId,
+    eventType: 'corrective_action.created',
+    subjectId: ca.id,
+    dedupKey: `corrective_action.created:${ca.id}`,
+    payload: {
+      notification: { kind: 'corrective_action_assigned', caId: ca.id },
+      integration: correctiveActionCreatedEvent(ctx.tenantId, {
+        id: ca.id,
+        reference: ca.reference,
+        title: ca.title,
+        status: ca.status,
+        severity: ca.severity,
+        source: ca.source,
+        dueOn: ca.dueOn,
+        assignedOn: ca.assignedOn,
+      }),
+      web: moduleFlowCommand(ctx, {
+        subjectId: ca.id,
+        moduleKey: 'corrective-actions',
+        event: 'on_create',
+      }),
+    },
+  })
   await recordAuditInTransaction(tx, ctx, {
     entityType: 'corrective_action',
     entityId: ca.id,

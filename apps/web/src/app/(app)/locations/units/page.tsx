@@ -195,7 +195,7 @@ export default async function OrgUnitsPage({
               currentParams={sp}
               paramKey="level"
               label={tGenerated('m_1cc321f2024ad6')}
-              allLabel="All levels"
+              allLabel={tGenerated('m_03c6fba4e193ea')}
               options={LEVELS.map((l) => ({
                 value: l,
                 label: levelLabel(l, { plural: true }),

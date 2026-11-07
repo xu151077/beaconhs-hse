@@ -17,8 +17,6 @@ import {
   multipartPartCount,
   newAttachmentKey,
   newPendingUploadKey,
-  presignMultipartPart,
-  presignPut,
   promoteObject,
   putObject,
   shouldUseMultipartUpload,
@@ -26,17 +24,22 @@ import {
 import { MAX_PPTX_FILE_BYTES } from '@beaconhs/office/limits'
 import { attachmentUrl } from './attachment-url'
 import { requireRequestContext } from './auth'
+import { storageUploadUrl } from './storage-upload-url'
 import {
   hashUploadToken,
   normalizedContentType,
   validateReservedUpload,
 } from './upload-verification'
 import {
+  isPdfUpload,
+  PDF_TRAILER_WINDOW_BYTES,
   uploadContentDisposition,
   uploadContentTypeError,
   uploadedFileHeaderError,
+  uploadedFileTailError,
 } from './upload-policy'
 import { optimizeUploadedImage } from './image-upload-optimization'
+import { storageFreezeRefusalMessage } from './storage-freeze-refusal'
 
 const MAX_UPLOAD_BYTES = {
   image: 50 * 1024 * 1024,
@@ -129,14 +132,15 @@ async function compensateUncommittedFinal(
 }
 
 export async function requestUpload(input: z.infer<typeof requestSchema>): Promise<
-  | { ok: true; uploadId: string; mode: 'single'; putUrl: string }
+  | { ok: true; uploadId: string; mode: 'single'; putUrl: string; uploadToken: string }
   | {
       ok: true
       uploadId: string
       mode: 'multipart'
+      uploadToken: string
       multipartUploadId: string
       partSizeBytes: number
-      partUrls: string[]
+      partCount: number
     }
   | { ok: false; error: string }
 > {
@@ -176,6 +180,7 @@ export async function requestUpload(input: z.infer<typeof requestSchema>): Promi
     const expiresAt = new Date(
       Date.now() + (useMultipart ? MULTIPART_RESERVATION_TTL_MS : STANDARD_RESERVATION_TTL_MS),
     )
+    let multipartUploadId: string | null = null
 
     await ctx.db((tx) =>
       tx.insert(attachmentUploadReservations).values({
@@ -190,10 +195,10 @@ export async function requestUpload(input: z.infer<typeof requestSchema>): Promi
         sizeBytes: parsed.data.sizeBytes,
         verificationTokenHash: hashUploadToken(uploadToken),
         expiresAt,
+        multipartUploadId: null, // populated below for multipart mode
       }),
     )
 
-    let multipartUploadId: string | null = null
     try {
       if (useMultipart) {
         multipartUploadId = await createMultipartUpload({
@@ -201,34 +206,24 @@ export async function requestUpload(input: z.infer<typeof requestSchema>): Promi
           contentType: parsed.data.contentType,
           uploadToken,
         })
-        const partCount = multipartPartCount(parsed.data.sizeBytes)
-        const partUrls: string[] = []
-        for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
-          partUrls.push(
-            await presignMultipartPart({
-              key: stagingKey,
-              uploadId: multipartUploadId,
-              partNumber,
-              expiresInSeconds: 3600,
-            }),
-          )
-        }
+        await ctx.db((tx) =>
+          tx
+            .update(attachmentUploadReservations)
+            .set({ multipartUploadId })
+            .where(eq(attachmentUploadReservations.id, uploadId)),
+        )
         return {
           ok: true,
           uploadId,
           mode: 'multipart',
           multipartUploadId,
+          uploadToken,
           partSizeBytes: MULTIPART_UPLOAD_PART_SIZE_BYTES,
-          partUrls,
+          partCount: multipartPartCount(parsed.data.sizeBytes),
         }
       }
-      const putUrl = await presignPut({
-        key: stagingKey,
-        contentType: parsed.data.contentType,
-        uploadToken,
-        expiresInSeconds: 300,
-      })
-      return { ok: true, uploadId, mode: 'single', putUrl }
+      const putUrl = storageUploadUrl({ uploadId })
+      return { ok: true, uploadId, mode: 'single', putUrl, uploadToken }
     } catch (error) {
       if (multipartUploadId) {
         await abortMultipartUpload({ key: stagingKey, uploadId: multipartUploadId }).catch(
@@ -244,7 +239,10 @@ export async function requestUpload(input: z.infer<typeof requestSchema>): Promi
     }
   } catch (error) {
     console.error('[uploads] upload request failed', error)
-    return { ok: false, error: 'Upload could not be started' }
+    return {
+      ok: false,
+      error: storageFreezeRefusalMessage(error, 'Upload could not be started'),
+    }
   }
 }
 
@@ -353,6 +351,20 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
       const headerError = uploadedFileHeaderError(reservation.kind, reservation.contentType, header)
       if (headerError) return { ok: false as const, error: headerError }
 
+      // A PDF is only stored once its trailer is present, so a truncated or
+      // mislabelled file can never reach the pdf.js viewer (see
+      // uploadedFileTailError). The read stays bounded to the trailer window.
+      if (isPdfUpload(reservation.contentType)) {
+        const tail = await getObjectRange({
+          key: reservation.stagingKey,
+          start: Math.max(0, reservation.sizeBytes - PDF_TRAILER_WINDOW_BYTES),
+          end: reservation.sizeBytes - 1,
+          ifMatch: staged.etag,
+        })
+        const tailError = uploadedFileTailError(reservation.kind, reservation.contentType, tail)
+        if (tailError) return { ok: false as const, error: tailError }
+      }
+
       let image: Awaited<ReturnType<typeof optimizeUploadedImage>> | null = null
       if (reservation.kind === 'image') {
         const imageBody = await getObject({ key: reservation.stagingKey })
@@ -371,7 +383,12 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
       const finalContentType = image?.contentType ?? reservation.contentType
       const finalFilename = image?.filename ?? reservation.filename
       const finalSizeBytes = image?.sizeBytes ?? reservation.sizeBytes
-      const contentDisposition = uploadContentDisposition(reservation.kind, finalContentType)
+      const { contentDisposition } = await import('./content-disposition')
+      const disposition = contentDisposition(
+        uploadContentDisposition(reservation.kind, finalContentType),
+        finalFilename,
+        reservation.filename || 'file',
+      )
       const existingFinal = await headObject({ key: reservation.r2Key })
       let promoted = false
       try {
@@ -381,7 +398,7 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
               key: reservation.r2Key,
               body: image.body,
               contentType: finalContentType,
-              contentDisposition,
+              contentDisposition: disposition as 'inline' | 'attachment',
             })
           } else {
             await promoteObject({
@@ -389,7 +406,7 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
               sourceEtag: staged.etag,
               destinationKey: reservation.r2Key,
               contentType: finalContentType,
-              contentDisposition,
+              contentDisposition: disposition as 'inline' | 'attachment',
             })
           }
           promoted = true
@@ -400,7 +417,7 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
           finalObject.contentLength !== finalSizeBytes ||
           normalizedContentType(finalObject.contentType) !==
             normalizedContentType(finalContentType) ||
-          finalObject.contentDisposition !== contentDisposition
+          finalObject.contentDisposition !== disposition
         ) {
           if (promoted) await deleteObject({ key: reservation.r2Key })
           return { ok: false as const, error: 'Finalized object could not be verified' }
@@ -489,6 +506,101 @@ export async function finalizeUpload(input: z.infer<typeof finalizeSchema>): Pro
       uploadId: parsed.data.uploadId,
       error,
     })
-    return { ok: false, error: 'Upload could not be finalized' }
+    return {
+      ok: false,
+      error: storageFreezeRefusalMessage(error, 'Upload could not be finalized'),
+    }
+  }
+}
+
+/**
+ * Request a presigned URL for a specific multipart part, just-in-time.
+ *
+ * This is called by the client right before uploading each part. The URL
+ * is signed for exactly 60 seconds, and the client must request a new URL
+ * for each subsequent part. This prevents the 60-second expiry bug where
+ * all part URLs are issued up-front for a large file.
+ *
+ * The server validates:
+ * - The reservation exists, is not consumed, and has not expired
+ * - The caller is the reservation owner (`requestedBy === ctx.userId`)
+ * - The part number is within 1..multipartPartCount(reservation.sizeBytes)
+ * - The reservation has a non-null multipartUploadId (set by requestUpload)
+ *
+ * The stagingKey is never taken from the client — it is derived from the
+ * reservation row, ensuring the object key is bound to the server-created
+ * session. The multipartUploadId is also derived from the DB, so the client
+ * cannot pass arbitrary values.
+ *
+ * @param input.uploadId - Reservation ID (uuid)
+ * @param input.partNumber - Part number to upload (1-based)
+ * @returns Presigned URL for the part, or an error message
+ */
+export async function requestMultipartPartUrl(input: {
+  uploadId: string
+  partNumber: number
+  /** The upload token handed out with the reservation. */
+  token: string
+}): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const ctx = await requireRequestContext()
+  const { uploadId, partNumber, token } = input
+
+  // Validate input
+  if (!partNumber || !Number.isInteger(partNumber) || partNumber < 1) {
+    return { ok: false, error: 'Part number must be a positive integer' }
+  }
+
+  // Load reservation with tenant-scoped RLS
+  const [reservation] = await ctx.db((tx) =>
+    tx
+      .select()
+      .from(attachmentUploadReservations)
+      .where(eq(attachmentUploadReservations.id, uploadId))
+      .limit(1),
+  )
+
+  if (!reservation) {
+    // Generic "not found" to avoid existence oracle
+    return { ok: false, error: 'Upload reservation not found' }
+  }
+
+  // Security: ensure caller is the reservation owner
+  if (reservation.requestedBy !== ctx.userId) {
+    return { ok: false, error: 'Upload reservation not found' }
+  }
+
+  // Security: reservation must not be consumed or expired
+  if (reservation.consumedAt) {
+    return { ok: false, error: 'Upload reservation already consumed' }
+  }
+  if (reservation.expiresAt < new Date()) {
+    return { ok: false, error: 'Upload reservation expired' }
+  }
+
+  // Security: multipartUploadId must be set (not null)
+  if (!reservation.multipartUploadId) {
+    return { ok: false, error: 'Multipart upload not initialized' }
+  }
+
+  // Security: part number must be within valid range
+  const maxPartNumber = Math.ceil(Number(reservation.sizeBytes) / MULTIPART_UPLOAD_PART_SIZE_BYTES)
+  if (partNumber > maxPartNumber) {
+    return { ok: false, error: 'Part number exceeds size of upload' }
+  }
+
+  // Derive stagingKey from DB (never from client)
+  const stagingKey = reservation.stagingKey
+
+  // The part URL points at the APPLICATION, which writes the part to the object
+  // store over the internal endpoint. The object store is never addressed by
+  // the browser.
+  try {
+    const url = storageUploadUrl({ uploadId: reservation.id, partNumber })
+    return { ok: true, url }
+  } catch (error) {
+    return {
+      ok: false,
+      error: storageFreezeRefusalMessage(error, 'Failed to prepare the part upload'),
+    }
   }
 }

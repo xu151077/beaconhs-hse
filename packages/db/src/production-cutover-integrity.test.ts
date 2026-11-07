@@ -5,6 +5,7 @@ import { readProductionCutoverSection } from './test/read-production-cutover-sec
 const drizzleFolder = new URL('../drizzle/', import.meta.url)
 const metaFolder = new URL('../drizzle/meta/', import.meta.url)
 const cutoverSql = readFileSync(new URL('0005_production_cutover.sql', drizzleFolder), 'utf8')
+const addZhLocaleSql = readFileSync(new URL('0045_add_zh_locale.sql', drizzleFolder), 'utf8')
 const finalSection = readProductionCutoverSection('0023_flaky_squirrel_girl.sql')
 const languageSection = readFileSync(
   new URL('0006_tenant_language_policy.sql', drizzleFolder),
@@ -44,6 +45,51 @@ function position(fragment: string): number {
 }
 
 describe('production cutover migration integrity', () => {
+  it('widens only the locale allow-list to admit Simplified Chinese', () => {
+    // Assert on EXECUTABLE SQL, not on prose. The migration documents why it is
+    // safe, and that documentation necessarily uses words like "added" and
+    // "deleted"; matching the raw file would make the guarantee untestable.
+    const executable = addZhLocaleSql
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n')
+    expect(executable.trim(), 'migration has no executable statements').not.toBe('')
+
+    // The migration must NOT touch rows, columns, RLS or permissions.
+    expect(executable).not.toMatch(
+      /\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP\s+TABLE|ALTER\s+COLUMN|DROP\s+COLUMN|ADD\s+COLUMN|CREATE\s+POLICY|GRANT|REVOKE|FORCE ROW LEVEL SECURITY|NO FORCE ROW LEVEL SECURITY)\b/i,
+    )
+    // No permission or role plumbing either: the executable text must reference
+    // nothing outside the two locale tables.
+    expect(executable).not.toMatch(/PERMISSION|role_assign|tenant_settings|role\b/i)
+    expect(new Set(executable.match(/ALTER TABLE "([a-z_]+)"/g))).toEqual(
+      new Set(['ALTER TABLE "tenants"', 'ALTER TABLE "tenant_users"']),
+    )
+
+    for (const constraint of [
+      'tenants_default_language_supported_check',
+      'tenants_enabled_languages_valid_check',
+      'tenant_users_locale_override_supported_check',
+    ]) {
+      expect(addZhLocaleSql, `${constraint} must be dropped before it is re-added`).toContain(
+        `DROP CONSTRAINT IF EXISTS "${constraint}"`,
+      )
+      expect(addZhLocaleSql).toContain(`ADD CONSTRAINT "${constraint}"`)
+      // NOT VALID + VALIDATE is the 0006 convention: it avoids a full table
+      // scan while holding a strong lock on a live production table.
+      expect(addZhLocaleSql).toContain(`VALIDATE CONSTRAINT "${constraint}"`)
+    }
+
+    // Widening is the whole point: the previous allow-list must be a strict
+    // subset of the new one, so no existing row can violate it.
+    expect(addZhLocaleSql).toContain(`'en', 'fr', 'es', 'zh'`)
+    expect(addZhLocaleSql).toContain(`'["en", "fr", "es", "zh"]'::jsonb`)
+    // `enabled_languages` must still contain `default_language`.
+    expect(executable).toMatch(
+      /"tenants"\."enabled_languages"\s*\?\s*"tenants"\."default_language"/,
+    )
+  })
+
   it('keeps a linear post-baseline migration and snapshot chain', () => {
     const migrations = readdirSync(drizzleFolder)
       .filter((name) => name.endsWith('.sql'))
@@ -94,6 +140,17 @@ describe('production cutover migration integrity', () => {
       '0042_journal_observation_definitions.sql',
       '0043_companies.sql',
       '0044_inspection_type_fk_snapshot.sql',
+      '0045_add_zh_locale.sql',
+      // Phase 6Q stage E1: storage write-freeze STATE MODEL. State record only —
+      // no write gate is wired to it (that is stage E2).
+      '0046_cute_lizard.sql',
+      '0047_broken_lord_tyger.sql',
+      '0048_storage_freeze_tenant_unique.sql',
+      '0049_attachment_upload_multipart_upload_id.sql',
+      '0050_repair_0049_multipart_upload_id.sql',
+      '0051_ea12_drop_dead_columns.sql',
+      // Platform open-source disclosure link (platform_settings.open_source).
+      '0052_old_nextwave.sql',
     ])
 
     const journal = JSON.parse(readFileSync(new URL('_journal.json', metaFolder), 'utf8')) as {
@@ -144,13 +201,23 @@ describe('production cutover migration integrity', () => {
       { idx: 41, tag: '0042_journal_observation_definitions' },
       { idx: 43, tag: '0043_companies' },
       { idx: 44, tag: '0044_inspection_type_fk_snapshot' },
+      { idx: 45, tag: '0045_add_zh_locale' },
+      // Phase 6Q stage E1.
+      { idx: 46, tag: '0046_cute_lizard' },
+      { idx: 47, tag: '0047_broken_lord_tyger' },
+      { idx: 48, tag: '0048_storage_freeze_tenant_unique' },
+      { idx: 49, tag: '0049_attachment_upload_multipart_upload_id' },
+      { idx: 50, tag: '0050_repair_0049_multipart_upload_id' },
+      { idx: 51, tag: '0051_ea12_drop_dead_columns' },
+      { idx: 52, tag: '0052_old_nextwave' },
     ])
     for (let index = 1; index < journal.entries.length; index++) {
       expect(journal.entries[index]!.when).toBeGreaterThan(journal.entries[index - 1]!.when)
     }
 
     const snapshots = [
-      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 29,
+      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 29, 43, 44,
+      45, 46, 47, 48, 49, 50, 51,
     ].map(
       (index) =>
         JSON.parse(
@@ -165,6 +232,32 @@ describe('production cutover migration integrity', () => {
       expect(snapshots[index]!.id).not.toBe(snapshots[index]!.prevId)
     }
     expect([...cutoverSql.matchAll(/^-- Squashed source:/gm)]).toHaveLength(30)
+  })
+
+  it('repairs 0049 in a new additive migration without rewriting applied history', () => {
+    const migrationFiles = readdirSync(drizzleFolder)
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+    for (const name of migrationFiles.filter((entry) => entry >= '0050_')) {
+      const sql = readFileSync(new URL(name, drizzleFolder), 'utf8')
+      const executable = sql
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+      expect(executable, `${name} contains literal escaped newlines`).not.toContain('\\n')
+    }
+
+    // 0049 is already applied in existing ledgers and must keep its exact bytes.
+    const original = readFileSync(
+      new URL('0049_attachment_upload_multipart_upload_id.sql', drizzleFolder),
+      'utf8',
+    )
+    const repair = readFileSync(
+      new URL('0050_repair_0049_multipart_upload_id.sql', drizzleFolder),
+      'utf8',
+    )
+    expect(original).toContain('\\n-- WHY')
+    expect(repair).toContain('ADD COLUMN IF NOT EXISTS "multipart_upload_id" text;')
   })
 
   it('normalizes completion-only assessment history during the review cutover', () => {

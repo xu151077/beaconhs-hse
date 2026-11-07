@@ -9,6 +9,7 @@ import {
   INVITE_LINK_TTL_SECONDS,
 } from './invites'
 import { verifyLegacyOrCurrentPassword } from './legacy-password'
+import { resolveAuthBaseUrl } from './public-url'
 
 export type AuthEmailContext = {
   tenantId: string
@@ -74,7 +75,7 @@ function createAuth() {
     throw new Error('[auth] DATABASE_URL is required.')
   }
 
-  const baseURL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+  const baseURL = resolveAuthBaseUrl()
 
   // BETTER_AUTH_SECRET signs sessions AND seals stored provider API keys.
   // Runtime initialization fails closed in production; a Next build merely

@@ -9,6 +9,25 @@
   // `permissions`, and the LAST matching rule wins. Every deny below is
   // therefore placed AFTER the broad allow it is meant to carve out.
 
+  "provider": {
+    "custom-gpt": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Custom GPT Server",
+      "options": {
+        "baseURL": "http://80.47.238.204/v1",
+        "apiKey": "nx_9141be3ae959f661ec4cb49e4ae41c436b36954f9fef3d9c"
+      },
+      "models": {
+        "gpt-6.1-sol": {
+          "name": "GPT-6.1-SOL",
+          "modelID": "gpt-6.1-sol",
+          "maxTokens": 100000000
+        }
+      }
+    }
+  },
+  "model": "custom-gpt/gpt-6.1-sol",
+
   "permissions": [
     // ---------------------------------------------------------------------
     // 1. Read-only discovery — always allowed.
@@ -173,6 +192,7 @@
     { "action": "skill", "resource": "documentation", "effect": "allow" },
     { "action": "skill", "resource": "release-readiness", "effect": "allow" },
     { "action": "skill", "resource": "report", "effect": "allow" },
+    { "action": "skill", "resource": "caveman", "effect": "allow" },
 
     // ---------------------------------------------------------------------
     // 7. Network. Documentation and search stay open; unknown hosts ask.
@@ -239,28 +259,50 @@
         "url": "https://api.githubcopilot.com/mcp/",
         "oauth": false,
         "headers": {
-          "Authorization": "Bearer {env:GITHUB_TOKEN}"
+          "Authorization": "Bearer {file:~/.config/opencode/github-token}",
         },
         "timeout": {
           "startup": 45000,
           "catalog": 45000,
-          "execution": 300000
-        }
+          "execution": 300000,
+        },
       },
       "playwright": {
         // Node and npx live under nvm and are on NO default PATH (not even a
         // login shell), so the OpenCode background service cannot spawn a bare
         // `npx`. Invoke node by absolute path, and pass the nvm bin directory
         // down to the child shell that npx execs the package binary through.
+        //
+        // `NODE_OPTIONS` (not a `--import` argv flag) preloads the crash guard,
+        // because the process that actually serves MCP is a GRANDCHILD:
+        //   node npx-cli.js -> npm exec -> sh -c 'playwright-mcp' -> node playwright-mcp
+        // A `--import` argv flag applies only to the outermost node and is dropped
+        // when npx re-execs the package binary. NODE_OPTIONS is inherited down the
+        // whole chain.
+        //
+        // Why the guard exists: Playwright dispatches page events from a bare
+        // `Immediate` inside `Connection.dispatch` with no try/catch, so a
+        // synchronous throw from a `page.on(...)` listener inside
+        // `browser_run_code_unsafe` exits the MCP server with code 1 — and
+        // OpenCode v2.0.30 does not restart a crashed local MCP server, which is
+        // how one bad listener cost Phase AK the rest of its browser tooling.
+        // The guard keeps the process alive and logs the stack to stderr; the
+        // in-flight tool call still fails. See
+        // docs/phase-6u-b3-am-playwright-repair-report.md.
         "type": "local",
         "command": [
           "/home/test/.nvm/versions/node/v24.21.0/bin/node",
           "/home/test/.nvm/versions/node/v24.21.0/lib/node_modules/npm/bin/npx-cli.js",
           "-y",
           "@playwright/mcp@0.0.83",
+          "--browser=chromium",
+          "--headless",
+          "--executable-path=/home/test/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
         ],
         "environment": {
           "PATH": "/home/test/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin",
+          "DBUS_SESSION_BUS_ADDRESS": "unix:/run/user/1000/bus",
+          "NODE_OPTIONS": "--import=/home/test/projects/beaconhs-hse/.opencode/mcp/playwright-mcp-guard.mjs",
         },
         "timeout": {
           "startup": 180000,

@@ -1,32 +1,25 @@
 import { getGeneratedTranslations } from '@/i18n/generated.server'
 
-import { GeneratedText, useGeneratedTranslations, GeneratedValue } from '@/i18n/generated'
+import {
+  GeneratedText,
+  useGeneratedTranslations,
+  useGeneratedValueTranslations,
+  GeneratedValue,
+} from '@/i18n/generated'
 import Link from 'next/link'
 import { SmartBackLink } from '@/components/smart-back-link'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { Button, Input, Label, PageHeader, Select } from '@beaconhs/ui'
-import { db, withSuperAdmin } from '@beaconhs/db'
-import { auditLog, tenants } from '@beaconhs/db/schema'
 import { LOCALE_OPTIONS, normalizeLocalePolicy } from '@beaconhs/i18n'
-import { seedLiftPlanTemplate } from '@beaconhs/db/seed/lift-plan-template'
+import { provisionTenant } from '@beaconhs/db/tenant-provisioning'
 import { requireRequestContext } from '@/lib/auth'
 import { PageContainer } from '@/components/page-layout'
+import { DEFAULT_TENANT_REGION, TENANT_REGIONS } from '@/lib/tenant-regions'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
   return { title: tGenerated('m_0329d412717ff5') }
-}
-
-function slugify(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-_\s]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
 }
 
 async function createTenant(formData: FormData): Promise<void> {
@@ -44,7 +37,6 @@ async function createTenant(formData: FormData): Promise<void> {
   const defaultLanguage = String(formData.get('defaultLanguage') ?? 'en').trim()
   if (!name) return
 
-  const slug = customSlug ? slugify(customSlug) : slugify(name)
   const languagePolicy = normalizeLocalePolicy({
     defaultLocale: defaultLanguage,
     enabledLocales: LOCALE_OPTIONS.map((language) => language.value).filter(
@@ -52,42 +44,18 @@ async function createTenant(formData: FormData): Promise<void> {
     ),
   })
 
-  await withSuperAdmin(db, async (tx) => {
-    const [created] = await tx
-      .insert(tenants)
-      .values({
-        name,
-        slug,
-        status: 'active',
-        region,
-        defaultLanguage: languagePolicy.defaultLocale,
-        enabledLanguages: languagePolicy.enabledLocales,
-      })
-      .returning({ id: tenants.id })
-    if (created) {
-      // Audit row lives in the *new* tenant's audit_log so the activity timeline
-      // shows "tenant created" on day-one. Super-admin actions otherwise have
-      // no natural home in any tenant's log.
-      await tx.insert(auditLog).values({
-        tenantId: created.id,
-        actorUserId: userId,
-        entityType: 'tenant',
-        entityId: created.id,
-        action: 'create',
-        summary: `Created tenant "${name}" (${slug})`,
-        after: {
-          name,
-          slug,
-          region,
-          defaultLanguage: languagePolicy.defaultLocale,
-          enabledLanguages: languagePolicy.enabledLocales,
-        },
-      })
-      // Seed every built-in form template that's required on day-one. Done
-      // inside the same transaction so a seeder failure rolls back the
-      // tenant create — we never want a half-provisioned tenant.
-      await seedLiftPlanTemplate(tx, created.id)
-    }
+  // The tenant row, the day-one audit entry in the new tenant's own log, and the one
+  // form template required on day one — all in ONE transaction, so a seeder failure
+  // rolls the tenant back rather than leaving a half-provisioned workspace. Shared
+  // with the operator `provision:first-tenant` command so there is a single
+  // implementation of "create a tenant", not two that can silently drift.
+  await provisionTenant({
+    name,
+    slug: customSlug,
+    region,
+    defaultLanguage: languagePolicy.defaultLocale,
+    enabledLanguages: languagePolicy.enabledLocales,
+    actorUserId: userId,
   })
 
   revalidatePath('/platform/tenants')
@@ -95,6 +63,7 @@ async function createTenant(formData: FormData): Promise<void> {
 }
 
 export default function NewTenantPage() {
+  const tGeneratedValue = useGeneratedValueTranslations()
   const tGenerated = useGeneratedTranslations()
   return (
     <PageContainer>
@@ -134,10 +103,12 @@ export default function NewTenantPage() {
               <Label htmlFor="region">
                 <GeneratedText id="m_1de0752c52bdd4" />
               </Label>
-              <Select id="region" name="region" defaultValue="ca-central-1">
-                <option value="ca-central-1">{'Canada (Central)'}</option>
-                <option value="us-east-1">{'US East'}</option>
-                <option value="eu-west-1">{'EU West'}</option>
+              <Select id="region" name="region" defaultValue={DEFAULT_TENANT_REGION}>
+                {TENANT_REGIONS.map((region) => (
+                  <option key={region.value} value={region.value}>
+                    {tGeneratedValue(region.label)}
+                  </option>
+                ))}
               </Select>
             </div>
             <div className="space-y-1.5">

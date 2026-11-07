@@ -89,7 +89,7 @@ export function createCertificateDesignDocument(
           field('tenant', 'Issuer', 'tenant.name', 1.2, 0.72, 8.6, 0.28, 13, theme.primary, {
             align: 'center',
             letterSpacing: 0.08,
-            fontFamily: "'Archivo', Arial, sans-serif",
+            fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
           }),
           line('brand-rule', 'Brand rule', 3.8, 1.1, 3.4, 0.01, theme.accent, 0.018),
           text('title', 'Title', 'CERTIFICATE', 1.25, 1.48, 8.5, 0.62, 46, theme.primary, {
@@ -100,7 +100,7 @@ export function createCertificateDesignDocument(
           }),
           text('subtitle', 'Subtitle', 'OF COMPLETION', 2.85, 2.08, 5.3, 0.28, 11, theme.accent, {
             align: 'center',
-            fontFamily: "'Archivo', Arial, sans-serif",
+            fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
             fontWeight: '700',
             letterSpacing: 0.1,
           }),
@@ -155,7 +155,7 @@ export function createCertificateDesignDocument(
             {
               align: 'center',
               prefix: 'Course ',
-              fontFamily: "'Archivo', Arial, sans-serif",
+              fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
               letterSpacing: 0.07,
             },
           ),
@@ -176,7 +176,7 @@ export function createCertificateDesignDocument(
             '#64748b',
             {
               align: 'center',
-              fontFamily: "'Archivo', Arial, sans-serif",
+              fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
             },
           ),
           line('signature-right', 'Issuer line', 7.4, 7.2, 2.4, 0.01, theme.primary, 0.012),
@@ -192,7 +192,7 @@ export function createCertificateDesignDocument(
             '#64748b',
             {
               align: 'center',
-              fontFamily: "'Archivo', Arial, sans-serif",
+              fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
             },
           ),
           qr('qr', 'Verification QR', 9.42, 0.72, 0.82, 0.82),
@@ -246,20 +246,20 @@ function walletFront(theme: DesignStudioTheme): DesignArtboard {
       rect('brand-band', 'Brand band', 0, 0, 3.375, 0.55, theme.primary, theme.primary, 0),
       rect('accent-rule', 'Accent rule', 0, 0.55, 3.375, 0.035, theme.accent, theme.accent, 0),
       field('tenant', 'Issuer', 'tenant.name', 0.14, 0.15, 2.45, 0.16, 7, '#ffffff', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '800',
         letterSpacing: 0.025,
         transform: 'uppercase',
       }),
       text('tag', 'Card label', 'TRAINING CREDENTIAL', 0.14, 0.32, 2.25, 0.12, 4.6, '#dbeafe', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
         letterSpacing: 0.045,
       }),
       image('logo', 'Logo', 'tenant.logo', 2.63, 0.13, 0.56, 0.26, 'contain'),
       image('photo', 'Photo', 'recipient.photo', 0.14, 0.36, 0.68, 0.84, 'cover', 0.06),
       field('recipient', 'Recipient', 'recipient.fullName', 0.94, 0.67, 2.22, 0.2, 10, '#0f172a', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '800',
       }),
       field(
@@ -278,7 +278,7 @@ function walletFront(theme: DesignStudioTheme): DesignArtboard {
         },
       ),
       field('credential', 'Credential', 'credential.name', 0.94, 1.07, 2.2, 0.34, 7.4, '#1e293b', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
         lineHeight: 1.1,
       }),
@@ -318,7 +318,7 @@ function walletBack(theme: DesignStudioTheme): DesignArtboard {
         6.2,
         theme.primary,
         {
-          fontFamily: "'Archivo', Arial, sans-serif",
+          fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
           fontWeight: '800',
           letterSpacing: 0.045,
         },
@@ -332,7 +332,7 @@ function walletBack(theme: DesignStudioTheme): DesignArtboard {
         prefix: 'Token ',
       }),
       field('issuer', 'Issuer', 'tenant.name', 0.18, 1.33, 2.95, 0.18, 6.2, theme.primary, {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
         align: 'center',
       }),
@@ -346,7 +346,11 @@ function walletBack(theme: DesignStudioTheme): DesignArtboard {
         0.22,
         5.5,
         '#475569',
-        { align: 'center', lineHeight: 1.1, fontFamily: "'Archivo', Arial, sans-serif" },
+        {
+          align: 'center',
+          lineHeight: 1.1,
+          fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
+        },
       ),
     ],
   }
@@ -540,20 +544,20 @@ function personBadgeFront(theme: DesignStudioTheme): DesignArtboard {
       rect('brand-band', 'Brand band', 0, 0, 3.375, 0.52, theme.primary, theme.primary, 0),
       rect('accent-rule', 'Accent rule', 0, 0.52, 3.375, 0.035, theme.accent, theme.accent, 0),
       field('tenant', 'Company', 'tenant.name', 0.14, 0.14, 2.4, 0.16, 7.2, '#ffffff', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '800',
         letterSpacing: 0.02,
         transform: 'uppercase',
       }),
       text('tag', 'Card label', 'EMPLOYEE ID', 0.14, 0.32, 2.2, 0.12, 4.6, '#dbeafe', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
         letterSpacing: 0.04,
       }),
       image('logo', 'Logo', 'tenant.logo', 2.62, 0.12, 0.58, 0.28, 'contain'),
       image('photo', 'Photo', 'recipient.photo', 0.16, 0.72, 0.92, 1.15, 'cover', 0.08),
       field('name', 'Name', 'recipient.fullName', 1.22, 0.78, 2.0, 0.36, 11, '#0f172a', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '800',
         lineHeight: 1.05,
       }),
@@ -570,7 +574,7 @@ function personBadgeFront(theme: DesignStudioTheme): DesignArtboard {
         { fontFamily: "ui-monospace, 'SF Mono', monospace", prefix: '#' },
       ),
       field('title', 'Job title', 'person.title', 1.22, 1.38, 1.95, 0.15, 6.4, '#1e293b', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
       }),
       field(
@@ -583,11 +587,14 @@ function personBadgeFront(theme: DesignStudioTheme): DesignArtboard {
         0.14,
         5.6,
         '#64748b',
-        { fontFamily: "'Archivo', Arial, sans-serif", fontWeight: '600' },
+        {
+          fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
+          fontWeight: '600',
+        },
       ),
       qr('qr-mini', 'Transcript QR', 2.78, 1.54, 0.44, 0.44),
       field('issued', 'Issued', 'issuedAt', 0.16, 1.95, 1.4, 0.12, 4.8, '#94a3b8', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '600',
         prefix: 'Issued ',
         transform: 'date-short',
@@ -620,7 +627,7 @@ function personBadgeBack(theme: DesignStudioTheme): DesignArtboard {
         6.2,
         '#ffffff',
         {
-          fontFamily: "'Archivo', Arial, sans-serif",
+          fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
           fontWeight: '800',
           letterSpacing: 0.03,
           lineHeight: 1.2,
@@ -632,7 +639,7 @@ function personBadgeBack(theme: DesignStudioTheme): DesignArtboard {
         lineHeight: 1.2,
       }),
       field('issuer', 'Company', 'tenant.name', 0.24, 1.34, 2.9, 0.16, 6.4, '#ffffff', {
-        fontFamily: "'Archivo', Arial, sans-serif",
+        fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         fontWeight: '700',
         align: 'center',
       }),
@@ -646,7 +653,11 @@ function personBadgeBack(theme: DesignStudioTheme): DesignArtboard {
         0.3,
         5,
         '#cbd5e1',
-        { align: 'center', lineHeight: 1.25, fontFamily: "'Archivo', Arial, sans-serif" },
+        {
+          align: 'center',
+          lineHeight: 1.25,
+          fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
+        },
       ),
     ],
   }
@@ -655,15 +666,15 @@ function personBadgeBack(theme: DesignStudioTheme): DesignArtboard {
 function fontFor(typeface: DesignStudioTheme['typeface']) {
   if (typeface === 'technical') {
     return {
-      body: "'Archivo', Arial, sans-serif",
+      body: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
       display: "ui-monospace, 'SF Mono', monospace",
-      recipient: "'Archivo', Arial, sans-serif",
+      recipient: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
     }
   }
   if (typeface === 'modern') {
     return {
-      body: "'Archivo', Arial, sans-serif",
-      display: "'Archivo', Arial, sans-serif",
+      body: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
+      display: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
       recipient: "'Cormorant Garamond', Georgia, serif",
     }
   }
@@ -697,7 +708,7 @@ function text(
     height,
     fontSize,
     color,
-    fontFamily: "'Archivo', Arial, sans-serif",
+    fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
     fontWeight: '600',
     align: 'left',
     visible: true,
@@ -729,7 +740,7 @@ function field(
     height,
     fontSize,
     color,
-    fontFamily: "'Archivo', Arial, sans-serif",
+    fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
     fontWeight: '600',
     align: 'left',
     transform: 'none',
@@ -763,7 +774,7 @@ function meta(
     height,
     fontSize,
     color,
-    fontFamily: "'Archivo', Arial, sans-serif",
+    fontFamily: "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
     fontWeight: '700',
     align: 'center',
     transform: value === 'completedOn' || value === 'expiresOn' ? 'date-long' : 'none',

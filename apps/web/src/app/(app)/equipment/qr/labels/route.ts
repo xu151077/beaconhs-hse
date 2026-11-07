@@ -10,6 +10,8 @@ import { normalizeEquipmentLabelDesign } from '@/lib/equipment-label-design'
 import { pdfBufferResponse } from '@/lib/pdf-route'
 import { parseBulkQrRequest } from '@/lib/equipment-bulk-qr'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 /**
@@ -18,7 +20,7 @@ export const dynamic = 'force-dynamic'
  * page as one tag). The picker's server action stamps the traceable bulk-QR
  * token + export audit before redirecting here, so this GET stays read-only.
  */
-export async function GET(req: Request) {
+async function getHandler(req: Request) {
   const ctx = await requireRequestContext()
   assertCan(ctx, 'equipment.read.site')
 
@@ -52,3 +54,5 @@ export async function GET(req: Request) {
   )
   return pdfBufferResponse(pdf, `equipment-labels-${result.labels.length}.pdf`)
 }
+
+export const GET = withRouteErrors(getHandler)

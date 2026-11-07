@@ -159,7 +159,7 @@ export default async function ObservationsPage({
               currentParams={sp}
               paramKey="status"
               label={tGenerated('m_0b9da892d6faf0')}
-              allLabel="Any status"
+              allLabel={tGenerated('m_08a3d19309f061')}
               options={STATUS_OPTIONS.map((o) => ({
                 ...o,
                 count: facets.statusCounts[o.value],
@@ -170,7 +170,7 @@ export default async function ObservationsPage({
               currentParams={sp}
               paramKey="definition"
               label={tGenerated('m_032e2c53fdcc08')}
-              allLabel="Any observation type"
+              allLabel={tGenerated('m_1507bc415d9c23')}
               options={TYPE_OPTIONS}
             />
             {/* Hidden inputs preserve the active filters across the date-range

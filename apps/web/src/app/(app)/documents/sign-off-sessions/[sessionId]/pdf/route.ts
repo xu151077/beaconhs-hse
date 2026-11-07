@@ -14,9 +14,11 @@ import { renderModulePdfResponse } from '@/lib/module-pdf'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ): Promise<Response> {
@@ -60,3 +62,5 @@ export async function GET(
   }
   return response
 }
+
+export const GET = withRouteErrors(getHandler)

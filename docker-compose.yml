@@ -1,6 +1,24 @@
 # Dev uses DATABASE_URL from .env. Maintainers can keep pointing at the shared
 # PG cluster, while open-source/local clones can opt into Postgres with:
 #   docker compose --profile local-db up -d
+#
+# PUBLISHED PORTS ARE LOOPBACK-ONLY
+#
+# Every published port binds 127.0.0.1, not 0.0.0.0. Docker publishes on all
+# interfaces by default, which made Postgres, Redis, the MinIO API, the MinIO
+# console, Collabora and Mailpit reachable from every host on the LAN — measured
+# open on the interface address, with no local firewall in front of them. None of
+# these belong on a network. Binding to loopback keeps local tooling and the
+# container-to-container network working while removing the LAN exposure; the
+# mappings themselves are unchanged, so nothing that used them locally breaks.
+#
+# The application's own reachability is unaffected: it talks to these services by
+# Docker service name (`minio`, `postgres`, `redis`, `collabora`) from inside the
+# compose network, not through the published port.
+#
+# Note the asymmetry with production: a service running INSIDE a container cannot
+# use `localhost` to reach another container — `localhost` there means the
+# container itself. Production uses `http://minio:9000` for that reason.
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,7 +30,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: beaconhs
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./scripts/cluster/local-init.sh:/docker-entrypoint-initdb.d/10-beaconhs-roles.sh:ro
@@ -27,7 +45,7 @@ services:
     image: redis:7-alpine
     container_name: beaconhs-redis
     ports:
-      - '6380:6379'
+      - '127.0.0.1:6380:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -44,8 +62,8 @@ services:
       MINIO_ROOT_USER: beaconhs
       MINIO_ROOT_PASSWORD: beaconhs-dev-secret
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     volumes:
       - minio-data:/data
     healthcheck:
@@ -58,8 +76,8 @@ services:
     image: axllent/mailpit:latest
     container_name: beaconhs-mailpit
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
 
   # In-browser PowerPoint editor for PPTX-mastered training decks. The app
   # iframes http://localhost:9980; Collabora calls back into the app's
@@ -75,7 +93,7 @@ services:
       # Keep WOPI loads aligned with MAX_PPTX_FILE_BYTES (exactly 1 GiB).
       - extra_params=--o:ssl.enable=false --o:ssl.termination=false --o:net.frame_ancestors=http://localhost:3000 --o:welcome.enable=false --o:home_mode.enable=true --o:storage.wopi.max_file_size=1073741824
     ports:
-      - '9980:9980'
+      - '127.0.0.1:9980:9980'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     volumes:

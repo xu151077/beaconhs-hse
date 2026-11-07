@@ -14,9 +14,11 @@ import { renderModulePdfResponse } from '@/lib/module-pdf'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -74,3 +76,5 @@ export async function GET(
 
   return renderModulePdfResponse(ctx, { moduleKey: 'inspections', recordId: id })
 }
+
+export const GET = withRouteErrors(getHandler)

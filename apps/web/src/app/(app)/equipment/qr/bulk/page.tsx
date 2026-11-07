@@ -118,7 +118,7 @@ export default async function BulkQrPage({
               currentParams={sp}
               paramKey="typeId"
               placeholder={tGenerated('m_074ba2f160c506')}
-              allLabel="All types"
+              allLabel={tGenerated('m_182aff8c076ae7')}
               searchPlaceholder={tGenerated('m_129f9c4e0a75c8')}
             />
           </TableToolbar>

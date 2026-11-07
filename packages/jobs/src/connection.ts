@@ -15,10 +15,26 @@ let producerConnection: Redis | undefined
 let blockingConnection: Redis | undefined
 
 export function getConnection(): ConnectionOptions {
-  producerConnection ??= new Redis(getRedisUrl(), {
-    enableReadyCheck: false,
-    maxRetriesPerRequest: 1,
-  })
+  if (!producerConnection) {
+    const client = new Redis(getRedisUrl(), {
+      enableReadyCheck: false,
+      maxRetriesPerRequest: 1,
+      // Fail fast when Redis is unreachable instead of queueing commands
+      // offline forever: web requests, scheduler publishers and operator CLIs
+      // must observe a bounded enqueue failure, never a silent hang.
+      enableOfflineQueue: false,
+      // Never reconnect-loop in request/CLI context: a dead broker rejects
+      // the in-flight command immediately instead of spraying reconnect
+      // errors while the caller waits. (Workers use the blocking connection
+      // below, whose infinite retry is deliberate.)
+      retryStrategy: () => null,
+    })
+    // ioredis throws on an 'error' event with no listener. Failures already
+    // surface through rejected commands, which every caller handles and logs;
+    // this only keeps the shared client from crashing the process.
+    client.on('error', () => undefined)
+    producerConnection = client
+  }
   return producerConnection as unknown as ConnectionOptions
 }
 

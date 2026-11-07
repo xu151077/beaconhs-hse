@@ -2,7 +2,7 @@
 //
 // This is the one genuine READ_AUTHORIZATION among the eight inline published
 // rules 15B-3C-3H-A catalogued. It is a read surface in the strongest sense: on
-// success it hands back `presignExistingGet(...)`, a 300-second bearer
+// success it hands back `storageObjectUrl(...)`, an application URL that the
 // capability to the document's PDF. The URL is the document.
 //
 // 3H-1 pushed the publication rule out of a JavaScript comparison and into the
@@ -14,7 +14,7 @@
 //     manager may render a working master of an UNPUBLISHED document, and the
 //     manager bypass inside `documentReadFilter` must not become a back door
 //     through the reader path — nor must it weaken the draft gate.
-//   • the two `presignExistingGet` calls must stay downstream of authorization.
+//   • the two `storageObjectUrl` calls must stay downstream of authorization.
 //     A URL minted before the document is known to be readable would be a
 //     complete bypass, and no assertion on a query can catch it, so the ORDER is
 //     asserted directly against the source.
@@ -235,15 +235,15 @@ describe('15B-3C-3H-1 — opts.draft stays a manager-only, publication-agnostic 
 // 5. Presign ordering — the URL is the document
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-3H-1 — no presigned URL is minted before authorization', () => {
-  it('both presign calls come after the document is known to be readable', () => {
+describe('15B-3C-3H-1 — no download URL is minted before authorization', () => {
+  it('both URL calls come after the document is known to be readable', () => {
     const authz = ACTIONS.indexOf("if (!doc) return { ok: false, error: 'Document not found.' }")
     expect(authz).toBeGreaterThan(-1)
-    const presigns = [...ACTIONS.matchAll(/presignExistingGet\(/g)].map((m) => m.index ?? -1)
+    const urls = [...ACTIONS.matchAll(/storageObjectUrl\(/g)].map((m) => m.index ?? -1)
     // Two call sites: the uploaded-PDF path and the rendered-PDF path.
-    expect(presigns).toHaveLength(2)
-    for (const at of presigns) {
-      expect(at, 'a presign happened before the authorization check').toBeGreaterThan(authz)
+    expect(urls).toHaveLength(2)
+    for (const at of urls) {
+      expect(at, 'a URL was built before the authorization check').toBeGreaterThan(authz)
     }
   })
 
@@ -266,7 +266,7 @@ describe('15B-3C-3H-1 — no presigned URL is minted before authorization', () =
 // 6. Key provenance — the storage key is never caller-supplied
 // ---------------------------------------------------------------------------
 
-describe('15B-3C-3H-1 — the presigned key is derived from the database', () => {
+describe('15B-3C-3H-1 — the URL key is derived from the database', () => {
   it('the key comes from attachments.r2Key resolved by a version-owned id', () => {
     expect(ACTIONS).toContain('key: attachments.r2Key')
     expect(ACTIONS).toContain('eq(attachments.id, version.contentAttachmentId!)')
@@ -275,10 +275,10 @@ describe('15B-3C-3H-1 — the presigned key is derived from the database', () =>
 
   it('the attachment ids come from the resolved version, not the arguments', () => {
     // `documentId` is the only caller input; the attachment ids are reached
-    // through the version row, so a caller cannot point the presign elsewhere.
+    // through the version row, so a caller cannot point the URL elsewhere.
     expect(ACTIONS).toContain('contentAttachmentId: documentVersions.contentAttachmentId')
     expect(ACTIONS).toContain('pdfAttachmentId: documentVersions.pdfAttachmentId')
-    expect(ACTIONS).not.toMatch(/presignExistingGet\(\{[^}]*documentId/)
+    expect(ACTIONS).not.toMatch(/storageObjectUrl\([^)]*documentId/)
   })
 
   it('the document id is bound, never interpolated', () => {

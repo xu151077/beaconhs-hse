@@ -320,7 +320,7 @@ export default async function WorkOrdersPage({
               currentParams={sp}
               paramKey="status"
               label={tGenerated('m_0b9da892d6faf0')}
-              allLabel="All statuses"
+              allLabel={tGenerated('m_10ce64191d8b55')}
               defaultValue="open"
               options={STATUS_OPTIONS.map((o) => ({ ...o, count: statusCounts[o.value] }))}
             />
@@ -348,7 +348,7 @@ export default async function WorkOrdersPage({
               currentParams={sp}
               paramKey="assignee"
               placeholder={tGenerated('m_1243e909f70da5')}
-              allLabel="All assignees"
+              allLabel={tGenerated('m_1243e909f70da5')}
               searchPlaceholder={tGenerated('m_0a2863fa877d51')}
             />
             <RemoteSearchFilter
@@ -357,7 +357,7 @@ export default async function WorkOrdersPage({
               currentParams={sp}
               paramKey="type"
               placeholder={tGenerated('m_154abecfa0f430')}
-              allLabel="All equipment types"
+              allLabel={tGenerated('m_154abecfa0f430')}
               searchPlaceholder={tGenerated('m_1c552a0e7a59f2')}
             />
           </TableToolbar>

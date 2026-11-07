@@ -13,13 +13,14 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { spawnCorrectiveActionForSubject } from '../spawn'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { fmtDate, personName } from '../format'
 import type { FlowSubjectAdapter } from '../types'
 import { photoDocumentUrl } from '@/lib/photo-document-url'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 export function createJournalFlowAdapter(ctx: RequestContext, entryId: string): FlowSubjectAdapter {
   return {
@@ -110,7 +111,7 @@ export function createJournalFlowAdapter(ctx: RequestContext, entryId: string): 
         site_org_unit_id: r.siteOrgUnitId ?? null,
         photos: await Promise.all(
           photos.map(async (p) => {
-            const url = await presignGet({ key: p.r2Key, expiresInSeconds: 900 })
+            const url = await storageObjectUrl(p.r2Key)
             return {
               url: photoDocumentUrl({
                 url,

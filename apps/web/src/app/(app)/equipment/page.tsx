@@ -243,7 +243,7 @@ export default async function EquipmentPage({
               currentParams={sp}
               paramKey="status"
               label={tGenerated('m_0b9da892d6faf0')}
-              allLabel="All statuses"
+              allLabel={tGenerated('m_10ce64191d8b55')}
               defaultValue="in_service"
               options={STATUS_OPTIONS.map((o) => ({ ...o, count: statusCounts[o.value] }))}
             />

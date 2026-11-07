@@ -41,12 +41,22 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { BUILTIN_ROLES } from './schema/iam'
+import {
+  resolveOptionalScratchDatabaseUrl,
+  resolveScratchDatabaseUrl,
+} from './testing/scratch-database'
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // CJS resolution is used deliberately: `import.meta.resolve` is not reliable for
 // an `exports`-mapped package under this runner.
 const require_ = createRequire(import.meta.url)
 const SEED = resolve(PKG_DIR, 'src/seed.ts')
+
+// The built-in role loop and its completeness assertion moved out of `seed.ts` and into
+// the shared tenant-provisioning module, so the seed no longer creates roles itself. The
+// intent of the checks below — that no fabricated role or permission list may creep in —
+// is unchanged; only the file under test moves.
+const PROVISIONING = resolve(PKG_DIR, 'src/tenant-provisioning.ts')
 const seedSrc = readFileSync(SEED, 'utf8')
 
 /** Source with comments stripped, so prose naming a symbol is not read as code. */
@@ -57,6 +67,7 @@ const codeOnly = (src: string): string =>
     .replace(/^\s*--.*$/gm, '')
 
 const code = codeOnly(seedSrc)
+const provisioningCode = codeOnly(readFileSync(PROVISIONING, 'utf8'))
 
 // ---------------------------------------------------------------------------
 // Wiring — the two identities are separated
@@ -100,13 +111,27 @@ describe('the super-admin never gates the tenant bootstrap', () => {
   })
 
   it('built-in roles are still derived from the real BUILTIN_ROLES', () => {
-    // No fabricated role or permission list may creep in. The bootstrap reads the
-    // same definition the runtime does.
-    expect(code).toMatch(/Object\.entries\(BUILTIN_ROLES\)/)
+    // No fabricated role or permission list may creep in. The seeder reads the same
+    // definition the runtime does — now from the shared tenant-provisioning module,
+    // which BOTH the demo seed and tenant provisioning call.
+    expect(provisioningCode).toMatch(/Object\.entries\(BUILTIN_ROLES\)/)
+    // And the seed must delegate rather than keep a second copy of the loop.
+    expect(code).toMatch(/ensureBuiltinRoles\(/)
+    expect(code).not.toMatch(/insert\(roles\)/)
+
     const keysInSeed = Object.keys(BUILTIN_ROLES)
     expect(keysInSeed.length).toBeGreaterThan(0)
     // The completeness check must ask for exactly those keys, not a hardcoded set.
-    expect(code).toMatch(/inArray\(roles\.key, Object\.keys\(BUILTIN_ROLES\)\)/)
+    expect(provisioningCode).toMatch(/Object\.keys\(BUILTIN_ROLES\)/)
+    expect(provisioningCode).toMatch(/inArray\(roles\.key, expected\)/)
+  })
+
+  it('no role key is written literally by the role seeder', () => {
+    // Guards against someone replacing the BUILTIN_ROLES loop with a hand-written list.
+    // Derived from the real definitions, so it cannot drift.
+    for (const key of Object.keys(BUILTIN_ROLES)) {
+      expect(provisioningCode).not.toContain(`key: '${key}'`)
+    }
   })
 })
 
@@ -157,7 +182,7 @@ describe('"Seed complete" can never be untruthful', () => {
  * never as passed. The structural assertions above always run and carry the
  * regression on their own.
  */
-const SCRATCH_URL = process.env.SEED_TEST_SCRATCH_DATABASE_URL
+const SCRATCH_URL = resolveScratchDatabaseUrl()
 
 function scratchUrl(): string {
   if (!SCRATCH_URL) throw new Error('SEED_TEST_SCRATCH_DATABASE_URL is not set')
@@ -171,7 +196,7 @@ function scratchUrl(): string {
  * the runtime role deliberately does not. Falls back to the scratch URL when the
  * harness supplies a single identity that happens to own them.
  */
-const OWNER_URL = process.env.SEED_TEST_SCRATCH_OWNER_URL
+const OWNER_URL = resolveOptionalScratchDatabaseUrl('SEED_TEST_SCRATCH_OWNER_URL')
 
 /** Strip every row while keeping the schema and the auth `user` table. */
 async function wipeTenantData(): Promise<void> {
@@ -389,3 +414,28 @@ describeDb('seed bootstrap — scenario matrix', () => {
 afterAll(() => {
   if (SCRATCH_URL) return wipeTenantData()
 }, DB_TIMEOUT_MS)
+
+describe('storage freeze bootstrap', () => {
+  it('ensures every demo and provisioned tenant has an ACTIVE storage freeze row', () => {
+    // Both tenant-creation paths delegate to the ONE freeze-row initializer. The
+    // seed covers the demo tenant (and an existing demo tenant on re-run); tenant
+    // provisioning covers every tenant created afterwards. Neither keeps a local
+    // insert: an earlier copy in `seed.ts` drifted from the shared primitive, and
+    // `provisionTenant` had no initializer at all, so every tenant it created was
+    // permanently frozen out of storage writes.
+    expect(code).toMatch(/ensureFreezeRow\(tx as unknown as Database, existingDemo\.id\)/)
+    expect(code).toMatch(/ensureFreezeRow\(tx as unknown as Database, tenant\.id\)/)
+    expect(code).not.toMatch(/ensureActiveStorageFreeze/)
+    expect(code).not.toMatch(/\.insert\(storageFreeze\)/)
+    expect(provisioningCode).toMatch(/ensureFreezeRow\(tx, created\.id\)/)
+
+    // The initializer's own semantics — the row starts ACTIVE and the insert is
+    // conflict-tolerant, so a re-run or a lost race cannot produce a second row —
+    // live with the shared implementation.
+    const freezeOps = codeOnly(
+      readFileSync(resolve(PKG_DIR, 'src/storage-freeze-operations.ts'), 'utf8'),
+    )
+    expect(freezeOps).toMatch(/state:\s*'ACTIVE'/)
+    expect(freezeOps).toMatch(/\.onConflictDoNothing\(\)/)
+  })
+})

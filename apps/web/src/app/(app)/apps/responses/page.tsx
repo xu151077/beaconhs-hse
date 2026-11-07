@@ -3,7 +3,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ClipboardCheck } from 'lucide-react'
+import { ClipboardCheck, Trash2 } from 'lucide-react'
 import { and, asc, count, desc, eq, ilike, isNull, type SQL } from 'drizzle-orm'
 import {
   Badge,
@@ -31,6 +31,8 @@ import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
+import { ConfirmButton } from '@/components/confirm-button'
+import { deleteFormResponseAction } from './_actions'
 import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -87,6 +89,7 @@ export default async function FormResponsesPage({
   if (templateFilter && !isUuid(templateFilter)) notFound()
   const ctx = await requireRequestContext()
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'forms.response.read.self')
+  const canDelete = can(ctx, 'forms.response.delete')
   const effectiveRoleKeys = await getEffectiveRoleKeys(ctx)
 
   const { rows, total, statusCounts, templateOptions } = await ctx.db(async (tx) => {
@@ -198,6 +201,15 @@ export default async function FormResponsesPage({
               ) : null
             }
           />
+          <GeneratedValue
+            value={
+              pickString(sp.deleteError) ? (
+                <p className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                  <GeneratedValue value={pickString(sp.deleteError)} />
+                </p>
+              ) : null
+            }
+          />
           <TableToolbar>
             <SearchInput placeholder={tGenerated('m_0e87ecf4ecace2')} />
             <FilterChips
@@ -205,7 +217,7 @@ export default async function FormResponsesPage({
               currentParams={sp}
               paramKey="template"
               label={tGenerated('m_0c7a3810288c4a')}
-              allLabel="All apps"
+              allLabel={tGenerated('m_059aa94b4dd369')}
               options={templateOptions}
             />
             <FilterChips
@@ -291,6 +303,17 @@ export default async function FormResponsesPage({
                     <TableHead className="w-16">
                       <GeneratedText id="m_1a2b2ed6729166" />
                     </TableHead>
+                    <GeneratedValue
+                      value={
+                        canDelete ? (
+                          <TableHead className="w-12">
+                            <span className="sr-only">
+                              <GeneratedText id="m_11773f3c3f7558" />
+                            </span>
+                          </TableHead>
+                        ) : null
+                      }
+                    />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -445,6 +468,30 @@ export default async function FormResponsesPage({
                                 }
                               />
                             </TableCell>
+                            <GeneratedValue
+                              value={
+                                canDelete ? (
+                                  <TableCell>
+                                    <form action={deleteFormResponseAction}>
+                                      <input type="hidden" name="responseId" value={response.id} />
+                                      <input
+                                        type="hidden"
+                                        name="returnTo"
+                                        value="/apps/responses"
+                                      />
+                                      <ConfirmButton
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                        message={tGenerated('m_13330801e55d2d')}
+                                      >
+                                        <Trash2 size={14} />
+                                      </ConfirmButton>
+                                    </form>
+                                  </TableCell>
+                                ) : null
+                              }
+                            />
                           </TableRow>
                         )
                       },

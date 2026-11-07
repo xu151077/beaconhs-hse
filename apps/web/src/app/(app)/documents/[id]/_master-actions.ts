@@ -1,7 +1,7 @@
 'use server'
 
-// DOCX-master actions for authored documents. Collabora Writer is THE editor:
-// the master file is the working draft (autosaved by the editor through the
+// Office-master actions for authored documents. The matching Collabora app (Writer,
+// Impress or Calc) is THE editor: the master file is the working draft
 // WOPI host — page setup, comments and track changes live in the file), and
 // publishing snapshots it into an immutable, numbered document_versions row
 // whose PDF + text the worker renders for readers.
@@ -11,12 +11,24 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import { attachments, documents, documentVersions } from '@beaconhs/db/schema'
 import { materializeEvidenceTargetObligations } from '@beaconhs/compliance'
 import { assertCan, can } from '@beaconhs/tenant'
-import { deleteObject, getObject, newAttachmentKey, putObject } from '@beaconhs/storage'
+import {
+  deleteObject,
+  getObject,
+  newAttachmentKey,
+  putObject,
+  assertStorageWriteAllowed,
+} from '@beaconhs/storage'
 import { enqueueDocumentVersionRender } from '@beaconhs/jobs'
-import { DOCX_MIME_TYPE, MAX_DOCX_CONVERSION_BYTES } from '@beaconhs/office/limits'
+import {
+  DOCX_MIME_TYPE,
+  MAX_OFFICE_SOURCE_BYTES,
+  officeSourceExtension,
+} from '@beaconhs/office/limits'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
-import { buildEditorUrl, getCollaboraEditUrl } from '@/lib/collabora'
+import { STORAGE_FROZEN_ACTION } from '@/lib/storage-freeze-copy'
+import { isStorageFreezeRefusal } from '@/lib/storage-freeze-refusal'
+import { buildEditorUrl, collaboraAppForMime, getCollaboraEditUrl } from '@/lib/collabora'
 import { mintWopiToken } from '@/lib/wopi'
 import { tenantIsActive } from '@/lib/active-tenant'
 import { blankDocxBuffer } from '@/lib/docx-blank'
@@ -85,7 +97,28 @@ export async function getDocumentWriterSession(
   })
   if (!attachmentId) return { ok: false, error: 'no_master' }
 
-  const editUrl = await getCollaboraEditUrl('text')
+  // Phase 6T-B: Check freeze state before minting a WOPI token.
+  // Retrieve the attachment to get its key, which names the tenant.
+  const [attachment] = await ctx.db(async (tx) =>
+    tx
+      .select({
+        r2Key: attachments.r2Key,
+        filename: attachments.filename,
+        contentType: attachments.contentType,
+      })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId))
+      .limit(1),
+  )
+  if (!attachment) return { ok: false, error: 'no_master' }
+
+  try {
+    await assertStorageWriteAllowed({ operation: 'wopiToken', key: attachment.r2Key })
+  } catch (error) {
+    return { ok: false, error: 'workspace_frozen' }
+  }
+
+  const editUrl = await getCollaboraEditUrl(collaboraAppForMime(attachment.contentType))
   if (!editUrl) return { ok: false, error: 'not_configured' }
 
   const { token, exp } = mintWopiToken({
@@ -110,8 +143,18 @@ export async function getDocumentWriterSession(
   }
 }
 
-/** Start a new document: create a blank .docx master. */
-export async function createBlankDocumentMaster(documentId: string) {
+/**
+ * Start a new document: create a blank .docx master.
+ *
+ * Returns a refusal instead of throwing when the tenant's storage is frozen: a
+ * freeze is an expected product state, and an exception here is masked by the RSC
+ * runtime into an opaque "Minified React error #441" with no usable message. Every
+ * other failure still throws, so a permission or database fault is never disguised
+ * as a frozen workspace.
+ */
+export async function createBlankDocumentMaster(
+  documentId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   assertDocumentId(documentId)
   const ctx = await requireRequestContext()
   assertCan(ctx, 'documents.manage')
@@ -120,6 +163,7 @@ export async function createBlankDocumentMaster(documentId: string) {
 
   const docx = blankDocxBuffer()
   let createdKey: string | null = null
+  let frozen = false
   try {
     await ctx.db(async (tx) => {
       const [doc] = await tx
@@ -142,6 +186,20 @@ export async function createBlankDocumentMaster(documentId: string) {
           .slice(0, 180) || 'Document'
       const filename = `${base}.docx`
       createdKey = newAttachmentKey({ tenantId, kind: 'document', filename })
+
+      // Phase 6T-B: Check freeze state before creating a blank document.
+      // The key names the tenant; a frozen tenant is refused here, before any bytes
+      // are written, and reported back as a normal business outcome.
+      try {
+        await assertStorageWriteAllowed({ operation: 'putObject', key: createdKey })
+      } catch (error) {
+        if (isStorageFreezeRefusal(error)) {
+          frozen = true
+          return
+        }
+        throw error
+      }
+
       await putObject({ key: createdKey, body: docx, contentType: DOCX_MIME_TYPE })
       const [attachment] = await tx
         .insert(attachments)
@@ -173,6 +231,7 @@ export async function createBlankDocumentMaster(documentId: string) {
     }
     throw error
   }
+  if (frozen) return { ok: false, error: STORAGE_FROZEN_ACTION }
   await recordAudit(ctx, {
     entityType: 'document',
     entityId: documentId,
@@ -180,9 +239,10 @@ export async function createBlankDocumentMaster(documentId: string) {
     summary: 'Started a new Word document',
   })
   revalidatePath(`/documents/${documentId}`)
+  return { ok: true }
 }
 
-/** Import / replace the working master with an uploaded .docx. */
+/** Import / replace the working master with an uploaded .docx, .pptx or .xlsx. */
 export async function importDocumentMaster(documentId: string, attachmentId: string) {
   assertDocumentId(documentId)
   if (!isUuid(attachmentId)) throw new Error('Uploaded file not found')
@@ -219,7 +279,7 @@ export async function importDocumentMaster(documentId: string, attachmentId: str
     entityType: 'document',
     entityId: documentId,
     action: 'update',
-    summary: 'Imported a Word file as the working document',
+    summary: 'Imported an Office file as the working document',
     after: { attachmentId },
   })
   revalidatePath(`/documents/${documentId}`)
@@ -263,7 +323,7 @@ export async function publishDocumentVersion(documentId: string, changelog?: str
         .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
         .limit(1)
         .for('update')
-      if (!doc?.sourceAttachmentId) throw new Error('This document has no Word file to publish')
+      if (!doc?.sourceAttachmentId) throw new Error('This document has no office file to publish')
 
       const [attachment] = await tx
         .select({
@@ -281,7 +341,7 @@ export async function publishDocumentVersion(documentId: string, changelog?: str
       assertDocumentMasterAttachment(attachment)
 
       const bytes = await getObject({ key: attachment.key })
-      if (bytes.length !== attachment.sizeBytes || bytes.length > MAX_DOCX_CONVERSION_BYTES) {
+      if (bytes.length !== attachment.sizeBytes || bytes.length > MAX_OFFICE_SOURCE_BYTES) {
         throw new Error('The working document size does not match its attachment record')
       }
 
@@ -298,9 +358,15 @@ export async function publishDocumentVersion(documentId: string, changelog?: str
           .replace(/[^\w.\- ]+/g, '')
           .trim()
           .slice(0, 180) || 'document'
-      const filename = `${base}-v${nextVersion}.docx`
+      const sourceExtension = officeSourceExtension(attachment.contentType)
+      if (!sourceExtension) throw new Error('The working document file type is not supported')
+      const filename = `${base}-v${nextVersion}.${sourceExtension}`
       snapshotKey = newAttachmentKey({ tenantId, kind: 'document', filename })
-      await putObject({ key: snapshotKey, body: bytes, contentType: DOCX_MIME_TYPE })
+      await putObject({
+        key: snapshotKey,
+        body: bytes,
+        contentType: attachment.contentType,
+      })
 
       const [snapshot] = await tx
         .insert(attachments)
@@ -309,7 +375,7 @@ export async function publishDocumentVersion(documentId: string, changelog?: str
           uploadedBy: ctx.userId,
           kind: 'document',
           r2Key: snapshotKey,
-          contentType: DOCX_MIME_TYPE,
+          contentType: attachment.contentType,
           sizeBytes: bytes.length,
           filename,
         })

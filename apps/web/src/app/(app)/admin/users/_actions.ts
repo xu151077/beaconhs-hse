@@ -355,6 +355,15 @@ export async function updateMemberDisplayName(formData: FormData): Promise<void>
   const membershipId = String(formData.get('membershipId') ?? '')
   const displayName = String(formData.get('displayName') ?? '').trim() || null
   if (!membershipId) return
+  const target = await ctx.db((tx) =>
+    tx
+      .select({ account: users })
+      .from(tenantUsers)
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
+      .where(eq(tenantUsers.id, membershipId))
+      .limit(1),
+  )
+  if (!target[0] || !canActOn(ctx, target[0].account)) return
   await ctx.db((tx) =>
     tx.update(tenantUsers).set({ displayName }).where(eq(tenantUsers.id, membershipId)),
   )
@@ -487,11 +496,13 @@ export async function assignRole(formData: FormData): Promise<void> {
 
   await ctx.db(async (tx) => {
     const [membership] = await tx
-      .select({ id: tenantUsers.id, userId: tenantUsers.userId })
+      .select({ id: tenantUsers.id, userId: tenantUsers.userId, account: users })
       .from(tenantUsers)
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
       .where(eq(tenantUsers.id, membershipId))
       .limit(1)
     if (!membership) return
+    if (!canActOn(ctx, membership.account)) return
     const [role] = await tx
       .select({ id: roles.id, name: roles.name })
       .from(roles)
@@ -567,11 +578,13 @@ export async function setPermissionOverride(formData: FormData): Promise<void> {
   }
   const applied = await ctx.db(async (tx) => {
     const [membership] = await tx
-      .select({ id: tenantUsers.id })
+      .select({ id: tenantUsers.id, account: users })
       .from(tenantUsers)
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
       .where(eq(tenantUsers.id, membershipId))
       .limit(1)
     if (!membership) return false
+    if (!canActOn(ctx, membership.account)) return false
     await tx
       .insert(userPermissionOverrides)
       .values({ tenantId: ctx.tenantId, tenantUserId: membershipId, permission, effect })
@@ -597,6 +610,15 @@ export async function clearPermissionOverride(formData: FormData): Promise<void>
   const membershipId = String(formData.get('membershipId') ?? '')
   const permission = String(formData.get('permission') ?? '').trim()
   if (!membershipId || !permission) return
+  const target = await ctx.db((tx) =>
+    tx
+      .select({ account: users })
+      .from(tenantUsers)
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
+      .where(eq(tenantUsers.id, membershipId))
+      .limit(1),
+  )
+  if (!target[0] || !canActOn(ctx, target[0].account)) return
   await ctx.db((tx) =>
     tx
       .delete(userPermissionOverrides)

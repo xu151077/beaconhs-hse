@@ -1,0 +1,29 @@
+# Phase 6U-B3-CZ — File authorization coverage
+
+Date: 2026-10-19  
+Repository: `/home/test/projects/beaconhs-hse`  
+Branch/HEAD: `hse-platform` / `51a899b7aac0a942da327222a3eed355fca9798a`
+
+## Coverage
+
+Phase CX added `apps/web/e2e/phase-cx-file-authorization-e2e.spec.ts`, which passed 7/7.
+
+Covered:
+
+- site-scoped incident visibility;
+- cross-site incident URL denial;
+- cross-tenant attachment download denial;
+- cross-tenant document master download denial;
+- unauthorized incident export denial;
+- cross-tenant document URL denial;
+- cross-tenant incident URL denial.
+
+Phase CZ did not rewrite the passing tests. Broader upload, preview, edit, and export browser matrices remain incomplete.
+
+## Audit
+
+Permission denials surface as `ForbiddenError`. Audit-log rows for denial events were not verified in this pass. Successful mutations continue to use the existing audit helpers.
+
+## Status
+
+Status: **PASS** for the implemented matrix; **PARTIAL** for the complete file-surface matrix.

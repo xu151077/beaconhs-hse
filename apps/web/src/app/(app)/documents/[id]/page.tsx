@@ -802,7 +802,7 @@ export default async function DocumentDetailPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:gap-3 sm:px-4 dark:border-slate-800 dark:bg-slate-900">
         <SmartBackLink
           href="/documents"
           label={tGenerated('m_05caa6a53f9b7f')}
@@ -843,7 +843,7 @@ export default async function DocumentDetailPage({
             </span>
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <GeneratedValue
             value={
               publishedVersion ? (
@@ -918,8 +918,8 @@ export default async function DocumentDetailPage({
       </div>
 
       {/* Split body: left 1/3 subtabs · right 2/3 the document */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex min-h-0 w-1/3 max-w-md min-w-[300px] shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <aside className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-white lg:min-h-0 lg:w-1/3 lg:max-w-md lg:min-w-[300px] lg:shrink-0 lg:border-r lg:border-b-0 dark:border-slate-800 dark:bg-slate-900">
           <div className="border-b border-slate-200 px-3 pt-2 dark:border-slate-800">
             <TabNav
               basePath={basePath}
@@ -1496,7 +1496,7 @@ export default async function DocumentDetailPage({
 
         {/* Right pane: the live editor for managers, or the published PDF for
             uploaded-file documents and read-only users */}
-        <div className="min-h-0 flex-1">
+        <div className="min-h-[70vh] w-full lg:min-h-0 lg:flex-1">
           <DocumentPane
             documentId={id}
             canManage={canManage}

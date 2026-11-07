@@ -7,7 +7,7 @@
 // invoke so the gate can't be bypassed by a crafted request.
 
 import { redirect } from 'next/navigation'
-import { can } from '@beaconhs/tenant'
+import { can, ForbiddenError } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleAdminByKey } from './registry'
 
@@ -48,6 +48,12 @@ export async function requireModuleManage(moduleKey: string): Promise<Ctx> {
 export function assertCanManageModule(ctx: Ctx, moduleKey: string): void {
   if (!canManageModule(ctx, moduleKey)) {
     const m = permissionModule(moduleKey)
-    throw new Error(`Forbidden: ${m?.permission ?? 'manage'} permission required`)
+    const permission = m?.permission ?? 'manage'
+    // Throw a ForbiddenError (not a generic Error) so the shared
+    // `withRouteErrors` boundary can map it to 403 instead of 500, consistent
+    // with `assertCan`. The original message is preserved for callers.
+    const error = new ForbiddenError(permission)
+    error.message = `Forbidden: ${permission} permission required`
+    throw error
   }
 }

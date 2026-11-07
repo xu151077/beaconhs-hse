@@ -45,14 +45,16 @@ export const tenants = pgTable(
   },
   (t) => ({
     slugUx: uniqueIndex('tenants_slug_ux').on(t.slug),
+    // Keep in step with SUPPORTED_LOCALES in @beaconhs/i18n. 0045 widened both
+    // checks from ('en','fr','es') to admit Simplified Chinese.
     defaultLanguageSupported: check(
       'tenants_default_language_supported_check',
-      sql`${t.defaultLanguage} in ('en', 'fr', 'es')`,
+      sql`${t.defaultLanguage} in ('en', 'fr', 'es', 'zh')`,
     ),
     enabledLanguagesValid: check(
       'tenants_enabled_languages_valid_check',
       sql`jsonb_typeof(${t.enabledLanguages}) = 'array'
-          and ${t.enabledLanguages} <@ '["en", "fr", "es"]'::jsonb
+          and ${t.enabledLanguages} <@ '["en", "fr", "es", "zh"]'::jsonb
           and ${t.enabledLanguages} ? ${t.defaultLanguage}`,
     ),
   }),
@@ -190,9 +192,11 @@ export const tenantUsers = pgTable(
     tenantIdIdUx: uniqueIndex('tenant_users_tenant_id_id_ux').on(t.tenantId, t.id),
     tenantIdx: index('tenant_users_tenant_idx').on(t.tenantId),
     userIdx: index('tenant_users_user_idx').on(t.userId),
+    // Keep in step with SUPPORTED_LOCALES in @beaconhs/i18n. 0045 widened this
+    // check from ('en','fr','es') to admit Simplified Chinese.
     localeSupported: check(
       'tenant_users_locale_override_supported_check',
-      sql`${t.localeOverride} is null or ${t.localeOverride} in ('en', 'fr', 'es')`,
+      sql`${t.localeOverride} is null or ${t.localeOverride} in ('en', 'fr', 'es', 'zh')`,
     ),
   }),
 )

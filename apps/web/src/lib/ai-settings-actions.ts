@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { getTranslations } from 'next-intl/server'
 import { assertCan, type RequestContext } from '@beaconhs/tenant'
+import type { ProviderSettingsResult } from '@beaconhs/i18n/messages'
 import {
   isAiProvider,
   listModels,
@@ -31,9 +33,25 @@ function gatePlatform(ctx: RequestContext) {
     throw new Error('Only platform super-admins can change global AI settings.')
 }
 
-function parseInput(fd: FormData): AiSettingsInput {
+/** Localised copy for the provider-settings validation surface. */
+type Translator = (key: 'invalidAiProvider') => string
+
+/**
+ * Marks a rejected user configuration. Expected outcomes of editing the form, so
+ * the actions return them for in-form display. Anything else (permissions,
+ * database, unknown faults) keeps propagating to the route error boundary rather
+ * than being flattened into a message that would hide the real failure.
+ */
+class ValidationFailure extends Error {}
+
+function parseInput(fd: FormData, t: Translator): AiSettingsInput {
   const providerRaw = String(fd.get('provider') ?? '')
-  const provider: AiProvider = isAiProvider(providerRaw) ? providerRaw : 'anthropic'
+  // An unrecognised provider must be rejected rather than silently coerced to a
+  // default: saving the wrong provider would look like a successful save.
+  if (!isAiProvider(providerRaw)) {
+    throw new ValidationFailure(t('invalidAiProvider'))
+  }
+  const provider: AiProvider = providerRaw
   return {
     enabled: fd.get('enabled') === 'on',
     provider,
@@ -44,10 +62,20 @@ function parseInput(fd: FormData): AiSettingsInput {
   }
 }
 
-export async function saveTenantAi(formData: FormData) {
+export async function saveTenantAi(
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+): Promise<ProviderSettingsResult> {
   const ctx = await requireRequestContext()
   gateTenant(ctx)
-  const input = parseInput(formData)
+  const t: Translator = await getTranslations('ProviderSettings')
+  let input: AiSettingsInput
+  try {
+    input = parseInput(formData, t)
+  } catch (error) {
+    if (error instanceof ValidationFailure) return { error: error.message }
+    throw error
+  }
   const autoJournalAi = formData.get('autoJournalAi') === 'on'
   const autoJournalAnalysis = formData.get('autoJournalAnalysis') === 'on'
   await saveTenantAiSettings(ctx, { ...input, autoJournalAi, autoJournalAnalysis })
@@ -63,6 +91,7 @@ export async function saveTenantAi(formData: FormData) {
     },
   })
   revalidatePath('/admin/ai')
+  return { ok: true }
 }
 
 export async function clearTenantAi() {
@@ -78,10 +107,20 @@ export async function clearTenantAi() {
   revalidatePath('/admin/ai')
 }
 
-export async function savePlatformAi(formData: FormData) {
+export async function savePlatformAi(
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+): Promise<ProviderSettingsResult> {
   const ctx = await requireRequestContext()
   gatePlatform(ctx)
-  const input = parseInput(formData)
+  const t: Translator = await getTranslations('ProviderSettings')
+  let input: AiSettingsInput
+  try {
+    input = parseInput(formData, t)
+  } catch (error) {
+    if (error instanceof ValidationFailure) return { error: error.message }
+    throw error
+  }
   const modeRaw = String(formData.get('mode') ?? 'tenant_optional')
   const mode: AiPolicyMode =
     modeRaw === 'global_only' || modeRaw === 'disabled' ? modeRaw : 'tenant_optional'
@@ -94,6 +133,7 @@ export async function savePlatformAi(formData: FormData) {
     metadata: { provider: input.provider, mode, enabled: input.enabled },
   })
   revalidatePath('/platform/ai')
+  return { ok: true }
 }
 
 export async function clearPlatformAi() {

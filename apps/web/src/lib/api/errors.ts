@@ -4,7 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
-import { ForbiddenError } from '@beaconhs/tenant'
+import { ForbiddenError, ImpersonationBlockedError } from '@beaconhs/tenant'
 
 type ApiErrorCode =
   | 'unauthorized'
@@ -78,7 +78,7 @@ export function errorResponse(err: unknown): NextResponse<ApiErrorBody> {
   // can tell "you may not" from "we broke". The message is deliberately
   // generic — the permission key itself is not echoed back, because a 403 body
   // that names the missing capability tells an attacker which one to look for.
-  if (err instanceof ForbiddenError) {
+  if (err instanceof ForbiddenError || err instanceof ImpersonationBlockedError) {
     return NextResponse.json(
       { error: { code: 'forbidden', message: 'Forbidden' } },
       { status: 403, headers: noStore() },
@@ -106,7 +106,9 @@ export function withRouteErrors<Args extends unknown[]>(
     } catch (err) {
       // Only a refusal is remapped. Anything else keeps Next's own 500 so a real
       // fault is never disguised as an authorization outcome.
-      if (err instanceof ForbiddenError) return errorResponse(err)
+      if (err instanceof ForbiddenError || err instanceof ImpersonationBlockedError) {
+        return errorResponse(err)
+      }
       throw err
     }
   }

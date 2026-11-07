@@ -22,13 +22,14 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { spawnCorrectiveActionForSubject } from '../spawn'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { fmtDate, personName, titleize } from '../format'
 import type { FlowSubjectAdapter } from '../types'
 import { recordPpeIssueAction } from '@/app/(app)/ppe/_lib'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 // `people` is already joined for the holder, so the supervisor needs its own
 // alias or the two would collapse onto the same row.
@@ -178,7 +179,7 @@ export function createPpeInspectionFlowAdapter(
         })),
         photos: await Promise.all(
           photos.map(async (photo) => ({
-            url: await presignGet({ key: photo.r2Key, expiresInSeconds: 900 }),
+            url: await storageObjectUrl(photo.r2Key),
             caption: photo.caption ?? photo.criterionQuestion ?? '',
           })),
         ),

@@ -191,4 +191,16 @@ const SPAWN_COPY: Record<
     triggeredBy: (reference) => `Activado por la respuesta del formulario ${reference}.`,
     observations: 'Observaciones',
   },
+  zh: {
+    row: '行',
+    more: '条',
+    fieldFailure: (field, app) => `整改 ${app} 中「${field}」的不合格项`,
+    nonCompliance: (app, reference) => `整改 ${app} 的不合规项（${reference}）`,
+    generatedFrom: (reference) => `由表单记录 ${reference} 自动生成。`,
+    complianceScore: '合规得分',
+    failedChecks: '未通过的检查项',
+    incident: (app, reference) => `由 ${app} 报告的事故事件（${reference}）`,
+    triggeredBy: (reference) => `由表单记录 ${reference} 触发。`,
+    observations: '观察记录',
+  },
 }

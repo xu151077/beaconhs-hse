@@ -1,0 +1,130 @@
+# Isolated Docker Compose for Production First-Admin Bootstrap E2E verification.
+#
+# NOT the production stack. NOT the dev stack. A throwaway environment:
+# - Fresh PostgreSQL volume (prod-verify_postgres-data)
+# - Fresh Redis volume (prod-verify_redis-data)
+# - MinIO for storage
+# - Mailpit as test SMTP
+# - Web + Worker roles from the production image
+#
+# Run: docker compose -f deploy/prod-verify.compose.yaml --project-name beaconhs-prod-verify up -d
+# Clean: docker compose -f deploy/prod-verify.compose.yaml --project-name beaconhs-prod-verify down -v
+#
+# IMAGE: `beaconhs:prod-verify` is not built by this file. The Dockerfile requires
+# the BuildKit key secret AND the key's fingerprint (BuildKit does not hash secret
+# content), and no local entry point builds this tag, so build it explicitly:
+#
+#   KEY=<key file, mode 0600, outside the repository>
+#   FP=$(node scripts/ci/server-action-key-fingerprint.mjs "$KEY")
+#   docker build --build-arg DEPLOYMENT_VERSION="$(git rev-parse HEAD)" \
+#     --build-arg NEXT_SERVER_ACTIONS_KEY_FINGERPRINT="$FP" \
+#     --secret id=next_server_actions_key,src="$KEY" \
+#     -t beaconhs:prod-verify .
+#   scripts/ci/verify-server-action-key-gate.sh image beaconhs:prod-verify "$FP"
+
+x-app-env: &app-env
+  NODE_ENV: production
+  APP_VERSION: 0000000000000000000000000000000000000000
+  DATABASE_URL: postgresql://beaconhs_app:beaconhs_app@postgres:5432/beaconhs
+  SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@postgres:5432/beaconhs
+  MIGRATION_DATABASE_URL: postgresql://beaconhs_migrator:beaconhs_migrator@postgres:5432/beaconhs
+  DATABASE_OWNER_ROLE: beaconhs_owner
+  REDIS_URL: redis://redis:6379
+  BETTER_AUTH_SECRET: prod-verify-better-auth-secret-that-is-long-enough-for-testing-32chars
+  ATTACHMENT_CAPABILITY_SECRET: prod-verify-attachment-capability-secret-for-testing
+  APP_URL: http://localhost:3001
+  BETTER_AUTH_URL: http://localhost:3001
+  BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:3001
+  R2_ENDPOINT: http://minio:9000
+  R2_INTERNAL_ENDPOINT: http://minio:9000
+  R2_ACCESS_KEY_ID: beaconhs
+  R2_SECRET_ACCESS_KEY: beaconhs-dev-secret
+  R2_BUCKET: beaconhs-storage
+  R2_PRIVATE_BUCKET_CONFIRMED: 'false'
+  HOSTNAME: 0.0.0.0
+  PORT: '3000'
+  SMTP_HOST: mailpit
+  SMTP_PORT: '1025'
+  SMTP_FROM: BeaconHS <noreply@beaconhs.local>
+
+services:
+  web:
+    image: beaconhs:prod-verify
+    environment:
+      <<: *app-env
+      APP_ROLE: web
+    ports:
+      - '127.0.0.1:3001:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:3000/api/health/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      mailpit: { condition: service_started }
+
+  worker:
+    image: beaconhs:prod-verify
+    environment:
+      <<: *app-env
+      APP_ROLE: worker
+      BETTER_AUTH_URL: http://localhost:3000
+      INTERNAL_WEB_URL: http://web:3000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      web: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: beaconhs
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U beaconhs_app -d beaconhs']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: beaconhs
+      MINIO_ROOT_PASSWORD: beaconhs-dev-secret
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - '127.0.0.1:10251:1025'
+      - '127.0.0.1:8021:8025'
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

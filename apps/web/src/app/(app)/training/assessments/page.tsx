@@ -392,7 +392,7 @@ export default async function AssessmentsPage({
               currentParams={sp}
               paramKey="person"
               placeholder={tGenerated('m_12e926c9216094')}
-              allLabel="All people"
+              allLabel={tGenerated('m_0110de6e7a2824')}
               searchPlaceholder={tGenerated('m_0b842b664b4f3b')}
             />
             <RemoteSearchFilter
@@ -401,7 +401,7 @@ export default async function AssessmentsPage({
               currentParams={sp}
               paramKey="type"
               placeholder={tGenerated('m_169ce2294296b8')}
-              allLabel="All assessment types"
+              allLabel={tGenerated('m_1b0be55a4cfef1')}
               searchPlaceholder={tGenerated('m_0ce3985d801819')}
             />
             <RemoteSearchFilter
@@ -410,7 +410,7 @@ export default async function AssessmentsPage({
               currentParams={sp}
               paramKey="course"
               placeholder={tGenerated('m_14fc1e0739b60e')}
-              allLabel="All courses"
+              allLabel={tGenerated('m_1eff369e8cceb6')}
               searchPlaceholder={tGenerated('m_030db64e0bf790')}
             />
           </div>

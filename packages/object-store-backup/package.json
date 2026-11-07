@@ -1,0 +1,30 @@
+{
+  "name": "@beaconhs/object-store-backup",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/cli.ts",
+  "types": "./src/cli.ts",
+  "exports": {
+    ".": "./src/cli.ts"
+  },
+  "scripts": {
+    "backup": "tsx src/cli.ts backup",
+    "verify": "tsx src/cli.ts verify",
+    "restore": "tsx src/cli.ts restore",
+    "inventory": "tsx src/cli.ts inventory",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1086.0",
+    "@aws-sdk/s3-request-presigner": "^3.1086.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "tsx": "^4.23.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

@@ -29,13 +29,16 @@ import { assertCan, can } from '@beaconhs/tenant'
 import { getObjectStream } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
+import { contentDisposition } from '@/lib/content-disposition'
 import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { isUuid } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   req: NextRequest,
   routeCtx: { params: Promise<{ id: string; versionId: string }> },
 ): Promise<Response> {
@@ -110,12 +113,19 @@ export async function GET(
   })
 
   const obj = await getObjectStream({ key: att.key })
-  const filename = att.filename.replace(/[^\w.\- ]+/g, '_') || `document.${kind}`
   return new NextResponse(obj.stream, {
     headers: {
       'Content-Type': obj.contentType ?? 'application/octet-stream',
       ...(obj.contentLength ? { 'Content-Length': String(obj.contentLength) } : {}),
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      // Shared builder — same RFC 5987 Unicode filename handling as every
+      // other download route.
+      'Content-Disposition': contentDisposition(
+        'attachment',
+        att.filename || `document.${kind}`,
+        `document.${kind}`,
+      ),
     },
   })
 }
+
+export const GET = withRouteErrors(getHandler)

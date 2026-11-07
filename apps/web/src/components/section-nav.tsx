@@ -84,7 +84,7 @@ export function SectionNav({ sections }: { sections: SectionNavItem[] }) {
     <nav
       ref={navRef}
       aria-label={tGenerated('m_1152ba42a0ac4d')}
-      className="flex [scrollbar-width:none] flex-nowrap items-center gap-1.5 overflow-x-auto pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+      className="flex flex-wrap items-center gap-1.5 pb-2"
     >
       <GeneratedValue
         value={sections.map((s) => {

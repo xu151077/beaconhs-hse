@@ -699,12 +699,14 @@ describe('sendVia (SMTP)', () => {
     ).resolves.toEqual({ id: 'smtp-1' })
     expect(nodemailerMock.resolvePublicHost).toHaveBeenCalledWith('smtp.example.com', {
       timeoutMs: 30_000,
+      allowNonPublic: false,
     })
     expect(nodemailerMock.createTransport).toHaveBeenCalledWith({
       host: '93.184.216.34',
       family: 4,
       port: 587,
       secure: false,
+      // Credentialed STARTTLS must force the upgrade: no plaintext AUTH fallback.
       requireTLS: true,
       auth: { user: 'smtp-user', pass: 'smtp-secret' },
       tls: { rejectUnauthorized: true, servername: 'smtp.example.com' },
@@ -786,8 +788,53 @@ describe('sendVia (SMTP)', () => {
         host: '93.184.216.34',
         port: 465,
         secure: true,
-        requireTLS: false,
+        requireTLS: true,
         tls: { rejectUnauthorized: true, servername: 'smtp.example.com' },
+      }),
+    )
+  })
+
+  it('forwards allowNonPublic so Docker-internal SMTP hosts resolve', async () => {
+    nodemailerMock.sendMail.mockResolvedValue({ messageId: 'smtp-internal' })
+    nodemailerMock.createTransport.mockReturnValue({ sendMail: nodemailerMock.sendMail })
+    const t: EmailTransport = {
+      provider: 'smtp',
+      mode: 'database',
+      host: 'mailpit',
+      port: 1025,
+      secure: false,
+      from: 'sender@example.com',
+      allowNonPublic: true,
+    }
+
+    await expect(sendVia(t, INPUT)).resolves.toEqual({ id: 'smtp-internal' })
+    expect(nodemailerMock.resolvePublicHost).toHaveBeenCalledWith('mailpit', {
+      timeoutMs: 30_000,
+      allowNonPublic: true,
+    })
+  })
+
+  it('keeps unauthenticated internal relays opportunistic (no forced STARTTLS)', async () => {
+    nodemailerMock.sendMail.mockResolvedValue({ messageId: 'smtp-relay' })
+    nodemailerMock.createTransport.mockReturnValue({ sendMail: nodemailerMock.sendMail })
+    const t: EmailTransport = {
+      provider: 'smtp',
+      mode: 'database',
+      host: 'mailpit',
+      port: 1025,
+      secure: false,
+      from: 'sender@example.com',
+      allowNonPublic: true,
+    }
+
+    await expect(sendVia(t, INPUT)).resolves.toEqual({ id: 'smtp-relay' })
+    // No username: nothing secret rides this connection, so a TLS-less test
+    // relay keeps working. Any username flips requireTLS on (see above).
+    expect(nodemailerMock.createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        secure: false,
+        requireTLS: false,
+        auth: undefined,
       }),
     )
   })

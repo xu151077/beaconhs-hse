@@ -1,6 +1,8 @@
 import { Worker } from 'bullmq'
 import './instrument'
 import { closeJobConnections, getBlockingConnection } from '@beaconhs/jobs'
+import { bootstrapStorageFreezeGate } from '@beaconhs/db'
+import * as storage from '@beaconhs/storage'
 import { processEmail } from './workers/email'
 import { processPdf } from './workers/pdf'
 import { processNotification } from './workers/notify'
@@ -12,6 +14,18 @@ import { processAiJob } from './workers/ai'
 import { captureWorkerFailure, flushObservability } from './instrument'
 
 console.log('[worker] starting beaconhs worker…')
+
+// Phase 6R (E2-A): install the DB-backed freeze-state reader so `packages/storage`
+// can gate controlled writes. Without this the gate stays unregistered and storage
+// refuses every mutation — the safe failure, but a broken worker. Called before any
+// Worker is constructed so the gate is armed before the first job can run.
+//
+// The statically-imported module is passed explicitly. A bare dynamic
+// `import('@beaconhs/storage')` resolves to raw TypeScript inside the production
+// image, which Node refuses to type-strip from `node_modules`
+// (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), leaving the gate unregistered
+// and every worker storage operation failing closed.
+await bootstrapStorageFreezeGate(storage)
 
 const connection = getBlockingConnection()
 const workers = [

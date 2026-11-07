@@ -7,6 +7,7 @@ import { runBeaconReport } from '@beaconhs/reports/server'
 import type { RequestContext } from '@beaconhs/tenant'
 import { loadAuthorizedReportCatalogInTransaction } from '@/lib/report-catalog'
 import type { ReportDefinitionRow } from './_definitions'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 const DOCUMENT_PREVIEW_MAX_ROWS = 500
 
@@ -58,6 +59,7 @@ export async function loadTenantBranding(ctx: RequestContext) {
     logoUrl: await resolveTenantLogoUrl({
       tenantId: ctx.tenantId!,
       logoUrl: tenant?.branding?.logoUrl,
+      buildUrl: storageObjectUrl,
     }),
     primaryColor: tenant?.branding?.primaryColor ?? null,
   }

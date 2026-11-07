@@ -59,14 +59,23 @@ export function workerEventCtx(tenantId: string, userId = 'system'): EventCtx {
 // --- App URL helper -------------------------------------------------------
 
 function appUrl(linkPath: string): string {
-  // Same resolution order as the apps/web + apps/worker app-base-url helpers.
-  const base = (
-    process.env.PUBLIC_APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    ''
-  ).replace(/\/$/, '')
-  return `${base}${linkPath}`
+  const configured = [
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+  ].filter((value): value is string => Boolean(value?.trim()))
+  const raw = configured[0]?.trim() ?? ''
+  if (!raw) return linkPath
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error('PUBLIC_APP_URL/APP_URL must be an absolute HTTP(S) URL')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('PUBLIC_APP_URL/APP_URL must be an absolute HTTP(S) URL')
+  }
+  return `${url.origin}${linkPath}`
 }
 
 // --- Audience resolver ----------------------------------------------------
@@ -586,3 +595,6 @@ export async function emitEquipmentMaintenanceDue(
 export * from './recipients'
 export * from './outbox'
 export * from './internal-auth'
+
+export * from './isolated-alert-receiver'
+export * from './isolated-alert-dispatch'

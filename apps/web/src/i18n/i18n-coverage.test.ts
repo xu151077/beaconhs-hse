@@ -9,6 +9,7 @@ import { FRONTLINE_ARTICLES } from '../lib/manual/content/frontline'
 import { GETTING_STARTED_ARTICLES } from '../lib/manual/content/getting-started'
 import { KNOWLEDGE_ASSETS_ARTICLES } from '../lib/manual/content/knowledge-assets'
 import { OVERSIGHT_ADMIN_ARTICLES } from '../lib/manual/content/oversight-admin'
+import { MANUAL_GROUP_ORDER } from '../lib/manual/types'
 import { WALKTHROUGHS } from '../lib/walkthroughs/registry'
 
 const SOURCE_ROOT = resolve(import.meta.dirname, '..')
@@ -55,6 +56,11 @@ function uiTranslationSources(): string[] {
 
 describe('i18n source coverage', () => {
   const generated = getAppMessages('en').Generated
+  // The catalogues are typed off the concrete key union, so indexing them with a
+  // freshly hashed key needs the widened view. Indexing by `in` first is what
+  // actually asserts presence; the widened index is only for the assertions below.
+  const catalogueOf = (locale: 'en' | 'fr' | 'es' | 'zh') =>
+    getAppMessages(locale).Generated as Record<string, string | undefined>
   const runtimeCandidates = findRuntimeUserFacingLiterals()
   const sourceAudit = findSourceAudit()
 
@@ -99,6 +105,54 @@ describe('i18n source coverage', () => {
     expect(
       runtimeCandidates.filter((candidate) => candidate.container === 'generateMetadata'),
     ).toEqual([])
+  })
+
+  it('catalogs prose passed through GeneratedValue props', () => {
+    // A second instance of the same blind spot. The source audit's
+    // USER_FACING_ATTRIBUTES deliberately omits `value`, because ~189 enum
+    // tokens (`list`, `daily`, `source_wins`, …) legitimately reach
+    // `<GeneratedValue value={row.kind} />` and MUST pass through untranslated.
+    // The cost is that real PROSE in a `value` prop escapes the audit too — five
+    // Builder/Admin strings shipped untranslated in every locale before this.
+    //
+    // So enumerate the prose explicitly rather than widening the audit.
+    const prose = [
+      '= computed',
+      'A specific person',
+      'Specific email address(es)',
+      'Attached files',
+      'All active people',
+    ]
+    for (const source of prose) {
+      const key = systemMessageKey(source)
+      expect(key in generated, `${source} is not in the English catalogue`).toBe(true)
+      for (const locale of ['fr', 'es', 'zh'] as const) {
+        const entry = catalogueOf(locale)[key]
+        expect(entry, `${source} is missing from ${locale}`).toBeTypeOf('string')
+        expect(entry, `${source} renders in English under ${locale}`).not.toBe(source)
+      }
+    }
+  })
+
+  it('catalogs the user-guide group headings', () => {
+    // Regression guard. `/help` renders its group headings with
+    // `<GeneratedValue value={group} />`, so they reach the catalogue only if a
+    // literal EQUALS a catalogue entry. The AST audit scans JSX attributes and
+    // literals at the render site, and `MANUAL_GROUP_ORDER` is an exported
+    // constant consumed through a prop — a blind spot that let all six headings
+    // ship untranslated in EVERY locale (en/fr/es/zh).
+    //
+    // So assert on the constant itself rather than on the render site.
+    const missing = MANUAL_GROUP_ORDER.filter((group) => !(systemMessageKey(group) in generated))
+    expect(missing, 'these /help group headings are not in any message catalogue').toEqual([])
+
+    // And assert the Chinese catalogue actually translates them, not merely
+    // contains them — a key present but equal to English still renders English.
+    const untranslated = MANUAL_GROUP_ORDER.filter((group) => {
+      const entry = catalogueOf('zh')[systemMessageKey(group)]
+      return entry === undefined || entry === group
+    })
+    expect(untranslated, 'these /help group headings render in English under zh').toEqual([])
   })
 
   it('catalogs built-in user-guide articles and guided-tour steps', () => {

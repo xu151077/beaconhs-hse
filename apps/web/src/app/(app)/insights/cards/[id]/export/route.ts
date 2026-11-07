@@ -18,6 +18,8 @@ import { runInsightAiCard } from '../../../_ai-actions'
 import { aiCardDocument, cardExportFilename, cardResultDocument } from './_document'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
 function cell(v: unknown): string {
@@ -48,7 +50,7 @@ function toCsv(result: BhqlResult): string {
   return [header, ...rows].join('\n')
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function getHandler(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (isRouterPrefetch(req)) return new Response(null, { status: 204 })
 
   const { id } = await params
@@ -137,3 +139,5 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     },
   })
 }
+
+export const GET = withRouteErrors(getHandler)

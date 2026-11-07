@@ -19,6 +19,7 @@ export type ScheduledTick =
   | { kind: 'storage_object_deletion_scan' }
   | { kind: 'office_render_reconcile' }
   | { kind: 'journal_analysis_scan' }
+  | { kind: 'storage_write_arms_reconcile' }
 
 let scheduledQueue: Queue<ScheduledTick> | undefined
 
@@ -36,6 +37,7 @@ const SCHEDULED_KINDS = new Set<ScheduledTick['kind']>([
   'storage_object_deletion_scan',
   'office_render_reconcile',
   'journal_analysis_scan',
+  'storage_write_arms_reconcile',
 ])
 
 export function assertScheduledTick(data: ScheduledTick): void {
@@ -185,6 +187,13 @@ const SCHEDULES: Array<{
     repeatKey: 'tick-office-render-reconcile',
   },
   {
+    name: 'tick:storage_write_arms',
+    data: { kind: 'storage_write_arms_reconcile' },
+    pattern: '* * * * *',
+    jobId: 'tick:storage_write_arms',
+    repeatKey: 'tick-storage-write-arms',
+  },
+  {
     name: 'tick:journal_analysis',
     data: { kind: 'journal_analysis_scan' },
     pattern: '20 * * * *',
@@ -210,6 +219,78 @@ async function removeUnconfiguredSchedules() {
   for (const job of unconfigured) {
     await scheduledQueue.removeRepeatableByKey(job.key)
   }
+}
+
+export type RepeatableSchedule = {
+  key: string
+  name: string
+  pattern?: string | null
+}
+
+export type ScheduledRegistrationHealth = {
+  expectedCount: number
+  actualCount: number
+  missing: string[]
+  unexpected: string[]
+  duplicates: string[]
+  mismatched: Array<{
+    key: string
+    expected: { name: string; pattern: string }
+    actual: { name: string; pattern: string | null }
+  }>
+  ok: boolean
+}
+
+export function inspectRepeatableSchedules(
+  repeatables: readonly RepeatableSchedule[],
+): ScheduledRegistrationHealth {
+  const expectedByKey = new Map(SCHEDULES.map((schedule) => [schedule.repeatKey, schedule]))
+  const actualByKey = new Map<string, { name: string; pattern: string | null }>()
+  const duplicateKeys = new Set<string>()
+
+  for (const repeatable of repeatables) {
+    if (actualByKey.has(repeatable.key)) duplicateKeys.add(repeatable.key)
+    else
+      actualByKey.set(repeatable.key, {
+        name: repeatable.name,
+        pattern: repeatable.pattern ?? null,
+      })
+  }
+
+  const missing = [...expectedByKey.keys()]
+    .filter((key) => !actualByKey.has(key))
+    .sort((left, right) => left.localeCompare(right))
+  const unexpected = [...actualByKey.keys()]
+    .filter((key) => !expectedByKey.has(key))
+    .sort((left, right) => left.localeCompare(right))
+  const mismatched = [...expectedByKey.entries()]
+    .flatMap(([key, expected]) => {
+      const actual = actualByKey.get(key)
+      if (!actual) return []
+      if (actual.name === expected.name && actual.pattern === expected.pattern) return []
+      return [{ key, expected: { name: expected.name, pattern: expected.pattern }, actual }]
+    })
+    .sort((left, right) => left.key.localeCompare(right.key))
+  const duplicates = [...duplicateKeys].sort((left, right) => left.localeCompare(right))
+
+  return {
+    expectedCount: expectedByKey.size,
+    actualCount: repeatables.length,
+    missing,
+    unexpected,
+    duplicates,
+    mismatched,
+    ok:
+      missing.length === 0 &&
+      unexpected.length === 0 &&
+      duplicates.length === 0 &&
+      mismatched.length === 0 &&
+      repeatables.length === expectedByKey.size,
+  }
+}
+
+export async function inspectScheduledRegistration(): Promise<ScheduledRegistrationHealth> {
+  return inspectRepeatableSchedules(await getScheduledQueue().getRepeatableJobs())
 }
 
 export async function registerSchedules() {

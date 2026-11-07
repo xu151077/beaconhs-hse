@@ -1,0 +1,21 @@
+{
+  "_note": [
+    "Deployment-gate policy (EA-56 Step D).",
+    "",
+    "require_signature and require_sbom are false, and that is a statement of",
+    "authorization status, not a relaxation of a strict policy: A1/A2 (signing)",
+    "and A6 (SBOM) are NOT APPROVED. This repository has no signing key, no",
+    "approved signer identity, and no SBOM generator. Setting either to true",
+    "would demand evidence that cannot exist yet, which would block every",
+    "deployment and invite somebody to disable the gate.",
+    "",
+    "While they are false the gate records G3.signature_required_by_policy and",
+    "G4.identity_chain_complete as NOT REQUIRED with the reason 'the identity",
+    "chain is INCOMPLETE by policy', so an unsigned image can never be reported",
+    "as a complete identity chain. Flipping either flag, choosing Rekor versus a",
+    "private Sigstore, and defining any observe-only grace period are supply-chain",
+    "decisions that require authorization (EA-56 section 9)."
+  ],
+  "require_signature": false,
+  "require_sbom": false
+}

@@ -7,8 +7,8 @@ import {
   useGeneratedValueTranslations,
 } from '@/i18n/generated'
 
-// The right pane: a Write ↔ PDF surface. Write is the inline Collabora Writer
-// on the document's DOCX master (page setup, comments and track changes live
+// The right pane: a Write ↔ PDF surface. Write is the inline Collabora app for
+// the document's Office master (Writer, Impress or Calc) (page setup, comments and track changes live
 // in the file) with a docked AI panel and a fullscreen mode; PDF renders the
 // current draft for managers (file-only documents show their uploaded PDF as
 // the primary view). Read-only users get the published PDF, nothing else.
@@ -27,9 +27,9 @@ import {
   X,
 } from 'lucide-react'
 import { Button, FileUploader, Textarea, cn } from '@beaconhs/ui'
-import { MAX_DOCX_CONVERSION_BYTES } from '@beaconhs/office/limits'
+import { MAX_OFFICE_SOURCE_BYTES } from '@beaconhs/office/limits'
 import { toast } from '@/lib/toast'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { MAX_DOCUMENT_VERSION_NOTE_CHARS } from '@/lib/document-authoring-policy'
 import { CollaboraEmbed, type CollaboraHandle } from '@/components/collabora-embed'
 import { DownloadLink } from '@/components/download-link'
@@ -73,6 +73,10 @@ export function DocumentPane({
   // back — remounting the embed makes Writer load the new file.
   const [editorEpoch, setEditorEpoch] = useState(0)
   const editorRef = useRef<CollaboraHandle | null>(null)
+  // The AI rewrite path round-trips a Word file through Flat ODT, so it is
+  // offered only for a .docx master; Impress and Calc documents keep the
+  // editor without an assistant that could corrupt their format.
+  const masterIsWord = /\.docx$/i.test(master?.filename ?? '')
 
   // Refresh while a published version's PDF is still rendering so the PDF
   // pane and version badges catch up without a manual reload.
@@ -106,7 +110,13 @@ export function DocumentPane({
   function startBlank() {
     startTransition(async () => {
       try {
-        await createBlankDocumentMaster(documentId)
+        const result = await createBlankDocumentMaster(documentId)
+        if (!result.ok) {
+          // A frozen workspace is an expected refusal, reported as a normal result so
+          // the user reads the reason instead of a masked React error.
+          toast.error(tGeneratedValue(result.error))
+          return
+        }
         router.refresh()
       } catch (err) {
         toast.error(
@@ -121,9 +131,10 @@ export function DocumentPane({
       <FileUploader
         requestUploadAction={requestUpload}
         finalizeUploadAction={finalizeUpload}
+        requestMultipartPartAction={requestMultipartPartUrl}
         kind="document"
-        accept=".docx"
-        maxSize={MAX_DOCX_CONVERSION_BYTES}
+        accept=".docx,.pptx,.xlsx"
+        maxSize={MAX_OFFICE_SOURCE_BYTES}
         onUploaded={(f) => {
           setShowReplace(false)
           void importDocumentMaster(documentId, f.attachmentId)
@@ -162,7 +173,7 @@ export function DocumentPane({
   } else {
     content = (
       <div className="flex h-full min-h-0 flex-col bg-slate-100 dark:bg-slate-950">
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
           <ModeSwitch mode={mode} onChange={setMode} />
           <GeneratedValue
             value={
@@ -203,14 +214,14 @@ export function DocumentPane({
               ) : null
             }
           />
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
             <GeneratedValue
               value={
                 master ? (
                   <>
                     <GeneratedValue
                       value={
-                        aiEnabled ? (
+                        aiEnabled && masterIsWord ? (
                           <Button
                             type="button"
                             variant={aiOpen ? 'default' : 'outline'}
@@ -306,7 +317,7 @@ export function DocumentPane({
                   />
                   <GeneratedValue
                     value={
-                      aiOpen && aiEnabled ? (
+                      aiOpen && aiEnabled && masterIsWord ? (
                         <DocumentAiPanel
                           documentId={documentId}
                           editorRef={editorRef}

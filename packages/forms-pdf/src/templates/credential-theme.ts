@@ -245,7 +245,7 @@ export function sealSvg(args: {
     <circle cx="80" cy="86" r="58" fill="url(#sealGold)"/>
     <circle cx="80" cy="86" r="48" fill="none" stroke="${GOLD.light}" stroke-width="1.4"/>
     <circle cx="80" cy="86" r="44" fill="url(#sealCore)"/>
-    <text font-family="'Archivo', 'Helvetica Neue', Arial, sans-serif" font-size="6.8" font-weight="600" letter-spacing="1.1" fill="${GOLD.light}">
+    <text font-family="'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif" font-size="6.8" font-weight="600" letter-spacing="1.1" fill="${GOLD.light}">
       <textPath href="#sealArc" startOffset="50%" text-anchor="middle">${esc(inscription)}</textPath>
     </text>
     <text x="80" y="${initials.length > 2 ? 100 : 102}" text-anchor="middle"

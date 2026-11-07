@@ -15,6 +15,17 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next-intl/server', () => ({
+  // Returns the English catalogue copy so assertions read like what an operator sees.
+  getTranslations: async (namespace: string) => {
+    const catalogue = (await import('@beaconhs/i18n/messages')).getAppMessages('en')
+    const section = catalogue[namespace as 'ProviderSettings'] as unknown as Record<string, string>
+    return (key: string, values?: Record<string, unknown>) =>
+      (section[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+        String(values?.[name] ?? `{${name}}`),
+      )
+  },
+}))
 vi.mock('@/lib/auth', () => ({ requireRequestContext: mocks.auth }))
 vi.mock('@/lib/audit', () => ({ recordAudit: mocks.audit }))
 vi.mock('@beaconhs/jobs/rate-limit', () => ({ consumeRateLimit: mocks.consumeRateLimit }))
@@ -109,7 +120,7 @@ describe('SMS settings mutations', () => {
       credentialChange: 'removed',
       enabledChanged: true,
     })
-    await saveTenantSms(settingsForm({ enabled: '' }))
+    await saveTenantSms(null, settingsForm({ enabled: '' }))
 
     expect(mocks.audit).toHaveBeenCalledWith(
       context,
@@ -124,19 +135,67 @@ describe('SMS settings mutations', () => {
     )
   })
 
-  it('rejects invalid providers and policies instead of silently coercing them', async () => {
-    await expect(saveTenantSms(settingsForm({ provider: 'unknown' }))).rejects.toThrow(
-      'valid SMS provider',
-    )
-    await expect(
-      savePlatformSms(settingsForm({ mode: 'unknown-platform-policy' })),
-    ).rejects.toThrow('valid platform SMS policy')
+  it('returns invalid providers and policies in-form instead of throwing to the error boundary', async () => {
+    const provider = await saveTenantSms(null, settingsForm({ provider: 'unknown' }))
+    const policy = await savePlatformSms(null, settingsForm({ mode: 'unknown-platform-policy' }))
+
+    // Expected user input must resolve, not reject: a rejection reaches the route
+    // error boundary and discards the message the operator needs.
+    expect(provider).toEqual({ error: 'Select a valid SMS provider.' })
+    expect(policy).toEqual({ error: 'Select a valid platform SMS policy.' })
     expect(mocks.saveTenant).not.toHaveBeenCalled()
     expect(mocks.savePlatform).not.toHaveBeenCalled()
   })
 
+  it('returns an over-long field in-form rather than throwing', async () => {
+    const result = await saveTenantSms(null, settingsForm({ fromNumber: '+1'.padEnd(120, '5') }))
+
+    expect(result).toEqual({ error: 'fromNumber must be 100 characters or fewer.' })
+    expect(mocks.saveTenant).not.toHaveBeenCalled()
+  })
+
+  it('returns ok on a valid save so the form can clear its error', async () => {
+    const result = await saveTenantSms(null, settingsForm())
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('keeps the tenant permission gate a hard failure, not a form error', async () => {
+    mocks.auth.mockResolvedValue({
+      ...context,
+      isSuperAdmin: false,
+      permissions: new Set<string>(),
+    })
+
+    await expect(saveTenantSms(null, settingsForm())).rejects.toThrow(
+      'Missing permission: admin.settings.manage',
+    )
+    expect(mocks.saveTenant).not.toHaveBeenCalled()
+    expect(mocks.audit).not.toHaveBeenCalled()
+  })
+
+  it('keeps the platform gate super-admin only', async () => {
+    mocks.auth.mockResolvedValue({
+      ...context,
+      isSuperAdmin: false,
+      permissions: new Set(['admin.settings.manage']),
+    })
+
+    await expect(savePlatformSms(null, settingsForm({ mode: 'tenant_optional' }))).rejects.toThrow(
+      'Only platform super-admins',
+    )
+    expect(mocks.savePlatform).not.toHaveBeenCalled()
+  })
+
+  it('propagates a database failure instead of reporting a successful save', async () => {
+    mocks.saveTenant.mockRejectedValue(new Error('deadlock detected'))
+
+    await expect(saveTenantSms(null, settingsForm())).rejects.toThrow('deadlock detected')
+    expect(mocks.audit).not.toHaveBeenCalled()
+  })
+
   it('records platform changes against the platform SMS singleton', async () => {
-    await savePlatformSms(settingsForm({ mode: 'tenant_optional' }))
+    await savePlatformSms(null, settingsForm({ mode: 'tenant_optional' }))
     expect(mocks.audit).toHaveBeenCalledWith(
       context,
       expect.objectContaining({

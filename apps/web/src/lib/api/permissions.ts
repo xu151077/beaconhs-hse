@@ -12,6 +12,12 @@ const VALID_PERMISSIONS = new Set<string>(PERMISSION_CATALOGUE as unknown as str
 
 const READ_PERMISSION_BY_CATEGORY: Record<string, CataloguePermission> = {
   forms: 'forms.response.read.all',
+  // Monitored sessions ARE form responses (the view reads `form_responses`), so
+  // they use the Builder response read gate rather than a second permission
+  // ladder over the same rows. This alias is deliberate and pinned by the tests:
+  // a key granted `forms.response.read.all` can already read these rows through
+  // the `/api/v1/apps` surface.
+  apps: 'forms.response.read.all',
   incidents: 'incidents.read.all',
   inspections: 'inspections.read.all',
   hazid: 'hazid.read.all',

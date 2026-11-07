@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 import { Button, FileUploader, Input, Label, Select, cn } from '@beaconhs/ui'
 import type { PracticalCriterion } from '@beaconhs/db/schema'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { confirmDialog } from '@/lib/confirm'
 import { RichEditor } from '../../_editor/rich-editor'
@@ -797,6 +797,7 @@ export function LessonSurface({
                         <FileUploader
                           requestUploadAction={requestUpload}
                           finalizeUploadAction={finalizeUpload}
+                          requestMultipartPartAction={requestMultipartPartUrl}
                           kind="video"
                           accept=".mp4,.mov,.webm"
                           onUploaded={(f) => {
@@ -825,6 +826,7 @@ export function LessonSurface({
                         <FileUploader
                           requestUploadAction={requestUpload}
                           finalizeUploadAction={finalizeUpload}
+                          requestMultipartPartAction={requestMultipartPartUrl}
                           kind="document"
                           accept=".pdf,.docx,.doc,.pptx,.xlsx,.txt,.md"
                           onUploaded={(f) => {

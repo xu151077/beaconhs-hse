@@ -3,11 +3,29 @@ import { withSentryConfig } from '@sentry/nextjs'
 import createNextIntlPlugin from 'next-intl/plugin'
 import { staticSecurityHeaders } from './src/lib/security-headers'
 
+const configuredDevOrigins = (process.env.DEV_ALLOWED_ORIGINS ?? process.env.PUBLIC_APP_URL ?? '')
+  .split(',')
+  .map((value) => {
+    try {
+      return new URL(value.trim()).hostname
+    } catch {
+      return value.trim()
+    }
+  })
+  .filter(Boolean)
+
 const nextConfig: NextConfig = {
   output: 'standalone',
   deploymentId: process.env.DEPLOYMENT_VERSION,
   reactStrictMode: true,
   poweredByHeader: false,
+  // Extra origins allowed to request dev-only assets and endpoints. Next blocks
+  // cross-origin dev requests by default (HMR, `/_next/*`), which breaks access
+  // through 127.0.0.1 or a tunnel hostname even though the app itself loads.
+  // Entries are hostnames ONLY — the scheme, port, path and query are ignored.
+  // `localhost` and the start hostname are already allowed by default; listing
+  // them is redundant but harmless and keeps this list readable on its own.
+  allowedDevOrigins: ['127.0.0.1', 'localhost', ...configuredDevOrigins],
   async headers() {
     return [
       {

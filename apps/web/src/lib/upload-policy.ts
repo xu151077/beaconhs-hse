@@ -63,6 +63,20 @@ function ascii(bytes: Uint8Array, start: number, length: number): string {
   return String.fromCharCode(...bytes.subarray(start, start + length))
 }
 
+export function isPdfUpload(contentType: string): boolean {
+  return typeOf(contentType) === 'application/pdf'
+}
+
+/**
+ * How much of the end of a PDF is read to find its trailer.
+ *
+ * Readers locate a PDF's cross-reference table by scanning backwards for the
+ * `startxref` keyword, and PDF 32000-1 §7.5.5 requires the `%%EOF` marker to sit
+ * in the last 1024 bytes. Doubling that leaves room for the trailing data some
+ * producers append while keeping the read bounded.
+ */
+export const PDF_TRAILER_WINDOW_BYTES = 2048
+
 function isIsoBaseMedia(bytes: Uint8Array): boolean {
   return bytes.length >= 12 && ascii(bytes, 4, 4) === 'ftyp'
 }
@@ -103,6 +117,34 @@ export function uploadedFileHeaderError(
   return valid
     ? null
     : `${kind[0]!.toUpperCase()}${kind.slice(1)} bytes do not match the declared file type`
+}
+
+/**
+ * Reject a PDF whose trailer is missing from the end of the file.
+ *
+ * The magic-byte check above only proves the first five bytes claim a PDF. A
+ * truncated download, an interrupted export, or any unrelated file renamed to
+ * `.pdf` still starts with `%PDF-`, and pdf.js answers a PDF it cannot find an
+ * xref for by indexing every object in the file (`recoveryMode`). That recovery
+ * walk accumulates one JavaScript string per character of the longest run
+ * between delimiters, so a large file of that shape grows the renderer heap
+ * without bound — a 256 MiB file drove a Chromium tab to 4.7 GB and killed it
+ * (Phase BU). A complete PDF never takes that path, so requiring the trailer
+ * that every readable PDF ends with keeps the failure out of the browser
+ * instead of relying on the viewer to survive it.
+ */
+export function uploadedFileTailError(
+  kind: UploadKind,
+  contentType: string,
+  tail: Uint8Array,
+): string | null {
+  if (!isPdfUpload(contentType)) return null
+  const text = ascii(tail, 0, tail.length)
+  const eof = text.lastIndexOf('%%EOF')
+  if (eof < 0 || text.lastIndexOf('startxref', eof) < 0) {
+    return 'This PDF file is incomplete or damaged and cannot be opened'
+  }
+  return null
 }
 
 export function uploadContentDisposition(

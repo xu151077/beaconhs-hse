@@ -8,9 +8,13 @@ import type { Database } from '../client'
 import { formAutomations, formTemplates, formTemplateVersions } from '../schema'
 import type { FormSchemaV1 } from '../schema/forms'
 
-const HAZID_CONFINED_SPACE_APP_KEY = 'hazid-confined-space-entry-plan'
-const HAZID_ARC_FLASH_APP_KEY = 'hazid-arc-flash-work-plan'
-const HAZID_FALL_PROTECTION_APP_KEY = 'hazid-fall-protection-plan'
+// Exported so tests can derive the expected day-one template set from source
+// instead of restating these strings. Tenant provisioning creates these three
+// alongside the Lift Plan — `hazid_assessment_type_apps.template_id` is a real
+// foreign key, so a HAZID library without them would not link up.
+export const HAZID_CONFINED_SPACE_APP_KEY = 'hazid-confined-space-entry-plan'
+export const HAZID_ARC_FLASH_APP_KEY = 'hazid-arc-flash-work-plan'
+export const HAZID_FALL_PROTECTION_APP_KEY = 'hazid-fall-protection-plan'
 
 const submitterStep = (key: string, title: string) => ({
   key,

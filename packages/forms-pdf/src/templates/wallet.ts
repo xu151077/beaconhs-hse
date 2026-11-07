@@ -68,11 +68,11 @@ export function renderWalletHtml(input: WalletRenderInput): string {
       ? "ui-monospace, 'SF Mono', Menlo, monospace"
       : design.typeface === 'classic'
         ? "'Cormorant Garamond', Georgia, 'Times New Roman', serif"
-        : "'Archivo', 'Helvetica Neue', Arial, sans-serif"
+        : "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"
   const utilityFont =
     design.typeface === 'technical'
       ? "ui-monospace, 'SF Mono', Menlo, monospace"
-      : "'Archivo', 'Helvetica Neue', Arial, sans-serif"
+      : "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif"
 
   const verifyUrl = input.verifyUrl ?? ''
   const verifyShort = verifyUrl.replace(/^https?:\/\//, '').slice(0, 64)

@@ -52,11 +52,18 @@ export function csvResponse(args: {
 }): NextResponse {
   const lines = [csvRow(args.headers), ...args.rows.map((r) => csvRow(r))]
   const body = lines.join('\r\n') + '\r\n'
+  const originalFilename = args.filename || 'export.csv'
+  const sanitizedFilename =
+    originalFilename
+      .replace(/["\r\n]/g, '_')
+      .replace(/^[^a-zA-Z0-9]/, '_')
+      .substring(0, 200) || 'export.csv'
+  const encodedFilename = encodeURIComponent(originalFilename)
   return new NextResponse(body, {
     status: 200,
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${args.filename}"`,
+      'Content-Disposition': `attachment; filename="${sanitizedFilename}"; filename*=utf-8''${encodedFilename}`,
       'Cache-Control': 'private, no-store',
     },
   })

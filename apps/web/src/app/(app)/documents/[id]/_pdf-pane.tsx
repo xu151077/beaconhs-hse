@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation'
 import { Download, ExternalLink, Loader2, RefreshCw, UploadCloud } from 'lucide-react'
 import { Button, FileUploader, cn } from '@beaconhs/ui'
 import { toast } from '@/lib/toast'
-import { requestUpload, finalizeUpload } from '@/lib/uploads'
+import { requestUpload, finalizeUpload, requestMultipartPartUrl } from '@/lib/uploads'
 import { PdfViewer } from '@/components/pdf-viewer'
 import { attachFileVersion, getDocumentPdfUrl } from './_actions'
 import { ModeSwitch, type DocumentMode } from './_mode-switch'
@@ -123,7 +123,7 @@ export function DocumentPdfPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-100 dark:bg-slate-950">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
         <GeneratedValue
           value={
             !readOnly && mode && onModeChange ? (
@@ -144,7 +144,7 @@ export function DocumentPdfPane({
             ) : null
           }
         />
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           <GeneratedValue
             value={
               draft && !readOnly ? (
@@ -209,6 +209,7 @@ export function DocumentPdfPane({
               <FileUploader
                 requestUploadAction={requestUpload}
                 finalizeUploadAction={finalizeUpload}
+                requestMultipartPartAction={requestMultipartPartUrl}
                 kind="document"
                 accept=".pdf"
                 label={tGenerated('m_0e3b8a26b88d46')}
@@ -239,6 +240,7 @@ export function DocumentPdfPane({
                     <FileUploader
                       requestUploadAction={requestUpload}
                       finalizeUploadAction={finalizeUpload}
+                      requestMultipartPartAction={requestMultipartPartUrl}
                       kind="document"
                       accept=".pdf"
                       label={tGenerated('m_1aa3103f37882b')}

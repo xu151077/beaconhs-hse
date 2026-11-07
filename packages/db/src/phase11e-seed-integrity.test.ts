@@ -28,6 +28,7 @@ import {
   STATUTORY_REGISTER_SCHEMA,
 } from './seed/phase11e-register-apps'
 import { CATEGORY_DEFS } from './seed/phase11e-document-categories'
+import { resolveScratchDatabaseUrl } from './testing/scratch-database'
 
 /** Resolve from this file (packages/db/src/) up to the workspace root. */
 const repoPath = (...segments: string[]) =>
@@ -113,9 +114,9 @@ describe('CALIBRATION — seed exists and is calibration-shaped', () => {
     expect(equipmentSeed).not.toMatch(/insert\(equipmentItems\)/)
   })
 
-  it('leaves the dead certificate column untouched', () => {
-    // D3: equipment_inspection_records.certificate has no reader and no writer.
-    // Phase 11-E must not start using it.
+  it('does not resurrect the removed certificate column', () => {
+    // D3 removed `equipment_inspection_records.certificate`: it had no reader
+    // and no writer. Phase 11-E must not start seeding a replacement field.
     expect(equipmentSeed).not.toMatch(/certificate:\s*(?!.*question)/)
     expect(equipmentSeed).not.toMatch(/records\s*\.\s*certificate/)
   })
@@ -468,7 +469,7 @@ describe('Phase 11-E negative invariants', () => {
 // DB-LEVEL ASSERTIONS (skipped loudly without a scratch database)
 // ---------------------------------------------------------------------------
 
-const SCRATCH_URL = process.env.SEED_TEST_SCRATCH_DATABASE_URL
+const SCRATCH_URL = resolveScratchDatabaseUrl()
 if (!SCRATCH_URL) {
   console.warn(
     'SKIPPED Phase 11-E DB assertions: SEED_TEST_SCRATCH_DATABASE_URL is not set (structural assertions above still ran)',

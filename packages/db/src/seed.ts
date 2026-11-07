@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { createSuperClient } from './client'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { createSuperClient, type Database } from './client'
 import { convergePersonnelAssignments } from './converge-personnel-assignments'
 import {
   BUILTIN_ROLES,
@@ -12,7 +12,6 @@ import {
   documentAcknowledgments,
   documentReviews,
   documentVersions,
-  documentTypes,
   documentCategories,
   customFieldDefinitions,
   equipmentCategories,
@@ -31,11 +30,9 @@ import {
   formResponses,
   formTemplates,
   formTemplateVersions,
-  incidentClassifications,
   incidentHoursPeriods,
   incidentInjuries,
   incidentInjuryTypeAssignments,
-  incidentInjuryTypes,
   incidentLostTimeEvents,
   incidentPeople,
   incidents,
@@ -54,8 +51,6 @@ import {
   ppeIssueReports,
   ppeIssues,
   ppeItems,
-  ppeTypeInspectionCriteria,
-  ppeTypes,
   reportDefinitions,
   roles,
   tenants,
@@ -71,17 +66,7 @@ import {
   trainingSkillTypes,
   trainingAssessments,
   trainingAssessmentTypes,
-  trainingAssessmentTypeQuestions,
   users as user,
-  // HazID / JSHA
-  hazidAssessmentTypePPE,
-  hazidAssessmentTypeApps,
-  hazidAssessmentTypeQuestions,
-  hazidAssessmentTypes,
-  hazidHazardSets,
-  hazidHazardTypes,
-  hazidHazards,
-  hazidTasks,
   // People groups / titles + per-title tasks
   jobTitleTaskAcknowledgments,
   jobTitleTasks,
@@ -92,15 +77,29 @@ import {
 } from './schema'
 import type { FormSchemaV1 } from './schema'
 import { CANONICAL_TEMPLATES } from './canonical-templates'
-import { seedHazardAssessmentAppTemplates } from './seed/hazard-assessment-app-templates'
 import { seedWorkPermitTemplate } from './seed/work-permit-template'
 import { seedPhase11EEquipment } from './seed/phase11e-equipment'
 import { seedPhase11EDocumentCategories } from './seed/phase11e-document-categories'
 import { seedPhase11ERegisterApps } from './seed/phase11e-register-apps'
 import { seedLiftPlanTemplate } from './seed/lift-plan-template'
+import { ensureBuiltinRoles } from './tenant-provisioning'
+import { ensureFreezeRow } from './storage-freeze-operations'
 import { seedFormPdfTemplates, seedPdfTemplates } from './seed/pdf-templates'
 import { BEACON_REPORT_SEEDS } from './seed/report-definitions'
 import { seedToolboxTemplate } from './seed/toolbox-template'
+import { seedDocumentTypesAndCategories } from './seed/document-types-and-categories'
+import {
+  INCIDENT_CLASSIFICATION_SEED,
+  INCIDENT_INJURY_TYPE_SEED,
+  seedIncidentTaxonomy,
+} from './seed/incident-taxonomy'
+import { seedInspectionTypes } from './seed/inspection-types'
+import { seedInspectionBanks } from './seed/inspection-banks'
+import { seedPersonGroups } from './seed/person-groups'
+import { seedSkillCatalogue } from './seed/skill-catalogue'
+import { seedPpeTypesWithCriteria } from './seed/ppe-types'
+import { seedHazidLibraries } from './seed/hazid-libraries'
+import { seedTrainingAssessmentTypes } from './seed/training-assessment-types'
 
 /**
  * Identity of the development bootstrap, in one place.
@@ -157,6 +156,9 @@ async function main() {
       .limit(1)
 
     if (existingDemo) {
+      // Storage writes fail closed unless this row exists. Keep a seeded database
+      // usable after upgrades that predate the storage-freeze gate.
+      await ensureFreezeRow(tx as unknown as Database, existingDemo.id)
       console.log(`  · demo tenant "${DEMO_TENANT_SLUG}" already exists, skipping tenant bootstrap`)
       console.log(`  · super-admin: ${admin.email}`)
       return
@@ -168,8 +170,13 @@ async function main() {
       .values({
         slug: DEMO_TENANT_SLUG,
         name: 'Acme Industrial',
+        // English stays the default: nobody's language changes underneath them.
+        // zh is ENABLED but not default, so it is selectable at /account while
+        // every first-run user still lands in English. Migration 0045 must be
+        // applied before this runs — the CHECK constraint is what makes 'zh'
+        // writable at all.
         defaultLanguage: 'en',
-        enabledLanguages: ['en'],
+        enabledLanguages: ['en', 'zh'],
         branding: { primaryColor: '#0f766e' },
         riskMatrix: {
           axes: {
@@ -181,6 +188,7 @@ async function main() {
       })
       .returning()
     if (!tenant) throw new Error('Failed to create tenant')
+    await ensureFreezeRow(tx as unknown as Database, tenant.id)
 
     const [membership] = await tx
       .insert(tenantUsers)
@@ -194,16 +202,12 @@ async function main() {
       .returning()
     if (!membership) throw new Error('Failed to create membership')
 
-    for (const [key, def] of Object.entries(BUILTIN_ROLES)) {
-      await tx.insert(roles).values({
-        tenantId: tenant.id,
-        key,
-        name: def.name,
-        description: def.description,
-        isBuiltIn: true,
-        permissions: def.permissions as unknown as string[],
-      })
-    }
+    // The demo tenant's built-in roles come from the SAME function tenant
+    // provisioning uses. This loop used to live here with a bare `insert` whose only
+    // protection against `roles_tenant_key_ux` was the early return above; keeping a
+    // second copy would be exactly the duplicate implementation the repository rules
+    // forbid, and the two would drift. See `ensureBuiltinRoles`.
+    await ensureBuiltinRoles(tx as unknown as Database, tenant.id)
 
     // --- Org hierarchy --------------------------------------------------
     const customer = await insertOrgUnit(tx, tenant.id, null, 'customer', 'Acme Refinery')
@@ -1284,185 +1288,47 @@ async function main() {
       linkPath: '/dashboard',
     })
 
-    // --- Inspection Bank ------------------------------------------------
-    const [bank1] = await tx
-      .insert(inspectionBanks)
-      .values({
-        tenantId: tenant.id,
-        name: 'Site Daily Walk-Through',
-        description:
-          'Routine site safety walk-through criteria used by site supervisors at start of shift.',
-        category: 'site_inspection',
-        isPublished: true,
-        createdBy: admin.id,
-      })
-      .returning()
-    if (bank1) {
-      await tx.insert(inspectionBankCriteria).values([
-        {
-          tenantId: tenant.id,
-          bankId: bank1.id,
-          sequence: 1,
-          text: 'Are walkways clear and unobstructed?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: false,
-          requiresComment: false,
-        },
-        {
-          tenantId: tenant.id,
-          bankId: bank1.id,
-          sequence: 2,
-          text: 'Is fire extinguisher signage visible from all working areas?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: true,
-          requiresComment: false,
-        },
-        {
-          tenantId: tenant.id,
-          bankId: bank1.id,
-          sequence: 3,
-          text: 'Are MSDS binders accessible at the chemical storage?',
-          responseType: 'yes_no',
-          requiresPhoto: false,
-          requiresComment: true,
-        },
-        {
-          tenantId: tenant.id,
-          bankId: bank1.id,
-          sequence: 4,
-          text: 'Eyewash stations functional and unobstructed?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: true,
-          requiresComment: true,
-        },
-      ])
-    }
-    const [bank2] = await tx
-      .insert(inspectionBanks)
-      .values({
-        tenantId: tenant.id,
-        name: 'PPE Pre-Use Inspection (Harness)',
-        description: 'Draft template — to be reviewed before publishing.',
-        category: 'ppe_check',
-        isPublished: false,
-        createdBy: admin.id,
-      })
-      .returning()
-    if (bank2) {
-      await tx.insert(inspectionBankCriteria).values([
-        {
-          tenantId: tenant.id,
-          bankId: bank2.id,
-          sequence: 1,
-          text: 'Webbing free from cuts, frays, burns, or chemical damage?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: true,
-          requiresComment: false,
-        },
-        {
-          tenantId: tenant.id,
-          bankId: bank2.id,
-          sequence: 2,
-          text: 'D-rings free from cracks, sharp edges, or deformation?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: false,
-          requiresComment: false,
-        },
-        {
-          tenantId: tenant.id,
-          bankId: bank2.id,
-          sequence: 3,
-          text: 'Buckles function and lock correctly?',
-          responseType: 'pass_fail_na',
-          requiresPhoto: false,
-          requiresComment: false,
-        },
-      ])
-    }
+    // --- Inspection Banks (shared reference seeder) --------------------
+    await seedInspectionBanks(tx, tenant.id)
 
-    // --- Training Skill Authorities + Types + Assignments --------------
-    const [authority1] = await tx
-      .insert(trainingSkillAuthorities)
-      .values({
-        tenantId: tenant.id,
-        name: 'In-house Quality Control',
-        code: 'IHQC',
-        jurisdiction: 'Internal',
-        notes: 'Internal evaluator sign-off for in-house competencies.',
-      })
-      .returning()
-    const [authority2] = await tx
-      .insert(trainingSkillAuthorities)
-      .values({
-        tenantId: tenant.id,
-        name: 'Boilermakers Local 128',
-        code: 'BM128',
-        jurisdiction: 'Ontario',
-      })
-      .returning()
-    if (authority1) {
-      const [skill1] = await tx
-        .insert(trainingSkillTypes)
-        .values({
-          tenantId: tenant.id,
-          authorityId: authority1.id,
-          name: 'Forklift Operator',
-          code: 'FORK',
-          validForMonths: 36,
-          description: 'Class 4/5 sit-down counterbalance forklift competency.',
-        })
-        .returning()
-      const [skill2] = await tx
-        .insert(trainingSkillTypes)
-        .values({
-          tenantId: tenant.id,
-          authorityId: authority1.id,
-          name: 'Confined Space Attendant',
-          code: 'CSA',
-          validForMonths: 12,
-          description: 'Permit-required confined space attendant role.',
-        })
-        .returning()
-      if (skill1) {
-        await tx.insert(trainingSkillAssignments).values([
-          {
-            tenantId: tenant.id,
-            personId: john!.id,
-            skillTypeId: skill1.id,
-            grantedOn: isoDate(new Date(today.getTime() - 200 * dayMs)),
-            expiresOn: isoDate(new Date(today.getTime() + 900 * dayMs)),
-            grantedByTenantUserId: membership.id,
-          },
-          {
-            tenantId: tenant.id,
-            personId: tom!.id,
-            skillTypeId: skill1.id,
-            grantedOn: isoDate(new Date(today.getTime() - 100 * dayMs)),
-            expiresOn: isoDate(new Date(today.getTime() + 1000 * dayMs)),
-            grantedByTenantUserId: membership.id,
-          },
-        ])
-      }
-      if (skill2) {
-        await tx.insert(trainingSkillAssignments).values({
+    // --- Training Skill Authorities + Types (shared reference seeder) --
+    await seedSkillCatalogue(tx, tenant.id)
+    const skillRows = await tx
+      .select({ id: trainingSkillTypes.id, code: trainingSkillTypes.code })
+      .from(trainingSkillTypes)
+      .where(eq(trainingSkillTypes.tenantId, tenant.id))
+    const skillByCode = new Map(skillRows.map((r) => [r.code, r.id]))
+    const skill1Id = skillByCode.get('FORK')
+    const skill2Id = skillByCode.get('CSA')
+    if (skill1Id) {
+      await tx.insert(trainingSkillAssignments).values([
+        {
           tenantId: tenant.id,
           personId: john!.id,
-          skillTypeId: skill2.id,
-          grantedOn: isoDate(new Date(today.getTime() - 340 * dayMs)),
-          expiresOn: isoDate(new Date(today.getTime() + 25 * dayMs)),
+          skillTypeId: skill1Id,
+          grantedOn: isoDate(new Date(today.getTime() - 200 * dayMs)),
+          expiresOn: isoDate(new Date(today.getTime() + 900 * dayMs)),
           grantedByTenantUserId: membership.id,
-          notes: 'Expires soon — schedule recertification.',
-        })
-      }
+        },
+        {
+          tenantId: tenant.id,
+          personId: tom!.id,
+          skillTypeId: skill1Id,
+          grantedOn: isoDate(new Date(today.getTime() - 100 * dayMs)),
+          expiresOn: isoDate(new Date(today.getTime() + 1000 * dayMs)),
+          grantedByTenantUserId: membership.id,
+        },
+      ])
     }
-    if (authority2) {
-      await tx.insert(trainingSkillTypes).values({
+    if (skill2Id) {
+      await tx.insert(trainingSkillAssignments).values({
         tenantId: tenant.id,
-        authorityId: authority2.id,
-        name: 'Pressure Welding Certification',
-        code: 'PWELD',
-        validForMonths: 24,
-        description: 'Provincially-recognised pressure welding ticket.',
+        personId: john!.id,
+        skillTypeId: skill2Id,
+        grantedOn: isoDate(new Date(today.getTime() - 340 * dayMs)),
+        expiresOn: isoDate(new Date(today.getTime() + 25 * dayMs)),
+        grantedByTenantUserId: membership.id,
+        notes: 'Expires soon — schedule recertification.',
       })
     }
 
@@ -1495,8 +1361,8 @@ async function main() {
     // --- Safe Distance sample records (electrical / drone / vehicle) ---
     await seedSafeDistanceRecords(tx, tenant.id)
 
-    // --- Incident taxonomy + hours-worked + classify existing rows -----
-    await seedIncidentClassifications(tx, tenant.id)
+    // --- Incident demo records (taxonomy comes from the shared module) ---
+    await seedIncidentDemoData(tx, tenant.id)
 
     // --- People groups + titles + job-description tasks ----
     await seedPeopleGroupsAndTitles(tx, tenant.id)
@@ -1718,117 +1584,10 @@ async function main() {
 }
 
 /**
- * Idempotently insert the standard set of document types + categories for the
- * given tenant. Safe to re-run — uses ON CONFLICT for types
- * (unique on (tenant_id, key)), and name-existence checks for categories.
- */
-export async function seedDocumentTypesAndCategories(tx: any, tenantId: string): Promise<void> {
-  // --- Document Types (5) ---------------------------------------------
-  const docTypeRows = [
-    {
-      key: 'policy',
-      name: 'Policy',
-      color: '#0f766e',
-      description: 'Company-wide policies and stances.',
-    },
-    {
-      key: 'procedure',
-      name: 'Procedure / SOP',
-      color: '#2563eb',
-      description: 'Step-by-step instructions for routine work.',
-    },
-    {
-      key: 'sds',
-      name: 'SDS / MSDS',
-      color: '#ea580c',
-      description: 'Safety data sheets for hazardous materials.',
-    },
-    {
-      key: 'manual',
-      name: 'Manual / handbook',
-      color: '#7c3aed',
-      description: 'Equipment manuals and reference handbooks.',
-    },
-    {
-      key: 'form',
-      name: 'Form / template',
-      color: '#0891b2',
-      description: 'Blank forms and printable templates.',
-    },
-  ]
-  let typesInserted = 0
-  for (const row of docTypeRows) {
-    const inserts = await tx
-      .insert(documentTypes)
-      .values({
-        tenantId,
-        key: row.key,
-        name: row.name,
-        color: row.color,
-        description: row.description,
-      })
-      .onConflictDoNothing({ target: [documentTypes.tenantId, documentTypes.key] })
-      .returning({ id: documentTypes.id })
-    if (inserts.length > 0) typesInserted += 1
-  }
-
-  // --- Document Categories (5, hierarchical) --------------------------
-  // The root category "Safety" with three children (PPE, Permits, Working
-  // at Heights), plus a sibling "Operations" category.
-  const categoryDefs: { name: string; parent?: string; description?: string }[] = [
-    { name: 'Safety', description: 'All safety-related policies and procedures.' },
-    { name: 'PPE', parent: 'Safety', description: 'Personal protective equipment policies.' },
-    {
-      name: 'Permits',
-      parent: 'Safety',
-      description: 'Hot work, confined-space, working-at-heights permits.',
-    },
-    { name: 'Working at Heights', parent: 'Safety', description: 'Fall-arrest and ladder safety.' },
-    { name: 'Operations', description: 'Day-to-day operational SOPs.' },
-  ]
-  const insertedCats = new Map<string, string>()
-  let catsInserted = 0
-  for (const def of categoryDefs) {
-    const parentId = def.parent ? (insertedCats.get(def.parent) ?? null) : null
-    // Match the active sibling-name identity enforced by the schema index.
-    // Deleted categories do not reserve names, and separate parents may use
-    // the same case-insensitive, trimmed display name.
-    const existing = await tx
-      .select({ id: documentCategories.id })
-      .from(documentCategories)
-      .where(
-        and(
-          eq(documentCategories.tenantId, tenantId),
-          parentId
-            ? eq(documentCategories.parentId, parentId)
-            : isNull(documentCategories.parentId),
-          isNull(documentCategories.deletedAt),
-          sql`lower(btrim(${documentCategories.name})) = lower(btrim(${def.name}))`,
-        ),
-      )
-      .limit(1)
-    if (existing.length > 0) {
-      insertedCats.set(def.name, existing[0]!.id)
-      continue
-    }
-    const [row] = await tx
-      .insert(documentCategories)
-      .values({ tenantId, name: def.name, parentId, description: def.description ?? null })
-      .returning({ id: documentCategories.id })
-    if (row) {
-      insertedCats.set(def.name, row.id)
-      catsInserted += 1
-    }
-  }
-
-  console.log(
-    `  · doc lookups: ${typesInserted}/${docTypeRows.length} types, ${catsInserted}/${categoryDefs.length} categories`,
-  )
-}
-
-/**
- * Idempotently insert the four canonical form templates (JSHA, Toolbox Talk,
- * Lift Plan, WAH Rescue Plan) for the FIRST tenant in the database.
+ * Idempotently insert the canonical form templates in `CANONICAL_TEMPLATES`
+ * (currently the Working at Heights Rescue Plan) for the FIRST tenant in the
+ * database. JSHA, Lift Plan and Toolbox Talk are deliberately not canonical
+ * because they have native modules or per-tenant built-in seeders.
  *
  * Safe to re-run: uses ON CONFLICT (tenant_id, key) DO NOTHING for templates,
  * and version 1 is inserted only when the template was actually new.
@@ -1935,135 +1694,6 @@ function build5x5() {
     }
   }
   return cells
-}
-
-/**
- * Idempotently seed 3 sample inspection types (Site Walk, Equipment Daily,
- * Crew Toolbox), importing the existing seeded inspection_banks' criteria into
- * a group on each type where the categories line up. Safe to re-run — keyed off
- * the unique (tenant_id, name) index on inspection_types so we never insert twice.
- */
-export async function seedInspectionTypes(tx: any, tenantId: string): Promise<void> {
-  // Idempotency guard
-  const existing = await tx
-    .select({ id: inspectionTypes.id, name: inspectionTypes.name })
-    .from(inspectionTypes)
-    .where(sql`${inspectionTypes.tenantId} = ${tenantId}`)
-  if (existing.length > 0) {
-    console.log(`  · inspection types: ${existing.length} already present, skipping`)
-    return
-  }
-
-  // Find the seeded banks so we can link by category.
-  const banks = await tx
-    .select({
-      id: inspectionBanks.id,
-      name: inspectionBanks.name,
-      category: inspectionBanks.category,
-    })
-    .from(inspectionBanks)
-    .where(sql`${inspectionBanks.tenantId} = ${tenantId}`)
-
-  const siteBank = banks.find((b: { category: string | null }) => b.category === 'site_inspection')
-  const ppeBank = banks.find((b: { category: string | null }) => b.category === 'ppe_check')
-  const equipBank = banks.find((b: { category: string | null }) => b.category === 'equipment_check')
-
-  const samples = [
-    {
-      name: 'Site Walk',
-      description:
-        'Daily site walk-through — supervisor walks the work zone with the foreman, captures customer sign-off.',
-      requiresForeman: true,
-      requiresCustomerSignature: true,
-      enableCorrectiveActions: true,
-      defaultCadence: 'day',
-      bankIds: [siteBank?.id, ppeBank?.id].filter((v): v is string => Boolean(v)),
-    },
-    {
-      name: 'Equipment Daily',
-      description:
-        'Per-shift equipment safety check. No customer signature needed; auto-spawns corrective actions on serious failures.',
-      requiresForeman: false,
-      requiresCustomerSignature: false,
-      enableCorrectiveActions: true,
-      defaultCadence: 'day',
-      bankIds: [equipBank?.id, ppeBank?.id].filter((v): v is string => Boolean(v)),
-    },
-    {
-      name: 'Crew Toolbox',
-      description:
-        'Weekly crew safety review. Foreman-led, no customer signature, fewer criteria — quick to complete.',
-      requiresForeman: true,
-      requiresCustomerSignature: false,
-      enableCorrectiveActions: true,
-      defaultCadence: 'week',
-      bankIds: [siteBank?.id].filter((v): v is string => Boolean(v)),
-    },
-  ] as const
-
-  let createdTypes = 0
-  let importedGroups = 0
-  for (const sample of samples) {
-    const [type] = await tx
-      .insert(inspectionTypes)
-      .values({
-        tenantId,
-        name: sample.name,
-        description: sample.description,
-        requiresForeman: sample.requiresForeman,
-        requiresCustomerSignature: sample.requiresCustomerSignature,
-        enableCorrectiveActions: sample.enableCorrectiveActions,
-        allowCompliantNotes: true,
-        defaultCadence: sample.defaultCadence,
-        isPublished: true,
-      })
-      .onConflictDoNothing({ target: [inspectionTypes.tenantId, inspectionTypes.name] })
-      .returning()
-    if (!type) continue
-    createdTypes += 1
-    // Import each bank's criteria into its own group on the type. Banks are now
-    // just a library — the type owns the resulting groups + criteria outright.
-    for (let i = 0; i < sample.bankIds.length; i++) {
-      const bankId = sample.bankIds[i]
-      if (!bankId) continue
-      const bank = banks.find((b: { id: string }) => b.id === bankId)
-      const [group] = await tx
-        .insert(inspectionTypeGroups)
-        .values({
-          tenantId,
-          typeId: type.id,
-          sequence: i,
-          label: bank?.name ?? 'Imported criteria',
-        })
-        .returning()
-      const bankCriteria = await tx
-        .select()
-        .from(inspectionBankCriteria)
-        .where(eq(inspectionBankCriteria.bankId, bankId))
-        .orderBy(inspectionBankCriteria.sequence)
-      if (bankCriteria.length > 0) {
-        await tx.insert(inspectionTypeCriteria).values(
-          bankCriteria.map((c: any, j: number) => ({
-            tenantId,
-            typeId: type.id,
-            groupId: group?.id ?? null,
-            sequence: j,
-            text: c.text,
-            responseType: c.responseType,
-            choiceOptions: c.choiceOptions,
-            requiresPhoto: c.requiresPhoto,
-            requiresComment: c.requiresComment,
-            sourceBankId: bankId,
-            sourceBankCriterionId: c.id,
-          })),
-        )
-      }
-      importedGroups += 1
-    }
-  }
-  console.log(
-    `  · inspection types: ${createdTypes} created, ${importedGroups} group${importedGroups === 1 ? '' : 's'} imported`,
-  )
 }
 
 /**
@@ -2338,495 +1968,6 @@ export async function seedAtmosphericGasDetectorPilot(tx: any, tenantId: string)
 }
 
 /**
- * Idempotently seed two sample training assessment types for a tenant:
- *   1. WHMIS 2015 (5 questions, linked to the WHMIS course if it exists)
- *   2. Basic Safety Quiz (8 questions, course-agnostic)
- *
- * Skips if any assessment type already exists for the tenant (so re-seeding is
- * safe and won't double-insert).
- */
-export async function seedTrainingAssessmentTypes(tx: any, tenantId: string): Promise<void> {
-  const existing = await tx
-    .select({ id: trainingAssessmentTypes.id })
-    .from(trainingAssessmentTypes)
-    .where(eq(trainingAssessmentTypes.tenantId, tenantId))
-    .limit(1)
-  if (existing.length > 0) {
-    console.log(`  · training assessment types: already seeded for tenant ${tenantId}, skipping`)
-    return
-  }
-
-  // Try to find the WHMIS course so we can link the quiz to it (passing the
-  // quiz then auto-creates a training_records row).
-  const [whmisCourse] = await tx
-    .select({ id: trainingCourses.id })
-    .from(trainingCourses)
-    .where(eq(trainingCourses.tenantId, tenantId))
-    .limit(50)
-  // Find by code if multiple
-  let whmisId: string | null = null
-  const allCourses = await tx
-    .select({ id: trainingCourses.id, code: trainingCourses.code })
-    .from(trainingCourses)
-    .where(eq(trainingCourses.tenantId, tenantId))
-  for (const c of allCourses) {
-    if (c.code === 'WHMIS') {
-      whmisId = c.id
-      break
-    }
-  }
-  // Fallback to the first returned course (rare; only if the WHMIS row isn't
-  // present)
-  if (!whmisId && whmisCourse) whmisId = whmisCourse.id
-
-  // --- WHMIS quiz ----------------------------------------------------------
-  const [whmis] = await tx
-    .insert(trainingAssessmentTypes)
-    .values({
-      tenantId,
-      name: 'WHMIS 2015 quiz',
-      description:
-        'Five-question knowledge check covering WHMIS pictograms, safety data sheets, and supplier vs workplace labels.',
-      passingScore: 80,
-      courseId: whmisId,
-      preAssessmentMessage:
-        'Answer all five questions. You need 80% to pass. Passing this quiz will record completion of WHMIS 2015 for you automatically.',
-      postAssessmentMessage:
-        'Thanks for completing the WHMIS quiz. If you passed, your training record has been updated.',
-      graded: true,
-      active: true,
-    })
-    .returning()
-  if (whmis) {
-    const whmisQuestions = [
-      {
-        prompt:
-          'What does the "skull and crossbones" WHMIS 2015 pictogram indicate about a material?',
-        kind: 'single_choice' as const,
-        options: [
-          { value: 'A', label: 'Acute toxicity (can cause death or serious harm at low doses)' },
-          { value: 'B', label: 'Mildly irritating to the skin' },
-          { value: 'C', label: 'Environmental damage only' },
-          { value: 'D', label: 'Flammable liquid' },
-        ],
-        correctAnswer: 'A',
-        points: 1,
-      },
-      {
-        prompt: 'A workplace label is required when',
-        kind: 'single_choice' as const,
-        options: [
-          {
-            value: 'A',
-            label: 'A controlled product is decanted into another container at the workplace',
-          },
-          { value: 'B', label: 'A product is sold to another company' },
-          { value: 'C', label: 'A product is stored unopened in original packaging' },
-          { value: 'D', label: 'None of the above' },
-        ],
-        correctAnswer: 'A',
-        points: 1,
-      },
-      {
-        prompt: 'Safety data sheets (SDS) must be readily available to all workers.',
-        kind: 'true_false' as const,
-        options: null,
-        correctAnswer: 'true',
-        points: 1,
-      },
-      {
-        prompt: 'Which sections of the SDS are most relevant during an emergency?',
-        kind: 'multi_choice' as const,
-        options: [
-          { value: 'A', label: 'Section 4: First-aid measures' },
-          { value: 'B', label: 'Section 5: Firefighting measures' },
-          { value: 'C', label: 'Section 6: Accidental release measures' },
-          { value: 'D', label: 'Section 16: Other information' },
-        ],
-        correctAnswer: 'A,B,C',
-        points: 2,
-      },
-      {
-        prompt:
-          'How long must a worker complete WHMIS training before being allowed to work with controlled products?',
-        kind: 'text' as const,
-        options: null,
-        correctAnswer: null,
-        points: 1,
-      },
-    ]
-    let order = 1
-    for (const q of whmisQuestions) {
-      await tx.insert(trainingAssessmentTypeQuestions).values({
-        tenantId,
-        typeId: whmis.id,
-        prompt: q.prompt,
-        kind: q.kind,
-        options: q.options,
-        correctAnswer: q.correctAnswer,
-        points: q.points,
-        entityOrder: order++,
-        mandatory: true,
-      })
-    }
-  }
-
-  // --- Basic Safety Quiz (course-agnostic) ---------------------------------
-  const [basic] = await tx
-    .insert(trainingAssessmentTypes)
-    .values({
-      tenantId,
-      name: 'Basic site safety quiz',
-      description:
-        'General safety awareness quiz — hazard recognition, PPE basics, near-miss reporting, and emergency procedures. Useful as part of a site induction.',
-      passingScore: 70,
-      courseId: null,
-      preAssessmentMessage:
-        'Eight short questions. You need 70% to pass. There is no course linked to this quiz — it is purely a competency check.',
-      postAssessmentMessage:
-        'Thanks for completing the basic safety quiz. Review any questions you got wrong with your supervisor.',
-      graded: true,
-      active: true,
-    })
-    .returning()
-  if (basic) {
-    const basicQuestions = [
-      {
-        prompt: 'What should you do immediately after a near-miss incident?',
-        kind: 'single_choice' as const,
-        options: [
-          { value: 'A', label: 'Keep working and forget about it' },
-          { value: 'B', label: 'Report it to your supervisor as soon as possible' },
-          { value: 'C', label: 'Only report it if it happens again' },
-          { value: 'D', label: 'Discuss it with co-workers only' },
-        ],
-        correctAnswer: 'B',
-        points: 1,
-      },
-      {
-        prompt:
-          'Hard hats must be worn whenever overhead work is occurring within a barricaded area.',
-        kind: 'true_false' as const,
-        options: null,
-        correctAnswer: 'true',
-        points: 1,
-      },
-      {
-        prompt:
-          'What is the minimum distance you should maintain from an unprotected leading edge of a work platform?',
-        kind: 'single_choice' as const,
-        options: [
-          { value: 'A', label: '0.5 m' },
-          { value: 'B', label: '1.0 m' },
-          { value: 'C', label: '2.0 m' },
-          { value: 'D', label: '3.0 m' },
-        ],
-        correctAnswer: 'C',
-        points: 1,
-      },
-      {
-        prompt:
-          'How many of the following are valid types of PPE that should be inspected before each use?',
-        kind: 'numeric' as const,
-        options: null,
-        correctAnswer: '4',
-        helpText:
-          'Consider: full-body harness, hard hat, safety glasses, hearing protection. The answer should be one number.',
-        points: 1,
-      },
-      {
-        prompt: 'Select every situation that requires a hot-work permit.',
-        kind: 'multi_choice' as const,
-        options: [
-          { value: 'A', label: 'Welding above grade in a designated welding bay' },
-          { value: 'B', label: 'Grinding on piping in an operating unit' },
-          { value: 'C', label: 'Cutting steel beams during a turnaround' },
-          { value: 'D', label: 'Plugging in a laptop' },
-        ],
-        correctAnswer: 'B,C',
-        points: 2,
-      },
-      {
-        prompt: 'In Canada, the universal emergency number for non-medical workplace incidents is',
-        kind: 'numeric' as const,
-        options: null,
-        correctAnswer: '911',
-        points: 1,
-      },
-      {
-        prompt: 'Lockout/tagout is required only when working on equipment that is more than 50 V.',
-        kind: 'true_false' as const,
-        options: null,
-        correctAnswer: 'false',
-        points: 1,
-      },
-      {
-        prompt: 'Briefly describe what "STOP work authority" means and when you would use it.',
-        kind: 'text' as const,
-        options: null,
-        correctAnswer: null,
-        points: 2,
-      },
-    ]
-    let order = 1
-    for (const q of basicQuestions) {
-      await tx.insert(trainingAssessmentTypeQuestions).values({
-        tenantId,
-        typeId: basic.id,
-        prompt: q.prompt,
-        kind: q.kind,
-        options: q.options,
-        correctAnswer: q.correctAnswer,
-        helpText: (q as any).helpText ?? null,
-        points: q.points,
-        entityOrder: order++,
-        mandatory: true,
-      })
-    }
-  }
-
-  console.log(
-    `  · training assessment types: seeded WHMIS quiz (${whmis?.id ? '5q' : 'failed'}) + Basic Safety Quiz (${basic?.id ? '8q' : 'failed'})`,
-  )
-}
-
-/**
- * Seed the four canonical PPE types (hard hat, harness, glasses, gloves) with
- * a representative inspection-criteria list each. Called from the main seed
- * after the tenant is in place; idempotent on PPE type name within the tenant.
- *
- * Returns the inserted type rows so the caller can chain item-level seeding.
- */
-export async function seedPpeTypesWithCriteria(
-  tx: any,
-  tenantId: string,
-): Promise<{ id: string; name: string }[]> {
-  const TYPES: {
-    name: string
-    category: string
-    sizing: string[] | null
-    isInspectable: boolean
-    everyDays?: number
-    criteria: {
-      kind: 'pre_use' | 'annual'
-      question: string
-      description?: string
-      severity: 'low' | 'medium' | 'high' | 'critical'
-      requiresPhoto?: boolean
-    }[]
-  }[] = [
-    {
-      name: 'Hard hat',
-      category: 'head',
-      sizing: ['S', 'M', 'L', 'XL'],
-      isInspectable: true,
-      everyDays: 30,
-      criteria: [
-        {
-          kind: 'pre_use',
-          question: 'Shell free of cracks, gouges, or sun damage?',
-          description:
-            'Inspect the entire outer shell for stress cracks, deep gouges, or chalky UV degradation.',
-          severity: 'high',
-          requiresPhoto: true,
-        },
-        {
-          kind: 'pre_use',
-          question: 'Suspension straps and crown intact, properly adjusted?',
-          severity: 'medium',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Chinstrap (if equipped) operates correctly?',
-          severity: 'low',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Date of manufacture within 5-year service life?',
-          description:
-            'Locate the inside-shell DOM stamp and confirm the helmet is still in service window.',
-          severity: 'critical',
-        },
-        {
-          kind: 'annual',
-          question: 'Manufacturer-recommended pressure / drop test passed?',
-          severity: 'critical',
-          requiresPhoto: true,
-        },
-      ],
-    },
-    {
-      name: 'Full-body harness',
-      category: 'fall',
-      sizing: ['S', 'M', 'L', 'XL'],
-      isInspectable: true,
-      everyDays: 30,
-      criteria: [
-        {
-          kind: 'pre_use',
-          question: 'Webbing free of cuts, fraying, or burns?',
-          description:
-            'Flex the webbing into an inverted U and look for surface damage every 30 cm.',
-          severity: 'critical',
-          requiresPhoto: true,
-        },
-        {
-          kind: 'pre_use',
-          question: 'D-rings + buckles free of cracks, deformation, or corrosion?',
-          severity: 'critical',
-          requiresPhoto: true,
-        },
-        {
-          kind: 'pre_use',
-          question: 'Stitching intact (no cut, pulled, or loose threads)?',
-          severity: 'high',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Impact indicator on lanyard / SRL not deployed?',
-          severity: 'critical',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Labels legible and intact?',
-          severity: 'medium',
-        },
-        {
-          kind: 'annual',
-          question: 'Annual third-party inspection certificate within 12 months?',
-          severity: 'critical',
-          requiresPhoto: true,
-        },
-        {
-          kind: 'annual',
-          question: 'Webbing tensile sample tested if required by jurisdiction?',
-          severity: 'high',
-        },
-      ],
-    },
-    {
-      name: 'Safety glasses',
-      category: 'eye',
-      sizing: null,
-      isInspectable: true,
-      everyDays: 30,
-      criteria: [
-        {
-          kind: 'pre_use',
-          question: 'Lenses free of cracks, deep scratches, or pitting?',
-          severity: 'high',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Side shields intact and securely attached?',
-          severity: 'medium',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Frame / temples not bent or broken?',
-          severity: 'low',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Anti-fog / mirror coating still functional (no flaking)?',
-          severity: 'low',
-        },
-      ],
-    },
-    {
-      name: 'Cut-resistant gloves',
-      category: 'hand',
-      sizing: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
-      isInspectable: true,
-      everyDays: 30,
-      criteria: [
-        {
-          kind: 'pre_use',
-          question: 'Outer shell free of cuts, holes, or punctures?',
-          description: 'Pull gloves over your knuckles and inspect every finger pad.',
-          severity: 'high',
-          requiresPhoto: true,
-        },
-        {
-          kind: 'pre_use',
-          question: 'Stitching intact, no fingertips exposed?',
-          severity: 'medium',
-        },
-        {
-          kind: 'pre_use',
-          question: "Cut rating (e.g. ANSI A4) appropriate for today's task?",
-          severity: 'high',
-        },
-        {
-          kind: 'pre_use',
-          question: 'Cuff / wrist closure functioning correctly?',
-          severity: 'low',
-        },
-      ],
-    },
-  ]
-
-  const inserted: { id: string; name: string }[] = []
-  for (const t of TYPES) {
-    // Idempotency — skip if a type with this name already exists in the tenant.
-    const existing = await tx
-      .select()
-      .from(ppeTypes)
-      .where(and(eq(ppeTypes.tenantId, tenantId), eq(ppeTypes.name, t.name)))
-      .limit(1)
-    let typeRow = existing[0]
-    if (!typeRow) {
-      const rows = await tx
-        .insert(ppeTypes)
-        .values({
-          tenantId,
-          name: t.name,
-          category: t.category,
-          isInspectable: t.isInspectable,
-          sizingScheme: t.sizing,
-          inspectionSchedule: t.everyDays ? { everyDays: t.everyDays } : null,
-        })
-        .returning()
-      typeRow = rows[0]
-    }
-    if (!typeRow) continue
-    inserted.push({ id: typeRow.id, name: typeRow.name })
-
-    // Insert criteria — skipping any that already exist (matched on question
-    // text within type+kind) so repeated seeds are idempotent.
-    const existingCriteria = await tx
-      .select()
-      .from(ppeTypeInspectionCriteria)
-      .where(eq(ppeTypeInspectionCriteria.ppeTypeId, typeRow.id))
-    const seen = new Set(existingCriteria.map((c: any) => `${c.inspectionKind}::${c.question}`))
-
-    const byKindOrder = { pre_use: 1, annual: 1 }
-    for (const c of t.criteria) {
-      const key = `${c.kind}::${c.question}`
-      if (seen.has(key)) {
-        byKindOrder[c.kind]++
-        continue
-      }
-      await tx.insert(ppeTypeInspectionCriteria).values({
-        tenantId,
-        ppeTypeId: typeRow.id,
-        inspectionKind: c.kind,
-        question: c.question,
-        description: c.description ?? null,
-        severity: c.severity,
-        requiresPhoto: c.requiresPhoto ?? false,
-        entityOrder: byKindOrder[c.kind]++,
-      })
-    }
-  }
-
-  console.log(
-    `  · PPE types: ${inserted.length} seeded with criteria — ${inserted.map((i) => i.name).join(', ')}`,
-  )
-  return inserted
-}
-
-/**
  * Idempotently insert 3 sample pressure-test safe-distance records — covering
  * each governing method (NASA, ASME, Lloyd's) — for the given tenant. Skips if
  * any reference matching 'SD-SEED-%' already exists, so re-seeds are safe.
@@ -2995,114 +2136,23 @@ export async function seedSafeDistanceRecords(tx: any, tenantId: string): Promis
 }
 
 /**
- * Seed the incident taxonomy + hours-worked sample data:
- *   - 6 classifications (5 top-level + 1 nested example)
- *   - 6 injury types
- *   - 3 monthly hours-worked windows (last 3 months)
- * Also back-fills classification_id on the four seeded incidents so the
- * frequency / DART / OSHA-log reports render right out of the gate.
+ * DEMO incident data. The taxonomy itself is created by the shared
+ * `seedIncidentTaxonomy` in `./seed/incident-taxonomy` — the same function tenant
+ * provisioning calls — so the classification and injury-type sets have one source of
+ * truth and a production tenant gets the same catalogue the demo does.
+ *
+ * What stays here, and deliberately does NOT move into that module:
+ *   - injury types assigned to the demo injuries, keyed on hard-coded references;
+ *   - hours-worked windows with figures invented for a fictional crew;
+ *   - `classification_id` back-filled onto the demo incidents.
+ *
+ * Those are demo business records. Provisioning must never write them: fabricated
+ * hours would silently become a production tenant's TRIR denominator, and the
+ * back-fill would mutate incidents that provisioning has no business touching.
  */
-async function seedIncidentClassifications(tx: any, tenantId: string): Promise<void> {
-  // Classifications.  parentId is filled in a second pass once the roots
-  // exist; recordable flag drives the TRIR report.
-  const classificationSeed: {
-    name: string
-    code: string
-    description: string
-    isRecordable: number
-    parentName?: string
-  }[] = [
-    { name: 'Injury', code: 'INJ', description: 'Personal injury — recordable.', isRecordable: 1 },
-    { name: 'Illness', code: 'ILL', description: 'Occupational illness.', isRecordable: 1 },
-    { name: 'Near miss', code: 'NM', description: 'No injury; loss potential.', isRecordable: 0 },
-    {
-      name: 'Property damage',
-      code: 'PD',
-      description: 'Damage to equipment, vehicle, or infrastructure.',
-      isRecordable: 0,
-    },
-    {
-      name: 'Environmental',
-      code: 'ENV',
-      description: 'Spill / release / emission.',
-      isRecordable: 0,
-    },
-    {
-      name: 'Slip, trip & fall',
-      code: 'STF',
-      description: 'Sub-category of injury.',
-      isRecordable: 1,
-      parentName: 'Injury',
-    },
-  ]
-
-  const insertedById = new Map<string, string>()
-  let order = 10
-  for (const c of classificationSeed) {
-    if (c.parentName) continue
-    const [row] = await tx
-      .insert(incidentClassifications)
-      .values({
-        tenantId,
-        parentId: null,
-        name: c.name,
-        code: c.code,
-        description: c.description,
-        isRecordable: c.isRecordable,
-        sortOrder: order,
-      })
-      .returning({ id: incidentClassifications.id })
-    if (row) insertedById.set(c.name, row.id)
-    order += 10
-  }
-  // Children
-  for (const c of classificationSeed) {
-    if (!c.parentName) continue
-    const parentId = insertedById.get(c.parentName) ?? null
-    const [row] = await tx
-      .insert(incidentClassifications)
-      .values({
-        tenantId,
-        parentId,
-        name: c.name,
-        code: c.code,
-        description: c.description,
-        isRecordable: c.isRecordable,
-        sortOrder: order,
-      })
-      .returning({ id: incidentClassifications.id })
-    if (row) insertedById.set(c.name, row.id)
-    order += 10
-  }
-
-  // Injury types
-  const injuryTypeSeed: { name: string; oshaCode: string; description: string }[] = [
-    { name: 'Laceration', oshaCode: 'CUT', description: 'Cut or tear of skin.' },
-    {
-      name: 'Contusion / bruise',
-      oshaCode: 'CON',
-      description: 'Blunt trauma without skin break.',
-    },
-    { name: 'Strain / sprain', oshaCode: 'STR', description: 'Soft-tissue stretch or tear.' },
-    { name: 'Fracture', oshaCode: 'FRA', description: 'Bone break.' },
-    { name: 'Burn — thermal', oshaCode: 'BRN', description: 'Heat-source burn.' },
-    { name: 'Chemical exposure', oshaCode: 'CHM', description: 'Skin or inhalation exposure.' },
-  ]
-  const injuryTypeIdsByName = new Map<string, string>()
-  for (let i = 0; i < injuryTypeSeed.length; i++) {
-    const t = injuryTypeSeed[i]!
-    const [row] = await tx
-      .insert(incidentInjuryTypes)
-      .values({
-        tenantId,
-        name: t.name,
-        oshaCode: t.oshaCode,
-        description: t.description,
-        sortOrder: (i + 1) * 10,
-      })
-      .returning({ id: incidentInjuryTypes.id })
-    if (row) injuryTypeIdsByName.set(t.name, row.id)
-  }
+async function seedIncidentDemoData(tx: any, tenantId: string): Promise<void> {
+  const taxonomy = await seedIncidentTaxonomy(tx, tenantId)
+  const { classificationsByName, injuryTypesByName } = taxonomy
 
   const seededInjuries = await tx
     .select({ id: incidentInjuries.id, reference: incidents.reference })
@@ -3123,7 +2173,7 @@ async function seedIncidentClassifications(tx: any, tenantId: string): Promise<v
   for (const injury of seededInjuries) {
     const typeNames = typeNamesByReference[injury.reference] ?? []
     const injuryTypeIds = typeNames
-      .map((name) => injuryTypeIdsByName.get(name))
+      .map((name) => injuryTypesByName.get(name))
       .filter((id): id is string => Boolean(id))
     if (injuryTypeIds.length === 0) continue
     await tx.insert(incidentInjuryTypeAssignments).values(
@@ -3158,18 +2208,18 @@ async function seedIncidentClassifications(tx: any, tenantId: string): Promise<v
     })
   }
 
-  // Back-fill classification_id on the four seeded incidents so the
-  // recordable rollup has structured data immediately.
+  // Back-fill classification_id on the seeded incidents so the frequency /
+  // DART / OSHA-log reports render right out of the gate.
   const seededIncidents = await tx
     .select({ id: incidents.id, reference: incidents.reference, type: incidents.type })
     .from(incidents)
     .where(eq(incidents.tenantId, tenantId))
   const mapByType: Record<string, string | undefined> = {
-    injury: insertedById.get('Injury'),
-    illness: insertedById.get('Illness'),
-    near_miss: insertedById.get('Near miss'),
-    property_damage: insertedById.get('Property damage'),
-    environmental: insertedById.get('Environmental'),
+    injury: classificationsByName.get('Injury'),
+    illness: classificationsByName.get('Illness'),
+    near_miss: classificationsByName.get('Near miss'),
+    property_damage: classificationsByName.get('Property damage'),
+    environmental: classificationsByName.get('Environmental'),
   }
   for (const inc of seededIncidents) {
     const cId = mapByType[inc.type as keyof typeof mapByType]
@@ -3178,7 +2228,12 @@ async function seedIncidentClassifications(tx: any, tenantId: string): Promise<v
   }
 
   console.log(
-    `  · incident taxonomy: ${classificationSeed.length} classifications, ${injuryTypeSeed.length} injury types, ${injuryTypeAssignmentsSeeded} injury-type assignments, 3 hours-worked windows, ${seededIncidents.length} incidents back-filled`,
+    `  · incident taxonomy: ${INCIDENT_CLASSIFICATION_SEED.length} classifications, ` +
+      `${INCIDENT_INJURY_TYPE_SEED.length} injury types, ` +
+      `${injuryTypeAssignmentsSeeded} injury-type assignments, ` +
+      `3 hours-worked windows, ${seededIncidents.length} incidents back-filled ` +
+      `(${taxonomy.inserted.classifications} classifications + ` +
+      `${taxonomy.inserted.injuryTypes} injury types inserted)`,
   )
 }
 
@@ -3216,32 +2271,13 @@ export async function seedPeopleGroupsAndTitles(tx: any, tenantId: string): Prom
   const findByName = (last: string) => peopleRows.find((p: any) => p.lastName === last)
 
   // --- Groups (4) ----------------------------------------------------------
-  const groupSeed = [
-    {
-      name: 'JHSC Members',
-      description: 'Joint Health & Safety Committee members for monthly inspections + meetings.',
-      color: '#0f766e',
-    },
-    {
-      name: 'First Aid Responders',
-      description: 'Workers certified to provide on-site first aid (SFA-CPR-C minimum).',
-      color: '#dc2626',
-    },
-    {
-      name: 'Fire Wardens',
-      description: 'Designated muster-point leaders during evacuation drills.',
-      color: '#ea580c',
-    },
-    {
-      name: 'Confined-Space Entrants',
-      description: 'Cleared for permit-required confined-space entry duties.',
-      color: '#7c3aed',
-    },
-  ] as const
+  // The definitions come from the shared reference seeder; memberships stay
+  // demo-only and are distributed below.
+  await seedPersonGroups(tx, tenantId)
   const insertedGroups = await tx
-    .insert(personGroups)
-    .values(groupSeed.map((g) => ({ tenantId, ...g })))
-    .returning()
+    .select()
+    .from(personGroups)
+    .where(eq(personGroups.tenantId, tenantId))
 
   // Distribute groups among the first ~half of the workforce
   const groupMembershipRows: { tenantId: string; groupId: string; personId: string }[] = []
@@ -3470,352 +2506,6 @@ export async function seedPeopleGroupsAndTitles(tx: any, tenantId: string): Prom
 
   console.log(
     `  · people taxonomy: ${insertedGroups.length} groups (${groupMembershipRows.length} memberships), ${insertedTitles.length} titles (${titleAssignmentRows.length} primary assignments, ${insertedTasks.length} job-description tasks, ${ackRows.length} sample acknowledgements)`,
-  )
-}
-
-// HazID library seed — the build agent declared the call but forgot to ship
-// the function body. This adds 5 hazard types, 12 hazards, 3 hazard sets, 8
-// tasks, and 2 assessment types (one with all sections, one minimal). All
-// idempotent via a slug-based existence check.
-export async function seedHazidLibraries(tx: any, tenantId: string): Promise<void> {
-  const existing = await tx
-    .select({ id: hazidHazardTypes.id })
-    .from(hazidHazardTypes)
-    .where(sql`${hazidHazardTypes.tenantId} = ${tenantId}`)
-  if (existing.length > 0) {
-    console.log(`  · hazid libraries: ${existing.length} hazard types already present, skipping`)
-    return
-  }
-
-  const typeRows = await tx
-    .insert(hazidHazardTypes)
-    .values([
-      { tenantId, name: 'Physical', color: '#ef4444' },
-      { tenantId, name: 'Chemical', color: '#a855f7' },
-      { tenantId, name: 'Biological', color: '#22c55e' },
-      { tenantId, name: 'Ergonomic', color: '#0ea5e9' },
-      { tenantId, name: 'Environmental', color: '#f59e0b' },
-    ])
-    .returning({ id: hazidHazardTypes.id, name: hazidHazardTypes.name })
-
-  const byName: Record<string, string> = {}
-  for (const r of typeRows) byName[r.name] = r.id
-
-  const hazardRows = await tx
-    .insert(hazidHazards)
-    .values([
-      {
-        tenantId,
-        name: 'Slip / trip',
-        hazardTypeId: byName['Physical'],
-        standardControls: 'Housekeeping; remove debris; mark wet floors.',
-      },
-      {
-        tenantId,
-        name: 'Falling object',
-        hazardTypeId: byName['Physical'],
-        standardControls: 'Toe-boards; hard hats; secure tools at height.',
-      },
-      {
-        tenantId,
-        name: 'Pinch point',
-        hazardTypeId: byName['Physical'],
-        standardControls: 'LOTO; guard installed; awareness training.',
-      },
-      {
-        tenantId,
-        name: 'Sharp edges',
-        hazardTypeId: byName['Physical'],
-        standardControls: 'Cut-resistant gloves; deburr; storage cages.',
-      },
-      {
-        tenantId,
-        name: 'Solvent exposure',
-        hazardTypeId: byName['Chemical'],
-        standardControls: 'Local exhaust; respirator per SDS; eye-wash station.',
-      },
-      {
-        tenantId,
-        name: 'Welding fumes',
-        hazardTypeId: byName['Chemical'],
-        standardControls: 'Fume extractor; PAPR for stainless/galv; SDS posted.',
-      },
-      {
-        tenantId,
-        name: 'Biohazard (bodily fluid)',
-        hazardTypeId: byName['Biological'],
-        standardControls: 'Universal precautions; disposable nitrile; biohazard kit.',
-      },
-      {
-        tenantId,
-        name: 'Heavy lifting',
-        hazardTypeId: byName['Ergonomic'],
-        standardControls: 'Mechanical aid; team lift > 25kg; rotation.',
-      },
-      {
-        tenantId,
-        name: 'Repetitive motion',
-        hazardTypeId: byName['Ergonomic'],
-        standardControls: 'Job rotation; ergonomic tooling; stretching protocol.',
-      },
-      {
-        tenantId,
-        name: 'Heat stress',
-        hazardTypeId: byName['Environmental'],
-        standardControls: 'Hydration station; mandated breaks; shaded rest area.',
-      },
-      {
-        tenantId,
-        name: 'Cold exposure',
-        hazardTypeId: byName['Environmental'],
-        standardControls: 'Insulated PPE; warming hut; buddy system.',
-      },
-      {
-        tenantId,
-        name: 'Noise > 85 dBA',
-        hazardTypeId: byName['Physical'],
-        standardControls: 'Hearing protection mandatory; audiometric testing.',
-      },
-    ])
-    .returning({ id: hazidHazards.id, name: hazidHazards.name })
-
-  // Hazard sets — pre-curated groupings
-  const hazardSets = await tx
-    .insert(hazidHazardSets)
-    .values([
-      {
-        tenantId,
-        name: 'Confined space entry',
-        hazardIds: hazardRows
-          .filter((h: any) => /slip|pinch|solvent|biohaz/i.test(h.name))
-          .map((h: any) => h.id),
-      },
-      {
-        tenantId,
-        name: 'Outdoor work — summer',
-        hazardIds: hazardRows
-          .filter((h: any) => /heat|slip|repetitive|fall/i.test(h.name))
-          .map((h: any) => h.id),
-      },
-      {
-        tenantId,
-        name: 'Welding / hot work',
-        hazardIds: hazardRows
-          .filter((h: any) => /weld|sharp|noise|fall/i.test(h.name))
-          .map((h: any) => h.id),
-      },
-    ])
-    .returning({ id: hazidHazardSets.id, name: hazidHazardSets.name })
-  const hazardSetByName = new Map(hazardSets.map((s: any) => [s.name, s.id] as const))
-
-  // Task library
-  await tx.insert(hazidTasks).values([
-    {
-      tenantId,
-      name: 'Set up barricades',
-      description: 'Establish barrier perimeter before work begins.',
-    },
-    {
-      tenantId,
-      name: 'Lock out / tag out',
-      description: 'Isolate energy sources, verify zero state.',
-    },
-    {
-      tenantId,
-      name: 'Pre-use inspection',
-      description: 'Visual + functional inspection of every tool/PPE.',
-    },
-    { tenantId, name: 'Atmospheric test', description: 'Verify O₂ / LEL / H₂S / CO before entry.' },
-    {
-      tenantId,
-      name: 'Rigging setup',
-      description: 'Inspect slings, check WLL, verify anchor points.',
-    },
-    {
-      tenantId,
-      name: 'Hot work permit',
-      description: 'Verify fire watch + extinguisher + clear combustibles.',
-    },
-    {
-      tenantId,
-      name: 'Don PPE',
-      description: 'Confirm all crew has required PPE before entering zone.',
-    },
-    {
-      tenantId,
-      name: 'Tailboard meeting',
-      description: 'Review JSA with crew; confirm understanding.',
-    },
-  ])
-
-  const embeddedAppTemplates = await seedHazardAssessmentAppTemplates(tx, tenantId)
-
-  // Assessment types — native JSHA structure plus embedded builder apps for
-  // specialty procedures that need their own structure/workflow.
-  const [fullType, minimalType, confinedType, arcFlashType] = await tx
-    .insert(hazidAssessmentTypes)
-    .values([
-      {
-        tenantId,
-        name: 'Standard JSHA',
-        description: 'Task-based Job Safety Hazard Analysis with PPE and questions.',
-        style: 'task_based',
-        hasPPE: true,
-        hasQuestions: true,
-      },
-      {
-        tenantId,
-        name: 'Quick FLRA',
-        description: 'Hazard-based Field-Level Risk Assessment — minimal sections, fast to fill.',
-        style: 'hazard_based',
-        hasPPE: true,
-        hasQuestions: false,
-        defaultHazardSetId: hazardSetByName.get('Outdoor work — summer') ?? null,
-      },
-      {
-        tenantId,
-        name: 'Confined Space JSHA',
-        description:
-          'Hazard-based JSHA plus an embedded confined-space entry app for readings, entry log, rescue planning, and sign-off.',
-        style: 'hazard_based',
-        hasPPE: true,
-        hasQuestions: true,
-        defaultHazardSetId: hazardSetByName.get('Confined space entry') ?? null,
-      },
-      {
-        tenantId,
-        name: 'Arc Flash JSHA',
-        description:
-          'Hazard-based JSHA plus an embedded arc-flash work-plan app for electrical boundaries, PPE, controls, and qualified sign-off.',
-        style: 'hazard_based',
-        hasPPE: true,
-        hasQuestions: true,
-        defaultHazardSetId: hazardSetByName.get('Welding / hot work') ?? null,
-      },
-    ])
-    .returning({ id: hazidAssessmentTypes.id, name: hazidAssessmentTypes.name })
-
-  await tx.insert(hazidAssessmentTypeApps).values([
-    {
-      tenantId,
-      typeId: confinedType.id,
-      templateId: embeddedAppTemplates.confinedSpaceTemplateId,
-      key: 'confined_space_entry_plan',
-      label: 'Confined-space entry app',
-      description: 'Readings, entry log, rescue planning, and entry sign-off.',
-      required: true,
-      autoCreate: true,
-      entityOrder: 1,
-      config: { replacesNativeSection: 'confined_space' },
-    },
-    {
-      tenantId,
-      typeId: arcFlashType.id,
-      templateId: embeddedAppTemplates.arcFlashTemplateId,
-      key: 'arc_flash_work_plan',
-      label: 'Arc-flash work-plan app',
-      description: 'Electrical study details, controls, PPE, boundaries, and sign-off.',
-      required: true,
-      autoCreate: true,
-      entityOrder: 1,
-      config: { replacesNativeSection: 'arc_flash' },
-    },
-  ])
-
-  const basePpe: Array<[string, boolean]> = [
-    ['Hard hat', true],
-    ['Safety glasses', true],
-    ['Steel-toe boots', true],
-    ['Hi-vis vest', true],
-    ['Gloves (task-specific)', false],
-    ['Hearing protection', false],
-  ]
-  const ppeRows = [fullType, minimalType, confinedType, arcFlashType].flatMap((type: any) =>
-    basePpe.map(([name, required], i) => ({
-      tenantId,
-      typeId: type.id,
-      name,
-      required,
-      entityOrder: i + 1,
-    })),
-  )
-  ppeRows.push(
-    {
-      tenantId,
-      typeId: fullType.id,
-      name: 'Fall harness (if WAH)',
-      required: false,
-      entityOrder: 7,
-    },
-    {
-      tenantId,
-      typeId: confinedType.id,
-      name: 'Respiratory protection (if required by atmosphere/SDS)',
-      required: false,
-      entityOrder: 7,
-    },
-    {
-      tenantId,
-      typeId: confinedType.id,
-      name: 'Retrieval harness / lifeline',
-      required: true,
-      entityOrder: 8,
-    },
-    {
-      tenantId,
-      typeId: arcFlashType.id,
-      name: 'Arc-rated FR clothing',
-      required: true,
-      entityOrder: 7,
-    },
-    {
-      tenantId,
-      typeId: arcFlashType.id,
-      name: 'Voltage-rated gloves with leather protectors',
-      required: true,
-      entityOrder: 8,
-    },
-  )
-  await tx.insert(hazidAssessmentTypePPE).values(ppeRows)
-
-  const baseQuestions = [
-    'Have all crew members reviewed this JSHA?',
-    'Have all hazards been assessed and controlled?',
-    'Is the work area clear and properly barricaded?',
-    'Are emergency procedures known to all crew?',
-  ]
-  const questionRows = [fullType, confinedType, arcFlashType].flatMap((type: any) =>
-    baseQuestions.map((question, i) => ({
-      tenantId,
-      typeId: type.id,
-      question,
-      questionType: 'yes_no' as const,
-      requiresYes: true,
-      entityOrder: i + 1,
-    })),
-  )
-  questionRows.push(
-    {
-      tenantId,
-      typeId: confinedType.id,
-      question: 'Has the confined-space entry app been completed before entry?',
-      questionType: 'yes_no' as const,
-      requiresYes: true,
-      entityOrder: 5,
-    },
-    {
-      tenantId,
-      typeId: arcFlashType.id,
-      question: 'Has the arc-flash work-plan app been completed before electrical work?',
-      questionType: 'yes_no' as const,
-      requiresYes: true,
-      entityOrder: 5,
-    },
-  )
-  await tx.insert(hazidAssessmentTypeQuestions).values(questionRows)
-
-  console.log(
-    `  · hazid libraries: ${typeRows.length} hazard types, ${hazardRows.length} hazards, 3 sets, 8 tasks, 4 assessment types, 2 embedded apps`,
   )
 }
 

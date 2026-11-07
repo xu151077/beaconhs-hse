@@ -2,6 +2,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { sql } from 'drizzle-orm'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { RLS_POLICY_SQL, TENANT_SCOPED_TABLES } from './rls'
 import { REPORT_VIEWS_SQL } from './views'
@@ -15,7 +16,22 @@ import {
 
 type MigrationDatabase = ReturnType<typeof drizzle>
 
-const MIGRATIONS_FOLDER = fileURLToPath(new URL('../drizzle', import.meta.url))
+/**
+ * Locate the Drizzle migration directory for whatever process is running.
+ *
+ * The source layout (`packages.db` directory beside this module, i.e.
+ * `packages/db/drizzle`) is the canonical location and is what `tsx` runs see.
+ * A bundled production deploy (`APP_ROLE=migrate`) runs from
+ * `apps/ops-migrate/dist/migrate.js`, where the source tree does not exist —
+ * the packaged `@beaconhs/db` dependency inside that target's `node_modules`
+ * ships the same directory, so it is the image-layout location.
+ */
+export function resolveMigrationsDir(): string {
+  const packaged = fileURLToPath(new URL('../node_modules/@beaconhs/db/drizzle', import.meta.url))
+  if (existsSync(`${packaged}/meta/_journal.json`)) return packaged
+  return fileURLToPath(new URL('../drizzle', import.meta.url))
+}
+const MIGRATIONS_FOLDER = resolveMigrationsDir()
 const MIGRATION_FILES = readMigrationFiles(MIGRATIONS_FOLDER)
 const MIGRATION_CUTOVER_AT = 1783884000000
 const ROLE_NAME = /^[a-z_][a-z0-9_]{0,62}$/
@@ -410,11 +426,15 @@ async function applyRuntimeGrants(
       `GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${backup}`,
       `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM ${backup}`,
       `GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO ${backup}`,
-      `GRANT USAGE ON SCHEMA drizzle TO ${backup}`,
-      `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA drizzle FROM ${backup}`,
-      `GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO ${backup}`,
-      `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA drizzle FROM ${backup}`,
-      `GRANT SELECT ON ALL SEQUENCES IN SCHEMA drizzle TO ${backup}`,
+      // Runtime roles get READ-ONLY access to the migration ledger: readiness
+      // compares it with the journal baked into the running image so an old build
+      // cannot report itself ready against a schema it does not understand
+      // (Phase EA-9). SELECT on the ledger reveals only migration tags/timestamps.
+      `GRANT USAGE ON SCHEMA drizzle TO ${runtime}, ${maintenance}, ${backup}`,
+      `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA drizzle FROM ${runtime}, ${maintenance}, ${backup}`,
+      `GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO ${runtime}, ${maintenance}, ${backup}`,
+      `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA drizzle FROM ${runtime}, ${maintenance}, ${backup}`,
+      `GRANT SELECT ON ALL SEQUENCES IN SCHEMA drizzle TO ${runtime}, ${maintenance}, ${backup}`,
       `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${runtime}, ${maintenance}`,
       `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${runtime}, ${maintenance}`,
       `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA public GRANT SELECT ON TABLES TO ${backup}`,
@@ -555,7 +575,13 @@ async function main() {
   }
 }
 
+// Entry point. migrate.ts is a CLI that nothing imports: `pnpm db:migrate` (via
+// tsx) and the apps/ops-migrate bundle both execute it directly, so main() runs
+// at module scope by design. A failed migration must exit non-zero and promptly —
+// deploy automation that read exit 0 would treat a broken migration as a
+// successful deploy — so the error is printed (flushed on Linux) and the process
+// force-exits.
 main().catch((err) => {
   console.error(err)
-  process.exitCode = 1
+  process.exit(1)
 })

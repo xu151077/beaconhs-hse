@@ -22,7 +22,7 @@ import {
   Select,
   Textarea,
 } from '@beaconhs/ui'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { confirmDialog } from '@/lib/confirm'
 import { SlideDeckEditor } from '../../_editor/slide-deck-editor'
@@ -212,6 +212,7 @@ export function ContentItemEditor({ item, usedCount }: { item: Item; usedCount: 
                   <FileUploader
                     requestUploadAction={requestUpload}
                     finalizeUploadAction={finalizeUpload}
+                    requestMultipartPartAction={requestMultipartPartUrl}
                     kind="video"
                     accept=".mp4,.mov,.webm"
                     onUploaded={(f) => {
@@ -244,6 +245,7 @@ export function ContentItemEditor({ item, usedCount }: { item: Item; usedCount: 
                   <FileUploader
                     requestUploadAction={requestUpload}
                     finalizeUploadAction={finalizeUpload}
+                    requestMultipartPartAction={requestMultipartPartUrl}
                     kind="document"
                     accept=".pdf,.docx,.doc,.pptx,.xlsx,.txt,.md"
                     onUploaded={(f) => {

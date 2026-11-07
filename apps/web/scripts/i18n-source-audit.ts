@@ -7,6 +7,7 @@ const SOURCE_ROOTS = [resolve(WEB_ROOT, 'src/app'), resolve(WEB_ROOT, 'src/compo
 
 const USER_FACING_ATTRIBUTES = new Set([
   'actionLabel',
+  'allLabel',
   'alt',
   'aria-label',
   'buttonLabel',

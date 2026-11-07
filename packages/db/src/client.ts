@@ -97,6 +97,24 @@ export async function executeParameterizedRows(
   return extractRows((await tx.execute(parameterizedSql(query, parameters))) as unknown)
 }
 
+/**
+ * Close every lazily-materialized database pool. Short-lived operator CLIs
+ * call this before returning so the process does not linger on idle pool
+ * handles: postgres-js keeps sockets open otherwise, delaying process exit by
+ * tens of seconds after the work is already done. Never throws, so teardown
+ * cannot mask the command's real result, and safe to call when no pool was
+ * ever created or no database is configured.
+ */
+export async function closeDatabaseConnections(): Promise<void> {
+  for (const database of [db, superDb]) {
+    try {
+      await database.$client.end()
+    } catch {
+      // Ignore: pool never created, or environment lacks database configuration.
+    }
+  }
+}
+
 function lazyDatabase(factory: () => Database): Database {
   let instance: Database | undefined
   const getInstance = () => (instance ??= factory())

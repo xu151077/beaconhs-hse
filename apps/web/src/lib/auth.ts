@@ -70,6 +70,45 @@ export async function getCurrentUserId(): Promise<string | null> {
 }
 
 /**
+ * The signed-in user's id, but only when that account is a platform
+ * super-admin.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM getRequestContext()
+ * ------------------------------------------------------
+ * `getRequestContext()` returns null while the platform has no tenant, by
+ * design: the app shell requires a tenant-bound RequestContext even for
+ * platform administration. The first-run setup flow therefore cannot use a
+ * RequestContext to authorize itself — there is no tenant to bind one to.
+ *
+ * This helper answers the narrower question the setup flow actually needs:
+ * "is the signed-in account the platform administrator?". It reads the
+ * `users` row on the BYPASSRLS pool (the `user` table is a global table with
+ * no RLS, but the pool is the same one the rest of the identity resolution
+ * uses) and checks the platform's EXISTING `isSuperAdmin` flag.
+ *
+ * It grants nothing and widens nothing: the flag is the same one
+ * `makeSuperAdminContext` and `can()` already honour, so a super-admin
+ * admitted here is exactly as privileged as one admitted anywhere else, and
+ * nobody else is admitted at all.
+ */
+export async function getSignedInSuperAdminId(): Promise<string | null> {
+  const userId = await getCurrentUserId()
+  if (!userId) return null
+  try {
+    return await withSuperAdmin(db, async (tx) => {
+      const [row] = await tx
+        .select({ id: users.id, isSuperAdmin: users.isSuperAdmin })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+      return row?.isSuperAdmin ? row.id : null
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
  * The real signed-in user's display name + email, straight from the Better-Auth
  * session. Unlike RequestContext (which carries the EFFECTIVE / impersonated
  * identity), this is always the actual account — used by the top-bar account menu.

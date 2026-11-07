@@ -15,13 +15,14 @@ import {
   trainingRecords,
 } from '@beaconhs/db/schema'
 import { createWalletDesignDocument, renderDesignDocumentHtml } from '@beaconhs/design-studio'
-import { presignGet, resolveTenantLogoUrl } from '@beaconhs/storage'
+import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import { appBaseUrl } from '@/lib/app-base-url'
 import { resolveCourseCredentialOutput } from '@/lib/credential-designs'
 import { activeTenantPredicate } from '@/lib/active-tenant'
 import { isUuid } from '@/lib/list-params'
 import { EXPIRING_DAYS, isoDaysFromNow, standingFor, todayIsoDate } from '../../_format'
 import { factDay, PublicCardNotFound, PublicCardPage, verifyQrDataUrl } from '../../_card-page'
+import { storageObjectUrl } from '../../../../../../lib/storage-gateway'
 
 export const dynamic = 'force-dynamic'
 
@@ -96,12 +97,11 @@ export default async function VerifyPersonRecordPage({
       tenantId: data.tenant.id,
       logoUrl: data.tenant.branding.logoUrl,
       expiresInSeconds: 300,
+      buildUrl: storageObjectUrl,
     }),
     recipientFullName: `${data.person.firstName} ${data.person.lastName}`,
     recipientEmployeeNo: data.person.employeeNo,
-    recipientPhotoUrl: data.photoKey
-      ? await presignGet({ key: data.photoKey, expiresInSeconds: 300 })
-      : null,
+    recipientPhotoUrl: data.photoKey ? await storageObjectUrl(data.photoKey) : null,
     credentialName: data.course.name,
     credentialCode: data.course.code,
     completedOn: data.record.completedOn,

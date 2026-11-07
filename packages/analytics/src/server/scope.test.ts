@@ -477,6 +477,13 @@ describe('analytics row-scope rules', () => {
       // counters, caches and internal queues
       'reference_counters',
       'storage_object_deletion_outbox',
+      // Storage write-freeze state (Phase 6Q stage E1). Authorization/operational
+      // state for a tenant, same class as the deletion outbox — it says whether a
+      // migration is in progress, which is not reportable workforce data and must
+      // never reach the report or insight surface.
+      'storage_freeze',
+      'in_flight_writes',
+      'storage_write_arms',
       'attachment_upload_reservations',
       // IAM internals — authorization state is not reportable data
       'user_permission_overrides',

@@ -69,6 +69,12 @@ const PDF_COPY: Record<
     complianceScore: 'Puntuación de cumplimiento',
     details: 'Detalles',
   },
+  zh: {
+    recordReport: '记录报告',
+    complianceStatus: '合规状态',
+    complianceScore: '合规得分',
+    details: '详细信息',
+  },
 }
 
 function esc(s: string): string {

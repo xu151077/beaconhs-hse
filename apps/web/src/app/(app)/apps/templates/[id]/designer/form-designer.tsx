@@ -676,7 +676,7 @@ export function FormDesigner({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:px-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex min-w-0 items-center gap-3">
           <SmartBackLink
             href="/apps"
@@ -705,7 +705,7 @@ export function FormDesigner({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
             <Globe2 size={14} />
             <Select
@@ -755,9 +755,9 @@ export function FormDesigner({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         {/* LEFT 1/3 — Overview / Build / Assignments / Permissions */}
-        <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <aside className="flex max-h-[45vh] w-full shrink-0 flex-col overflow-y-auto border-b border-slate-200 bg-white lg:max-h-none lg:w-72 lg:overflow-visible lg:border-r lg:border-b-0 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex shrink-0 items-center gap-0.5 border-b border-slate-200 px-2 py-1.5 dark:border-slate-800">
             <LeftTab
               active={leftTab === 'overview'}
@@ -884,8 +884,8 @@ export function FormDesigner({
         </aside>
 
         {/* RIGHT 2/3 — build surface ⟷ flows */}
-        <div className="flex min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950">
-          <div className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex min-h-[60vh] min-w-0 flex-1 flex-col bg-slate-50 lg:min-h-0 dark:bg-slate-950">
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
             <SurfaceTab
               active={surface === 'build'}
               onClick={() => setSurface('build')}

@@ -16,12 +16,13 @@ import {
   trainingSkillAssignments,
   trainingSkillTypes,
 } from '@beaconhs/db/schema'
-import { presignGet, resolveTenantLogoUrl } from '@beaconhs/storage'
+import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import { RawImage } from '@/components/raw-image'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { activeTenantPredicate } from '@/lib/active-tenant'
 import { EXPIRING_DAYS, formatDay, isoDaysFromNow, standingFor, todayIsoDate } from './_format'
 import { TranscriptList, type TranscriptItem } from './_transcript-list'
+import { storageObjectUrl } from '../../../../lib/storage-gateway'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,14 +113,13 @@ async function resolveToken(token: string): Promise<Resolved | null> {
       jobTitle: row.jobTitle,
       departmentName: row.departmentName,
       personActive: row.person.status === 'active',
-      photoUrl: row.photoKey
-        ? await presignGet({ key: row.photoKey, expiresInSeconds: 300 })
-        : null,
+      photoUrl: row.photoKey ? await storageObjectUrl(row.photoKey) : null,
       tenantName: row.tenant.name,
       tenantLogoUrl: await resolveTenantLogoUrl({
         tenantId: row.tenant.id,
         logoUrl: row.tenant.branding.logoUrl,
         expiresInSeconds: 300,
+        buildUrl: storageObjectUrl,
       }),
       credentials: records,
       skills,

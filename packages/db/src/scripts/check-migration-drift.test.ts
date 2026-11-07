@@ -332,11 +332,20 @@ describe('end-to-end against the real generator', () => {
       // So a real drift is now caught WITHOUT a filename collision, and a
       // contributor never has to hand-rename the generated file.
       //
-      // The head has since advanced: `0044_inspection_type_fk_snapshot` is a
-      // statement-free reconciliation that only recorded the pre-existing
-      // `equipment_inspection_schedules_tenant_inspection_type_fk`, so the next
-      // free index is now `0045`.
-      expect(indexPrefix(newSql[0]!)).toBe('0045')
+      // The head has since advanced twice: `0044_inspection_type_fk_snapshot` is
+      // a statement-free reconciliation that only recorded the pre-existing
+      // `equipment_inspection_schedules_tenant_inspection_type_fk`, and
+      // `0045_add_zh_locale` widened the locale CHECK allow-lists. The next free
+      // index is therefore `0046`.
+      //
+      // Derived from the journal rather than hard-coded, so adding a migration
+      // does not silently break this assertion — it would instead fail loudly
+      // here if the generator and the journal ever disagreed about the head.
+      const journal = JSON.parse(
+        readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url), 'utf8'),
+      ) as { entries: Array<{ idx: number }> }
+      const nextFreeIndex = String(journal.entries.at(-1)!.idx + 1).padStart(4, '0')
+      expect(indexPrefix(newSql[0]!)).toBe(nextFreeIndex)
       expect(verdict.status === 'drift' && verdict.collisions).toEqual([])
     } finally {
       rmSync(work, { recursive: true, force: true })

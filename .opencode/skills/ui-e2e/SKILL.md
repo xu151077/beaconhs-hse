@@ -94,7 +94,22 @@ is intended.
 - Distinguish **RUNTIME VERIFIED** (driven in a real browser) from
   **STATIC VERIFIED** (read in code). Never upgrade one to the other.
 
-## Environment limits
+## Environment limits and tooling stability
+
+This host runs Playwright through the OpenCode v2 MCP server, **not** a Playwright
+test runner. The MCP server forwards Chromium events without try/catch in some
+paths, so a synchronous throw inside a `browser_run_code_unsafe` event listener
+(notably `page.on('requestfailed', ...)`) will exit the server with code 1 — and
+OpenCode v2.0.30 does **not** restart a crashed local MCP server, taking every
+`playwright_*` tool offline for the rest of the session. Phase AM recovered
+this with a crash guard, but the listener still dies for that one call. Therefore:
+
+- Always wrap listener bodies in `try/catch`.
+- Prefer async rejection handlers over sync throws (the MCP converts a rejected
+  promise from a `browser_run_code_unsafe` listener into a normal tool error).
+- Never treat "server disappeared" as expected — capture the stderr marker
+  `[beaconhs:playwright-mcp-guard]`. See
+  `docs/phase-6u-b3-am-playwright-repair-report.md`.
 
 This host has ~3.4 GB RAM. Compiling Next.js pages concurrently has
 OOM-killed the dev server before. Compile one route at a time, and prefer a

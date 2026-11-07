@@ -76,14 +76,16 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
   const font =
     design.typeface === 'technical'
       ? {
-          body: "'Archivo', 'Helvetica Neue', Arial, sans-serif",
+          body: "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
           display: "ui-monospace, 'SF Mono', Menlo, monospace",
-          recipient: "'Archivo', 'Helvetica Neue', Arial, sans-serif",
+          recipient:
+            "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
         }
       : design.typeface === 'modern'
         ? {
-            body: "'Archivo', 'Helvetica Neue', Arial, sans-serif",
-            display: "'Archivo', 'Helvetica Neue', Arial, sans-serif",
+            body: "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
+            display:
+              "'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
             recipient: "'Cormorant Garamond', Georgia, 'Times New Roman', serif",
           }
         : {
@@ -219,7 +221,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .brand { display: flex; flex-direction: column; align-items: center; gap: 5px; }
     .brand img.logo { max-height: 0.48in; max-width: 2.6in; object-fit: contain; }
     .tenant-name {
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 12pt;
       font-weight: 600;
       letter-spacing: 0.32em;
@@ -246,7 +248,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
       display: flex;
       align-items: center;
       gap: 14px;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 10.5pt;
       font-weight: 500;
       letter-spacing: 0.46em;
@@ -270,7 +272,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .recipient-rule .dot { width: 4px; height: 4px; background: ${accent}; transform: rotate(45deg); }
     .employee-no {
       margin-top: 0.055in;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 7.5pt;
       font-weight: 500;
       letter-spacing: 0.26em;
@@ -289,7 +291,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     }
     .credential-meta {
       margin-top: 0.06in;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 8pt;
       font-weight: 500;
       letter-spacing: 0.18em;
@@ -307,7 +309,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .meta-cell { padding: 0 0.34in; }
     .meta-cell + .meta-cell { border-left: 0.8px solid ${rgba(ink, 0.28)}; }
     .meta-label {
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 7.5pt;
       font-weight: 600;
       letter-spacing: 0.22em;
@@ -328,7 +330,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .sig-line { border-bottom: 1px solid ${rgba(ink, 0.75)}; height: 0.26in; }
     .sig-label {
       margin-top: 5px;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 7.5pt;
       font-weight: 500;
       letter-spacing: 0.16em;
@@ -352,7 +354,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .qr-corner img { width: 0.62in; height: 0.62in; display: block; margin: 0 auto; }
     .qr-corner .qr-label {
       margin-top: 3px;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 5.4pt;
       font-weight: 600;
       letter-spacing: 0.14em;
@@ -362,7 +364,7 @@ export function renderCertificateHtml(input: CertificateRenderInput): string {
     .microline {
       margin-top: 0.07in;
       text-align: center;
-      font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Archivo', 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
       font-size: 6.4pt;
       letter-spacing: 0.06em;
       color: ${rgba(ink, 0.55)};

@@ -15,7 +15,7 @@ import {
   documentVersions,
   documents,
 } from '@beaconhs/db/schema'
-import { presignExistingGet } from '@beaconhs/storage'
+import { storageObjectUrl } from '@/lib/storage-gateway'
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { documentReadFilter } from '@/lib/assistant/doc-access'
@@ -136,9 +136,7 @@ export async function getDocumentPdfUrl(
     if (!uploaded || uploaded.contentType !== 'application/pdf') {
       return { ok: false, error: 'The uploaded PDF version is invalid or missing.' }
     }
-    const url = await presignExistingGet({ key: uploaded.key, expiresInSeconds: 300 })
-    if (!url) return { ok: false, error: 'Uploaded PDF is missing from storage.' }
-    return { ok: true, url }
+    return { ok: true, url: storageObjectUrl(uploaded.key) }
   }
 
   // Authored document — the selected version's worker-rendered PDF.
@@ -160,9 +158,7 @@ export async function getDocumentPdfUrl(
       .limit(1),
   )
   if (!pdfAtt) return { ok: false, error: 'The rendered PDF is missing from storage.' }
-  const url = await presignExistingGet({ key: pdfAtt.key, expiresInSeconds: 300 })
-  if (!url) return { ok: false, error: 'The rendered PDF is missing from storage.' }
-  return { ok: true, url }
+  return { ok: true, url: storageObjectUrl(pdfAtt.key) }
 }
 
 // Edit all document "header" metadata from the manage page (incl. first-time fill-in).

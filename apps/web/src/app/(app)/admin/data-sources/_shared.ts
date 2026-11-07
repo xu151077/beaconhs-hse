@@ -78,4 +78,5 @@ const META_COLUMN_COPY: Record<AppLocale, { status: string; submittedAt: string;
   en: { status: 'Status', submittedAt: 'Submitted at', site: 'Site' },
   fr: { status: 'État', submittedAt: 'Soumis le', site: 'Site' },
   es: { status: 'Estado', submittedAt: 'Enviado el', site: 'Sitio' },
+  zh: { status: '状态', submittedAt: '提交时间', site: '项目现场' },
 }

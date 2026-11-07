@@ -15,7 +15,12 @@ function filesUnder(dir: string, suffix: string): string[] {
 describe('audited file downloads reject Link prefetch', () => {
   const routes = filesUnder(join(WEB_ROOT, 'app'), 'route.ts').filter((file) => {
     const source = readFileSync(file, 'utf8')
-    return source.includes('recordAudit') && /export async function GET\b/.test(source)
+    return (
+      source.includes('recordAudit') &&
+      (/export async function GET\b/.test(source) ||
+        /export const GET\b/.test(source) ||
+        /async function getHandler\b/.test(source))
+    )
   })
 
   it('covers every GET that writes an audit row', () => {

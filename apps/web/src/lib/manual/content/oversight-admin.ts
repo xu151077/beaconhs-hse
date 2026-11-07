@@ -912,6 +912,16 @@ Platform super-admins choose the product GitHub repository that receives in-app 
 
 The **Report an issue** button appears in the top bar for people who can use it, only after a repository and token are saved. AI must also be configured, because triage uses the workspace AI provider. Filed issues are generalized and personal data is removed first. See [Report an issue](/help/report-issue).
 
+## Publish the open-source link
+
+Platform super-admins set the public address of this system's source repository. It appears as a link at the bottom of every Dashboard, so everyone who uses the system can find the source. This is set once for the whole deployment; it is not per-tenant.
+
+1. Open **Platform**, then click **Open source**.
+2. Enter the **Repository URL** — for example the GitHub or GitLab address of the repository.
+3. Click **Save**.
+
+Only page addresses starting with **http://** or **https://** are accepted, and the address must not contain a user name or password. If the URL is blank, the link is hidden from the Dashboard. The link opens in a new tab.
+
 ## Configure the platform email provider
 
 Platform super-admins set the default provider used for sign-in links, invitations, password resets, and tenants without their own provider.
@@ -927,6 +937,8 @@ Platform super-admins set the default provider used for sign-in links, invitatio
 A successful test means the provider accepted the message. Check the inbox as well. Provider accounts can still suppress delivery when the sender or sending domain has not been verified. The global kill switch blocks test messages too. Platform tests are limited to five every ten minutes per administrator. Each tenant applies the same limit to its own test sends.
 
 For custom SMTP in a production deployment, use a public, externally resolvable DNS hostname and a valid TLS certificate that matches that hostname. BeaconHS blocks private, local, reserved, unresolvable, and IP-literal hosts. Leave **Port** blank to use 465 with **Use implicit TLS (port 465)** turned on, or 587 when it is off.
+
+  If something in a provider form is not accepted, a red message appears inside the form directly above the save button and nothing is saved. Read it and correct the field. Nothing is sent, and the saved configuration stays as it was.
 
 ## Configure a tenant email provider
 
@@ -1048,5 +1060,32 @@ This keeps admin-only tours away from field workers, and field tours away from o
 
 - After changing roles or auto-start, run **Preview** once to make sure the tour still makes sense for that audience.
 - If a page changed a lot, preview its tour — a step that points at something that moved will confuse people more than no tour at all.`,
+  },
+  {
+    slug: 'delete-apps-and-responses',
+    title: 'Delete an app or a response',
+    group: 'Administration',
+    iconKey: 'clipboard-check',
+    summary: 'Remove an app you no longer need, or one response, with the right permission.',
+    keywords: ['delete app', 'delete response', 'remove app', 'builder delete'],
+    body: `Deleting is a deliberate action, not a side effect. Apps (Builder templates) and single responses are removed separately, and each needs its own permission.
+
+## Delete an app
+
+1. Open [Apps](/apps).
+2. On the app card, click **Delete** and confirm.
+3. **Delete** only appears when your role has the **Delete templates** permission. If you cannot see it, ask a platform administrator.
+4. An app that still has responses or automations cannot be deleted. Delete the responses you no longer need, or remove its automations first, then delete the app.
+
+## Delete a response
+
+1. Open [Apps responses](/apps/responses).
+2. Click the bin button on the row, or open the response and click **Delete** in the header.
+3. This needs the **Delete responses** permission.
+4. A response that is compliance evidence for a scheduled obligation cannot be deleted. Retire it through the compliance process instead.
+
+## What deletion means
+
+Deletion is a soft delete. The app or response disappears from lists, reports and the sidebar, and its data stays in the database for audit. The audit log records who deleted it and when.`,
   },
 ]

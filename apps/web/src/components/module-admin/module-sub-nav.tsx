@@ -1,5 +1,7 @@
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
-// The single shared module sub-nav pill strip — replaces the ~10 bespoke
+// The single shared module sub-nav pill strip.
+// Wraps at every breakpoint: on a phone the pills used to scroll off-screen
+// (measured to 468px inside a 390px viewport), hiding the active tab. — replaces the ~10 bespoke
 // per-module *-sub-nav.tsx copies. Renders an optional back pill (admin pages
 // navigating up to the module home), the tabs, and — when the caller passes
 // `manageHref` (i.e. the viewer may administer) — a manager-only "Manage" pill.
@@ -31,7 +33,7 @@ export function ModuleSubNav({
   manageActive?: boolean
 }) {
   return (
-    <nav className="flex [scrollbar-width:none] flex-nowrap items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] sm:flex-wrap sm:overflow-x-visible [&::-webkit-scrollbar]:hidden">
+    <nav className="flex flex-wrap items-center gap-1.5">
       <GeneratedValue
         value={
           back ? (

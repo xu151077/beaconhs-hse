@@ -21,7 +21,6 @@ import { relations, sql } from 'drizzle-orm'
 import {
   boolean,
   check,
-  date,
   foreignKey,
   index,
   integer,
@@ -213,8 +212,6 @@ export const trainingEnrollments = pgTable(
     completionReviewedAt: timestamp('completion_reviewed_at', { withTimezone: true }),
     completionReviewedByTenantUserId: uuid('completion_reviewed_by_tenant_user_id'),
     completionReviewNote: text('completion_review_note'),
-    dueOn: date('due_on'),
-    expiresOn: date('expires_on'),
     // The training_record written when this enrollment completed (provenance).
     recordId: uuid('record_id'),
     ...timestamps,

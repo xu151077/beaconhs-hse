@@ -33,7 +33,7 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { spawnCorrectiveActionCore, spawnIncidentCore } from '@/app/(app)/apps/_lib/spawn-core'
 import { analyzePhotoAttachments } from '@/app/(app)/apps/_lib/analyze-photos'
@@ -47,6 +47,7 @@ import { buildRecordSummaryPdfJob } from '@/lib/flows/pdf-summary'
 import type { ExtraActionHelpers, FlowSubjectAdapter } from '@/lib/flows/types'
 import { isUuid } from '@/lib/list-params'
 import { materializeFormResponseEvidenceChange } from '@/lib/forms/form-response-evidence'
+import { storageObjectUrl } from '../../../../lib/storage-gateway'
 
 const SEVERITY_ORDER: Record<string, number> = { low: 1, medium: 2, high: 3 }
 
@@ -158,10 +159,7 @@ export function createFormFlowAdapter(ctx: RequestContext, responseId: string): 
           : []
       const attachmentUrls = new Map(
         await Promise.all(
-          attachmentRows.map(
-            async (row) =>
-              [row.id, await presignGet({ key: row.r2Key, expiresInSeconds: 900 })] as const,
-          ),
+          attachmentRows.map(async (row) => [row.id, await storageObjectUrl(row.r2Key)] as const),
         ),
       )
       const resolvedData = resolveAttachmentUrls(data, attachmentUrls) as Record<string, unknown>

@@ -431,6 +431,11 @@ const TABLE_SCOPE: Record<string, ScopeSpec> = {
   user_permission_overrides: { read: null },
   attachment_upload_reservations: { read: null },
   storage_object_deletion_outbox: { read: null },
+  // Storage write-freeze state (Phase 6Q stage E1). Platform internal with no module
+  // owner, same class as the deletion outbox: it records operational state for a
+  // tenant, not workforce rows, so there is no person or org-unit column to bind on,
+  // and it carries no reportable data of its own.
+  storage_freeze: { read: null },
   flow_gates: { read: null },
   email_templates: { read: null },
   pdf_templates: { read: null },

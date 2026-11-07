@@ -7,8 +7,15 @@ import {
   useGeneratedValueTranslations,
 } from '@/i18n/generated'
 
-import { useState } from 'react'
-import { Button, Input, Label, SearchSelect, Select } from '@beaconhs/ui'
+import { useActionState, useState } from 'react'
+import { Alert, AlertDescription, Button, Input, Label, SearchSelect, Select } from '@beaconhs/ui'
+import type { ProviderSettingsResult } from '@beaconhs/i18n/messages'
+
+/** Save actions in this family return expected-validation copy instead of throwing. */
+type ProviderSettingsAction = (
+  _prev: ProviderSettingsResult | null,
+  formData: FormData,
+) => Promise<ProviderSettingsResult>
 
 // Serializable slice of an SMS provider spec (no Node code in the client bundle).
 export type SmsProviderSpecLite = {
@@ -66,13 +73,14 @@ export function SmsSettingsForm({
   initial,
   scope,
 }: {
-  action: (formData: FormData) => void | Promise<void>
+  action: ProviderSettingsAction
   specs: SmsProviderSpecLite[]
   initial: SmsFormInitial
   scope: 'tenant' | 'platform'
 }) {
   const tGeneratedValue = useGeneratedValueTranslations()
   const tGenerated = useGeneratedTranslations()
+  const [state, formAction, pending] = useActionState(action, null)
   const [enabled, setEnabled] = useState(initial.enabled)
   const [provider, setProvider] = useState(initial.provider)
   const [mode, setMode] = useState(initial.mode ?? 'tenant_optional')
@@ -105,7 +113,16 @@ export function SmsSettingsForm({
   }
 
   return (
-    <form action={action} className="space-y-5">
+    <form action={formAction} className="space-y-5">
+      <GeneratedValue
+        value={
+          state?.error ? (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          ) : null
+        }
+      />
       <GeneratedValue
         value={platformLive ? <input type="hidden" name="enabled" value="on" /> : null}
       />
@@ -357,7 +374,7 @@ export function SmsSettingsForm({
       />
 
       <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
-        <Button type="submit">
+        <Button type="submit" disabled={pending}>
           <GeneratedValue
             value={
               scope === 'platform' ? (

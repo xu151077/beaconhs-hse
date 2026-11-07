@@ -399,7 +399,7 @@ export default async function PpePage({
               currentParams={sp}
               paramKey="status"
               label={tGenerated('m_0b9da892d6faf0')}
-              allLabel="All statuses"
+              allLabel={tGenerated('m_10ce64191d8b55')}
               defaultValue="active"
               options={STATUS_FILTER_OPTIONS.map((o) => ({
                 ...o,
@@ -414,7 +414,7 @@ export default async function PpePage({
               currentParams={sp}
               paramKey="inspection"
               label={tGenerated('m_0ef24e5f31b073')}
-              allLabel="All inspection states"
+              allLabel={tGenerated('m_1148b59aa19400')}
               options={INSPECTION_OPTIONS.map((option) => option)}
             />
             <FilterChips
@@ -422,7 +422,7 @@ export default async function PpePage({
               currentParams={sp}
               paramKey="type"
               label={tGenerated('m_0bdc13fe741bfd')}
-              allLabel="All PPE types"
+              allLabel={tGenerated('m_05b18e7414d237')}
               options={types.map((type) => ({ value: type.id, label: type.name }))}
             />
             <RemoteSearchFilter
@@ -431,7 +431,7 @@ export default async function PpePage({
               currentParams={sp}
               paramKey="holder"
               placeholder={tGenerated('m_1dd437d2b4ab7f')}
-              allLabel="All holders"
+              allLabel={tGenerated('m_1f2f6e669190a2')}
               searchPlaceholder={tGenerated('m_0ba815306341be')}
               initialOption={selectedHolder}
             />

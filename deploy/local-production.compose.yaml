@@ -1,0 +1,377 @@
+# BeaconHS production runtime for a single local Docker host.
+#
+# SCOPE AND WHY THIS FILE EXISTS
+# ------------------------------
+# deploy/dokploy-dev.compose.yaml is NOT this file. That one is a remote Docker
+# SWARM stack for Dokploy: it needs a swarm manager, two `external: true` networks
+# (`infra-net`, `dokploy-network`), the node label `dokploy-mgr`, and Traefik to
+# route by hostname. On a single local host with Swarm inactive and neither network
+# present, `deploy.restart_policy` is ignored (it is Swarm-only) and no host port
+# is ever published — so nothing would listen on 127.0.0.1:${BEACONHS_WEB_PORT:-3000}
+# for the tunnel.
+#
+# This file runs the SAME image and the SAME roles on plain Compose, publishing
+# web on loopback so the Cloudflare Tunnel (<public-host> -> 127.0.0.1:${BEACONHS_WEB_PORT:-3000})
+# reaches it. Do not edit the Dokploy file to suit this host, and do not use this
+# file for the Dokploy deployment.
+#
+# IMAGE
+# ----
+# ${BEACONHS_IMAGE} must be the immutable reference of a locally built
+# CI-equivalent image. Build it with the real commit as DEPLOYMENT_VERSION, which
+# the Dockerfile asserts is a 40-character hex SHA, and the key's fingerprint,
+# which the Dockerfile also requires (BuildKit does not hash secret content, so
+# without it a rebuild after a key rotation would reuse the layer holding the old
+# key):
+#
+#   SHA=$(git rev-parse HEAD)
+#   KEY=<key file, mode 0600, outside the repository>
+#   FP=$(node scripts/ci/server-action-key-fingerprint.mjs "$KEY")
+#   docker build --platform linux/amd64 \
+#     --build-arg DEPLOYMENT_VERSION="$SHA" \
+#     --build-arg NEXT_SERVER_ACTIONS_KEY_FINGERPRINT="$FP" \
+#     --secret id=next_server_actions_key,src="$KEY" \
+#     -t beaconhs:local-prod .
+#   scripts/ci/verify-server-action-key-gate.sh image beaconhs:local-prod "$FP"
+#
+# web, worker and scheduler deliberately share ONE ${BEACONHS_IMAGE}, so all
+# application roles run the identical build. ${APP_VERSION} is injected here at
+# RUNTIME, matching deploy-dev.yml (`APP_VERSION=$GITHUB_SHA`); it is not baked
+# into the image, so /api/health/ready reports the real SHA only when it is set.
+#
+# DEPLOYMENT IDENTITY
+# -------------------
+# Every service carries three labels, rendered from the deployment environment:
+#   com.beaconhs.deployment   ${BEACONHS_DEPLOYMENT_ID:?}
+#   com.beaconhs.image-digest ${BEACONHS_IMAGE_DIGEST:?} for gated services, or
+#                             the service's own literal pinned digest
+#   com.beaconhs.role         the service role from the manifest
+#
+# BEACONHS_DEPLOYMENT_ID is <40-hex commit>-<run id>-<attempt>. It is required,
+# never defaulted: a missing value makes `docker compose config` fail rather
+# than deploy an unlabelled fleet. Because the label is part of the container
+# config, changing the deployment ID forces Compose to recreate every service.
+#
+# The pinned services below use their own immutable digest labels. They must
+# never inherit the gated image or the gated digest. deploy/gate5.manifest.yaml
+# is the trusted expectation for both classes; the verifier compares the
+# rendered Compose config and the running containers against it.
+#
+# STORAGE (Phase 18-M dual endpoint)
+# ---------------------------------
+# R2_ENDPOINT is the BROWSER/presign address — presigned URLs are minted against
+# it and it feeds the CSP allowlist, so it must be the public hostname.
+# R2_INTERNAL_ENDPOINT is the SERVER's own S3 I/O address. It keeps
+# put/get/head/delete on the private network instead of hairpinning out through
+# the tunnel, and it is why storage-init below can bootstrap with the tunnel down.
+# packages/storage refuses to start a production process without the latter.
+#
+# COLLABORA
+# ---------
+# Served same-origin from the public hostname through the tunnel's existing
+# /browser, /cool and /hosting root-level routes. There is no /office prefix:
+# Collabora's discovery emits absolute root-level URLs and ignores
+# X-Forwarded-Prefix, so a subpath cannot work here (see the Dokploy file's
+# notes on the identical MinIO path-signing constraint).
+
+name: beaconhs-local-prod
+
+x-app-env: &app-env
+  NODE_ENV: production
+  APP_VERSION: ${APP_VERSION:?APP_VERSION must be the real 40-hex commit SHA}
+  SENTRY_ENVIRONMENT: production
+  # PostgreSQL / Redis / MinIO are addressed by Compose SERVICE NAME on the
+  # internal network. Never localhost:<host-port> in here: inside a container
+  # that resolves to the container itself, which is a silent readiness 503.
+  DATABASE_URL: ${DATABASE_URL:?set the in-network database URL}
+  SUPERADMIN_DATABASE_URL: ${SUPERADMIN_DATABASE_URL:?set the in-network superadmin URL}
+  REDIS_URL: ${REDIS_URL:?set the in-network redis URL}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?required}
+  ATTACHMENT_CAPABILITY_SECRET: ${ATTACHMENT_CAPABILITY_SECRET:?required}
+  APP_URL: ${APP_URL:?required}
+  PUBLIC_APP_URL: ${APP_URL:?required}
+  BETTER_AUTH_URL: ${APP_URL}
+  R2_ENDPOINT: ${R2_ENDPOINT:?required — browser/presign endpoint}
+  R2_INTERNAL_ENDPOINT: ${R2_INTERNAL_ENDPOINT:?required — server-side S3 endpoint}
+  R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?required}
+  R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?required}
+  R2_BUCKET: ${R2_BUCKET:?required}
+  R2_PRIVATE_BUCKET_CONFIRMED: ${R2_PRIVATE_BUCKET_CONFIRMED:-false}
+
+services:
+  # Only the web role is published, and only on loopback. The tunnel is the sole
+  # public entry point; nothing here may bind 0.0.0.0.
+  web:
+    image: ${BEACONHS_IMAGE:?point at the local CI-equivalent production image}
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.role: 'web'
+    environment:
+      <<: *app-env
+      APP_ROLE: web
+      HOSTNAME: 0.0.0.0
+      PORT: '3000'
+      # Must equal the key file used for `--secret id=next_server_actions_key`
+      # at build time: prerendered Server Action references are encrypted with
+      # the build key, and the runtime instance decrypts them with this value.
+      # A mismatch (or an ephemeral key) breaks in-flight actions across a
+      # rollout or restart. Stable, 32+ random bytes, from the secret manager.
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:?required — must match the build-time key}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      COLLABORA_URL: ${COLLABORA_URL:?required}
+      COLLABORA_WOPI_URL: ${COLLABORA_WOPI_URL:?required}
+      SYNC_DATABASE_HOST_ALLOWLIST: ${SYNC_DATABASE_HOST_ALLOWLIST:-10.0.0.44}
+    # The host port is the ONE thing that differs per host: the test host's
+    # tunnel targets 3000 (the default), the production host's tunnel targets
+    # 8000. Keeping it a variable keeps a single Canonical Compose file instead
+    # of a divergent per-host copy. The container always listens on 3000, and
+    # the healthcheck above probes that container port, not the published one.
+    ports:
+      - '127.0.0.1:${BEACONHS_WEB_PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:3000/api/health/ready']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  # Same image, same APP_VERSION as web. restart: unless-stopped so a host
+  # reboot restores it (the Dokploy file's deploy.restart_policy cannot: it is
+  # Swarm-only and would leave this service with restart=no under Compose).
+  worker:
+    image: ${BEACONHS_IMAGE:?same image as web}
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.role: 'worker'
+    environment:
+      <<: *app-env
+      APP_ROLE: worker
+      BETTER_AUTH_URL: ${APP_URL}
+      INTERNAL_WEB_URL: http://web:3000
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      SYNC_DATABASE_HOST_ALLOWLIST: ${SYNC_DATABASE_HOST_ALLOWLIST:-10.0.0.44}
+    healthcheck:
+      test: ['CMD', 'node', 'apps/worker/dist/health.js']
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      web: { condition: service_started }
+
+  # One-shot: reconciles the BullMQ repeatable-job registry into Redis, then
+  # process.exit(0). It owns the SCHEDULE DEFINITIONS, not the execution.
+  #
+  # restart: "no" is the correct policy for a one-shot process, and it matches
+  # the shipped Dokploy stack, whose Swarm `restart_policy: on-failure` likewise
+  # never restarts it after a clean exit(0). A `unless-stopped` policy here would
+  # relaunch it forever and produce endless "Restarting (0)" noise.
+  #
+  # Nothing is lost on a host reboot. The repeat definitions live in the Redis
+  # volume, and the worker — not this role — promotes each due occurrence into
+  # the active set (BullMQ 5 does this inside Worker.moveToActive, verified in
+  # node_modules/bullmq/dist/cjs/classes/worker.js:412). Verified empirically:
+  # with this container stopped, the worker still completed scheduled repeats on
+  # schedule and the delayed set kept advancing.
+  #
+  # Re-run it by hand ONLY when the SCHEDULES registry in
+  # packages/jobs/src/queues/scheduled.ts changes (a new job or a changed cron):
+  #   docker compose -f deploy/local-production.compose.yaml run --rm scheduler
+  # Each deploy does that for you.
+  scheduler:
+    image: ${BEACONHS_IMAGE:?same image as web}
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.role: 'scheduler'
+    environment:
+      <<: *app-env
+      APP_ROLE: scheduler
+    restart: 'no'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  # Security bootstrap: creates the bucket if absent, removes anonymous bucket
+  # policies, installs expiry rules and proves anonymous reads fail. Runs entirely
+  # on R2_INTERNAL_ENDPOINT, so it completes with the Cloudflare Tunnel stopped.
+  # Idempotent, so a manual rerun is safe.
+  #
+  # Also a one-shot process: it prints its result and exits 0. `restart: 'no'` for the
+  # same reason as scheduler — a clean exit must not be treated as a crash to retry.
+  # Re-run by hand with:
+  #   docker compose -f deploy/local-production.compose.yaml run --rm storage-init
+  storage-init:
+    image: ${BEACONHS_IMAGE:?same image as web}
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.role: 'storage-init'
+    environment:
+      NODE_ENV: production
+      APP_ROLE: storage-init
+      R2_ENDPOINT: ${R2_ENDPOINT:?required}
+      R2_INTERNAL_ENDPOINT: ${R2_INTERNAL_ENDPOINT:?required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?required}
+      R2_BUCKET: ${R2_BUCKET:?required}
+      R2_PRIVATE_BUCKET_CONFIRMED: ${R2_PRIVATE_BUCKET_CONFIRMED:-false}
+    restart: 'no'
+    depends_on:
+      minio: { condition: service_healthy }
+
+  postgres:
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: 'sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
+      com.beaconhs.role: 'postgres'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-beaconhs}
+    # Loopback only, for operator access and local tooling. Containers reach it
+    # as postgres:5432 on this compose network, never as localhost:5433.
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # provision.sql is mounted for the operator to run the documented
+      # role-provisioning step by hand (runbook "Database roles"). It is NOT
+      # executed automatically: no initdb helper with baked-in passwords may
+      # run here — database roles and their passwords are created exactly once
+      # via `psql ... -f scripts/cluster/provision.sql` BEFORE the first `up`,
+      # so a fresh volume fails healthchecks loudly instead of coming up with
+      # well-known credentials.
+      - ../scripts/cluster/provision.sql:/opt/beaconhs/provision.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U beaconhs_app -d beaconhs']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: 'sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499'
+      com.beaconhs.role: 'redis'
+    ports:
+      - '127.0.0.1:6380:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # S3-compatible object storage, private, no published ports. Reached by the
+  # other services as minio:9000, and from outside only through the tunnel's
+  # existing ^/beaconhs(/.*)?$ route to 127.0.0.1:9000.
+  # MINIO_ROOT_* must match the credentials that created the volume, or an
+  # existing bucket becomes unreadable.
+  minio:
+    image: minio/minio@sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: 'sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c'
+      com.beaconhs.role: 'minio'
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    ports:
+      # Loopback only: the tunnel routes ^/beaconhs/ here. Never 0.0.0.0, and the
+      # console (9001) stays bound but unpublished.
+      - '127.0.0.1:9000:9000'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:9000/minio/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # In-browser PowerPoint editor. Browsers reach it same-origin on the public
+  # hostname via the tunnel's /browser, /cool and /hosting routes; Collabora
+  # calls back into the app's /wopi/files/* at COLLABORA_WOPI_URL.
+  collabora:
+    # Pinned to the linux/amd64 CODE build running in this environment
+    # (2026-09-24, same lineage the dev stack exercises). `latest` can change
+    # independently of BeaconHS releases and silently break WOPI discovery —
+    # see the identical note in the Dokploy file. A deliberate, smoke-tested
+    # upgrade changes both this reference and the manifest expectation.
+    image: collabora/code@sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c
+    labels:
+      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.image-digest: 'sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c'
+      com.beaconhs.role: 'collabora'
+    environment:
+      # The WOPI source host is the URL Collabora is told to fetch documents
+      # from. In this deployment that is the IN-NETWORK address (COLLABORA_WOPI_URL
+      # = http://web:3000), so it must be authorised here as well: aliasgroup
+      # matching is by exact host, and an unlisted host is refused outright
+      # ("No authorized hosts found matching the target host [web]").
+      # Keeping the internal host avoids routing every document read/write
+      # through the public edge.
+      aliasgroup1: ${COLLABORA_URL:?required},${COLLABORA_WOPI_URL:?required}
+      extra_params: >-
+        --o:ssl.enable=false
+        --o:ssl.termination=true
+        --o:net.frame_ancestors=${COLLABORA_URL}
+        --o:welcome.enable=false
+        --o:home_mode.enable=true
+        --o:storage.wopi.max_file_size=1073741824
+    ports:
+      - '127.0.0.1:9980:9980'
+    volumes:
+      - ./collabora-branding.js:/usr/share/coolwsd/browser/dist/branding.js:ro
+    # The Collabora image ships no shell, no curl and no wget, so an exec-based
+    # HTTP probe cannot work here (it fails with "executable file not found").
+    # These are the only two things it can exec: coolwsd itself. Readiness is
+    # therefore taken from the discovery XML the process already writes on start,
+    # and the host-published port is checked from outside instead.
+    restart: unless-stopped
+
+# Data volumes are declared EXTERNAL, with the exact names the local stack
+# already uses. Two reasons, both about preserving tenant data:
+#
+#   1. Without an explicit name Compose prefixes volumes with the project name
+#      (beaconhs-local-prod_*) and would provision EMPTY ones, making existing
+#      data appear to vanish.
+#   2. `external: true` states that this file must never create or delete these
+#      volumes. Compose adopts whatever is already there and refuses to manage
+#      its lifecycle, so `down`, `down -v` and `up` cannot touch tenant data.
+#
+# The volumes must already exist before the first `up`
+# (`docker volume create beaconhs-hse_postgres-data`, etc.).
+volumes:
+  postgres-data:
+    external: true
+    name: beaconhs-hse_postgres-data
+  redis-data:
+    external: true
+    name: beaconhs-hse_redis-data
+  minio-data:
+    external: true
+    name: beaconhs-hse_minio-data

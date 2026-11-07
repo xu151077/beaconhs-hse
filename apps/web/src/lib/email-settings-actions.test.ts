@@ -16,6 +16,17 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next-intl/server', () => ({
+  // Returns the English catalogue copy so assertions read like what an operator sees.
+  getTranslations: async (namespace: string) => {
+    const catalogue = (await import('@beaconhs/i18n/messages')).getAppMessages('en')
+    const section = catalogue[namespace as 'ProviderSettings'] as unknown as Record<string, string>
+    return (key: string, values?: Record<string, unknown>) =>
+      (section[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+        String(values?.[name] ?? `{${name}}`),
+      )
+  },
+}))
 vi.mock('@/lib/auth', () => ({ requireRequestContext: mocks.auth }))
 vi.mock('@/lib/audit', () => ({ recordAudit: mocks.audit }))
 vi.mock('@beaconhs/jobs/rate-limit', () => ({ consumeRateLimit: mocks.consumeRateLimit }))
@@ -120,7 +131,7 @@ describe('email settings audit metadata', () => {
       credentialChange: 'removed',
       enabledChanged: true,
     })
-    await saveTenantEmail(settingsForm({ enabled: '', provider: 'sendgrid' }))
+    await saveTenantEmail(null, settingsForm({ enabled: '', provider: 'sendgrid' }))
 
     expect(mocks.audit).toHaveBeenCalledWith(
       context,
@@ -136,7 +147,7 @@ describe('email settings audit metadata', () => {
   })
 
   it('records platform changes against the platform email singleton', async () => {
-    await savePlatformEmail(settingsForm({ mode: 'tenant_optional' }))
+    await savePlatformEmail(null, settingsForm({ mode: 'tenant_optional' }))
 
     expect(mocks.audit).toHaveBeenCalledWith(
       context,
@@ -147,22 +158,27 @@ describe('email settings audit metadata', () => {
     )
   })
 
-  it('rejects a non-public active SMTP host before opening the locked save', async () => {
+  it('returns a non-public active SMTP host in-form instead of throwing to the error boundary', async () => {
     mocks.resolvePublicHost.mockRejectedValue(new Error('private address'))
-    await expect(
-      saveTenantEmail(
-        settingsForm({
-          provider: 'smtp',
-          smtpHost: 'mail.internal',
-          smtpPort: '587',
-        }),
-      ),
-    ).rejects.toThrow('Active SMTP requires a public, externally resolvable DNS hostname')
+
+    const result = await saveTenantEmail(
+      null,
+      settingsForm({ provider: 'smtp', smtpHost: 'mail.internal', smtpPort: '587' }),
+    )
+
+    // The public-host requirement is unchanged; only its delivery moves from the
+    // error boundary into the form, so the operator can read why.
+    expect(result).toEqual({
+      error:
+        'Active SMTP requires a public, externally resolvable DNS hostname. Private, local, reserved, IP-literal, and unresolvable hosts are blocked.',
+    })
     expect(mocks.saveTenant).not.toHaveBeenCalled()
+    expect(mocks.audit).not.toHaveBeenCalled()
   })
 
   it('keeps the platform kill switch independent from SMTP DNS', async () => {
     await savePlatformEmail(
+      null,
       settingsForm({
         mode: 'disabled',
         provider: 'smtp',
@@ -175,17 +191,102 @@ describe('email settings audit metadata', () => {
     expect(mocks.savePlatform).toHaveBeenCalledOnce()
   })
 
-  it('rejects a public IP literal because SMTP requires a TLS DNS identity', async () => {
+  it('returns a public IP literal in-form because SMTP requires a TLS DNS identity', async () => {
     mocks.resolvePublicHost.mockResolvedValue({
       hostname: '8.8.8.8',
       address: '8.8.8.8',
       family: 4,
       ipLiteral: true,
     })
-    await expect(
-      saveTenantEmail(settingsForm({ provider: 'smtp', smtpHost: '8.8.8.8', smtpPort: '587' })),
-    ).rejects.toThrow('IP-literal')
+
+    const result = await saveTenantEmail(
+      null,
+      settingsForm({ provider: 'smtp', smtpHost: '8.8.8.8', smtpPort: '587' }),
+    )
+
+    expect(result.error).toContain('Active SMTP requires a public')
     expect(mocks.saveTenant).not.toHaveBeenCalled()
+  })
+
+  it('returns an invalid provider in-form and never reaches the locked save', async () => {
+    const result = await saveTenantEmail(null, settingsForm({ provider: 'not-a-provider' }))
+
+    expect(result).toEqual({ error: 'Select a valid email provider.' })
+    expect(mocks.saveTenant).not.toHaveBeenCalled()
+  })
+
+  it('returns an invalid platform policy in-form', async () => {
+    const result = await savePlatformEmail(null, settingsForm({ mode: 'nonsense-policy' }))
+
+    expect(result).toEqual({ error: 'Select a valid platform email policy.' })
+    expect(mocks.savePlatform).not.toHaveBeenCalled()
+  })
+
+  it('returns an over-long hostname in-form rather than throwing', async () => {
+    const result = await saveTenantEmail(
+      null,
+      settingsForm({
+        provider: 'sendgrid',
+        smtpHost: 'a'.repeat(254),
+      }),
+    )
+
+    expect(result).toEqual({ error: 'smtpHost must be 253 characters or fewer.' })
+    expect(mocks.saveTenant).not.toHaveBeenCalled()
+  })
+
+  it('returns ok on a valid save so the form can clear a previous error', async () => {
+    const result = await saveTenantEmail(null, settingsForm())
+
+    expect(result).toEqual({ ok: true })
+    expect(mocks.saveTenant).toHaveBeenCalledOnce()
+  })
+
+  it('propagates a database failure instead of reporting a successful save', async () => {
+    mocks.saveTenant.mockRejectedValue(new Error('deadlock detected'))
+
+    await expect(saveTenantEmail(null, settingsForm())).rejects.toThrow('deadlock detected')
+    expect(mocks.audit).not.toHaveBeenCalled()
+  })
+
+  it('keeps the tenant permission gate a hard failure, not a form error', async () => {
+    mocks.auth.mockResolvedValue({
+      ...context,
+      isSuperAdmin: false,
+      permissions: new Set<string>(),
+    })
+
+    await expect(saveTenantEmail(null, settingsForm())).rejects.toThrow(
+      'Missing permission: admin.settings.manage',
+    )
+    expect(mocks.saveTenant).not.toHaveBeenCalled()
+  })
+
+  it('keeps the platform gate super-admin only', async () => {
+    mocks.auth.mockResolvedValue({
+      ...context,
+      isSuperAdmin: false,
+      permissions: new Set(['admin.settings.manage']),
+    })
+
+    await expect(
+      savePlatformEmail(null, settingsForm({ mode: 'tenant_optional' })),
+    ).rejects.toThrow('Only platform super-admins')
+    expect(mocks.savePlatform).not.toHaveBeenCalled()
+  })
+
+  it('never returns or audits a credential, on success or on rejection', async () => {
+    const secret = 'SG.must-never-be-audited'
+
+    await saveTenantEmail(null, settingsForm({ provider: 'sendgrid', secret }))
+    const rejected = await saveTenantEmail(
+      null,
+      settingsForm({ provider: 'sendgrid', secret, smtpHost: 'a'.repeat(254) }),
+    )
+
+    const auditJson = JSON.stringify(mocks.audit.mock.calls)
+    expect(auditJson).not.toContain(secret)
+    expect(JSON.stringify(rejected)).not.toContain(secret)
   })
 })
 

@@ -475,11 +475,14 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
     title: 'Writing documents',
     group: 'Knowledge & training',
     iconKey: 'book',
-    summary: 'Write documents in a full Word editor, publish numbered versions, keep history.',
+    summary:
+      'Write Word, PowerPoint or Excel documents in a full Office editor, publish numbered versions, keep history.',
     keywords: [
       'write document',
       'word',
       'docx',
+      'pptx',
+      'xlsx',
       'publish',
       'version',
       'track changes',
@@ -490,28 +493,28 @@ ${CSV_EXPORT_LIMIT_GUIDANCE}
       'assistant',
     ],
     requiredPermission: 'documents.manage',
-    body: `Documents are Word files. You write them in a full Word editor right inside BeaconHS, and readers always see a numbered, published PDF that looks identical on every device and on paper.
+    body: `Documents are Word, PowerPoint or Excel files. You write them in a full Office editor right inside BeaconHS — Writer for .docx, Impress for .pptx, Calc for .xlsx — and readers always see a numbered, published PDF that looks identical on every device and on paper.
 
 ## Start a document
 
 1. Open [Documents](/documents) and click **New document** — a draft opens right away.
-2. On the **Write** tab, pick **Import Word file** (drop in a .docx) or **Start blank**. Set the title and details in the panel on the left.
+2. On the **Write** tab, pick **Import Office file** (drop in a .docx, .pptx or .xlsx) or **Start blank**. Set the title and details in the panel on the left.
 3. The file becomes the working draft. The editor saves as you work, and publishing performs one final confirmed save before it creates the version.
 
 The **Key** is the document's short identifier. It can be up to 120 characters and must be unique among live documents. The save badge changes to **Not saved** and shows the reason if any detail cannot be saved.
 
-Imported Word files must be .docx files and 100 MB or smaller.
+Imported Office files must be .docx, .pptx or .xlsx and 100 MB or smaller. The file name must keep its own extension: a Word file stays .docx, a PowerPoint file .pptx, an Excel file .xlsx.
 
 ## Edit the draft
 
-1. Open the document's **Write** tab. The Word editor opens right in the page.
-2. Page size, headers, footers, images, tables — set them in the editor, exactly like Word.
+1. Open the document's **Write** tab. The editor that matches the file opens right in the page.
+2. Page size, headers, footers, images, tables — set them in the editor, exactly like the desktop app.
 3. Use the editor's **Review** menu for track changes and comments while a document is being reviewed.
-4. **Download DOCX** saves the working file; **Replace** swaps in a different Word file.
+4. **Source file** saves the working file; **Replace** swaps in a different Office file.
 
 ## AI assistant
 
-If AI is set up for your company, an **AI** button appears in the Write toolbar.
+If AI is set up for your company, an **AI** button appears in the Write toolbar for Word (.docx) documents. PowerPoint and Excel documents open the same editor without the AI button, because the assistant only edits Word files.
 
 1. Click **AI** to open the assistant beside the editor.
 2. Ask it to draft the whole document, rewrite a section, or fix specific wording — it edits the document for you, and the editor reloads with the changes.
@@ -530,15 +533,15 @@ The editor is blocked while an administrator is using **View as user**. Exit tha
 
 1. Click **Publish** in the Write toolbar.
 2. Add a short note about what changed (optional), then confirm.
-3. BeaconHS waits for the Word editor to confirm that the working file is saved. If saving fails or times out, no version is created and you can try again without publishing a blank file.
+3. BeaconHS waits for the editor to confirm that the working file is saved. If saving fails or times out, no version is created and you can try again without publishing a blank file.
 4. The saved draft is frozen as the next whole numbered version — v1, v2, v3 — and its PDF renders in the background. Imported decimal revisions such as v1.1 stay in the history. Readers always see the latest published version; your draft stays private until the next publish.
 
 ## Version history
 
-Open the **Versions** tab. Every published version keeps its own PDF and Word file:
+Open the **Versions** tab. Every published version keeps its own PDF and Office source file:
 
 - **PDF** — read or print that exact version.
-- **DOCX** — download the Word snapshot.
+- **Source file** — download the .docx, .pptx or .xlsx snapshot.
 - **Open read-only** — view the old version in the editor without changing anything.
 - **View changes** — compare the extracted text with the preceding version. Added and removed lines include their old and new line numbers, and long comparisons are paged. For native Writer redlines, use **Open read-only**; tracked changes and comments remain inside that version's Word file.
 
@@ -554,7 +557,7 @@ For a toolbox talk, tap **Record group sign-off**. Use **Search people or sessio
 
 ## Uploaded PDFs
 
-Documents can also be plain uploaded PDFs (scanned or externally produced). Open the **PDF** tab and drop the file into the uploader — there is no editor for these; the file itself is the document. Once a PDF is in place, **Replace** in the PDF toolbar prepares a new draft version. Readers keep seeing the previous published version until you click **Publish** at the top of the page.
+Documents can also be plain uploaded PDFs (scanned or externally produced). Open the **PDF** tab and drop the file into the uploader — there is no editor for these; the file itself is the document. The file must be a complete, valid PDF (it must end with its **%%EOF** trailer). Truncated, renamed, or damaged files are rejected at upload, so a document is never left pointing at a file that cannot be opened. Once a PDF is in place, **Replace** in the PDF toolbar prepares a new draft version. Readers keep seeing the previous published version until you click **Publish** at the top of the page.
 
 ## Organize categories, types, and management reviews
 

@@ -11,6 +11,8 @@ import { verifyWopiToken } from '@/lib/wopi'
 import { wopiGrantCanAccessFile, wopiPrincipalIsAuthorized } from '@/lib/wopi-access'
 import { tenantIsActive } from '@/lib/active-tenant'
 import { isUuid } from '@/lib/list-params'
+import { appBaseUrl } from '@/lib/app-base-url'
+import { officeSourceExtension } from '@beaconhs/office/limits'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +35,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ fileId: str
     const [row] = await tx
       .select({
         filename: attachments.filename,
+        contentType: attachments.contentType,
         sizeBytes: attachments.sizeBytes,
         updatedAt: attachments.updatedAt,
       })
@@ -44,9 +47,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ fileId: str
   if (!att) return new NextResponse('File not found', { status: 404 })
 
   // Collabora insists on a recognised extension to pick the right editor
-  // (Impress for decks, Writer for documents).
-  const fallbackExt = grant.target === 'document' ? 'docx' : 'pptx'
-  const baseFileName = /\.(pptx?|docx?)$/i.test(att.filename)
+  // (Writer / Impress / Calc). The attachment's own type decides it when the
+  // name lost its extension; the grant target is only the last resort.
+  const fallbackExt =
+    officeSourceExtension(att.contentType) ?? (grant.target === 'document' ? 'docx' : 'pptx')
+  const baseFileName = /\.(pptx?|docx?|xlsx?)$/i.test(att.filename)
     ? att.filename
     : `${att.filename}.${fallbackExt}`
 
@@ -66,10 +71,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ fileId: str
     UserCanRename: false,
     // Lets the embedding app talk to the editor over postMessage (loading
     // status for the splash, insert-at-cursor for the AI panel).
-    PostMessageOrigin: (process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? '').replace(
-      /\/+$/,
-      '',
-    ),
+    PostMessageOrigin: appBaseUrl(),
     LastModifiedTime: (att.updatedAt ?? new Date(0)).toISOString(),
   })
 }

@@ -4,6 +4,14 @@ export * from './rls'
 export * from './pg-error'
 export * from './attachment-integrity'
 export * from './storage-object-deletion-outbox'
+export * from './tenant-provisioning'
+// Readiness compares the journal embedded in this build against the database
+// ledger through these, so the check reuses the migrator's own rules instead of
+// re-implementing them.
+export * from './migration-state'
+export * from './storage-freeze'
+export * from './storage-freeze-operations'
+export * from './storage-write-arms-operations'
 export * from './maintenance'
 export * from './canonical-templates'
 export * from './form-picker-entities'

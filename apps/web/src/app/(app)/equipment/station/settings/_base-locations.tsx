@@ -79,7 +79,7 @@ export function StationBaseLocationsManager({
           paramKey="baseState"
           pageParamKey="basePage"
           label={tGenerated('m_08f5e6a9cabec6')}
-          allLabel="All locations"
+          allLabel={tGenerated('m_1a37e747f6006b')}
           options={[
             { value: 'base', label: 'At base' },
             { value: 'other', label: 'Not at base' },

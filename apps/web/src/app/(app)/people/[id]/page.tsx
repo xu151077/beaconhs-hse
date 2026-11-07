@@ -4,6 +4,7 @@ import { GeneratedText, useGeneratedTranslations, GeneratedValue } from '@/i18n/
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { DownloadLink } from '@/components/download-link'
+import { PersonPhotoUploader } from './_photo-uploader'
 import { revalidatePath } from 'next/cache'
 import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm'
 import {
@@ -743,6 +744,13 @@ export default async function PersonDetailPage({
                           <GeneratedValue value={person.lastName[0]} />
                         </div>
                       )
+                    }
+                  />
+                  <GeneratedValue
+                    value={
+                      canEditFiles ? (
+                        <PersonPhotoUploader personId={id} hasPhoto={!!photoUrl} />
+                      ) : null
                     }
                   />
                   <div className="text-center">

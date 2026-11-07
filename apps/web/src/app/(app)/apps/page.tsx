@@ -3,7 +3,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ClipboardCheck, PencilRuler, Plus } from 'lucide-react'
+import { ClipboardCheck, PencilRuler, Plus, Trash2 } from 'lucide-react'
 import { and, asc, count, desc, eq, ilike, inArray, isNull, max, or, type SQL } from 'drizzle-orm'
 import { Badge, Button, EmptyState } from '@beaconhs/ui'
 import { formResponses, formTemplateKind, formTemplates } from '@beaconhs/db/schema'
@@ -22,6 +22,8 @@ import { canAccessTemplate, isTemplateBuilder, templateAccessWhere } from './_li
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
 import { createDraftResponse } from './templates/[id]/fill/actions'
 import { moduleScopeWhere } from '@/lib/visibility'
+import { ConfirmButton } from '@/components/confirm-button'
+import { deleteFormTemplateAction } from './_delete-actions'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -71,6 +73,7 @@ export default async function FormsPage({
   const q = params.q?.trim() ?? ''
   const ctx = await requireRequestContext()
   const canCreate = can(ctx, 'forms.template.create')
+  const canDelete = can(ctx, 'forms.template.delete')
   const canGenerate = can(ctx, 'forms.ai.generate')
   const canSubmitResponses = can(ctx, 'forms.response.create')
   const templateBuilder = isTemplateBuilder(ctx)
@@ -222,6 +225,16 @@ export default async function FormsPage({
               />
             </div>
           </header>
+
+          <GeneratedValue
+            value={
+              pickString(sp.deleteError) ? (
+                <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                  <GeneratedValue value={pickString(sp.deleteError)} />
+                </p>
+              ) : null
+            }
+          />
 
           <div className="flex flex-wrap items-center gap-2">
             <FormsKindNav active={kindFilter} currentParams={sp} />
@@ -377,6 +390,22 @@ export default async function FormsPage({
                                     <GeneratedText id="m_0006b9b63f781f" />
                                   </Button>
                                 </Link>
+                              ) : null
+                            }
+                          />
+                          <GeneratedValue
+                            value={
+                              canDelete ? (
+                                <form action={deleteFormTemplateAction} className="ml-auto">
+                                  <input type="hidden" name="templateId" value={t.id} />
+                                  <ConfirmButton
+                                    size="sm"
+                                    variant="destructive"
+                                    message={tGenerated('m_031c6df3f5d6ff')}
+                                  >
+                                    <Trash2 size={13} /> <GeneratedText id="m_11773f3c3f7558" />
+                                  </ConfirmButton>
+                                </form>
                               ) : null
                             }
                           />

@@ -22,7 +22,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Plus } from 'lucide-react'
 import { Button, FileUploader, Input, Label, Select, Textarea, UrlDrawer } from '@beaconhs/ui'
-import { finalizeUpload, requestUpload } from '@/lib/uploads'
+import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
 import { RemoteSearchSelect } from '@/components/remote-search-select'
 
@@ -233,6 +233,7 @@ export function CertificateDrawer({
                 <FileUploader
                   requestUploadAction={requestUpload}
                   finalizeUploadAction={finalizeUpload}
+                  requestMultipartPartAction={requestMultipartPartUrl}
                   kind="document"
                   accept=".pdf,.png,.jpg,.jpeg,.heic,.webp,.doc,.docx"
                   onUploaded={(f) =>

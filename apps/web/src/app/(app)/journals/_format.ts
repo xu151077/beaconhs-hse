@@ -99,4 +99,5 @@ const STATUS_LABELS: Record<AppLocale, Record<JournalStatus, string>> = {
   en: { draft: 'Draft', submitted: 'Submitted', archived: 'Archived' },
   fr: { draft: 'Brouillon', submitted: 'Soumis', archived: 'Archivé' },
   es: { draft: 'Borrador', submitted: 'Enviado', archived: 'Archivado' },
+  zh: { draft: '草稿', submitted: '已提交', archived: '已归档' },
 }

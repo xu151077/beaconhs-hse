@@ -13,11 +13,12 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { fmtDateTime, personName } from '../format'
 import type { FlowSubjectAdapter } from '../types'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 export function createDocumentSignoffFlowAdapter(
   ctx: RequestContext,
@@ -109,9 +110,7 @@ export function createDocumentSignoffFlowAdapter(
             name: personName(signature),
             signed_at: fmtDateTime(signature.acknowledgedAt),
             attachment_id: signature.attachmentId,
-            image: signature.signatureKey
-              ? await presignGet({ key: signature.signatureKey, expiresInSeconds: 900 })
-              : '',
+            image: signature.signatureKey ? await storageObjectUrl(signature.signatureKey) : '',
           })),
         ),
       }

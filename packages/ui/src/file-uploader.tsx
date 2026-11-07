@@ -15,14 +15,23 @@ import { useUiText } from './text-context'
 import { cn } from './utils'
 
 export type UploadRequestResult =
-  | { ok: true; uploadId: string; mode: 'single'; putUrl: string }
+  | {
+      ok: true
+      uploadId: string
+      mode: 'single'
+      putUrl: string
+      /** The upload token the application minted for this reservation (header only). */
+      uploadToken: string
+    }
   | {
       ok: true
       uploadId: string
       mode: 'multipart'
+      /** The upload token the application minted for this reservation. */
+      uploadToken: string
       multipartUploadId: string
       partSizeBytes: number
-      partUrls: string[]
+      partCount: number
     }
   | { ok: false; error: string }
 
@@ -64,6 +73,12 @@ export type UploadedFile = {
 export type FileUploaderProps = {
   requestUploadAction: RequestUploadAction
   finalizeUploadAction: FinalizeUploadAction
+  /** Called before uploading each multipart part. Required for multipart uploads. */
+  requestMultipartPartAction: (input: {
+    uploadId: string
+    partNumber: number
+    token: string
+  }) => Promise<{ ok: true; url: string } | { ok: false; error: string }>
   /** Called once per successfully uploaded file. */
   onUploaded: (file: UploadedFile) => void
   /** Restrict the attachment kind tag we send to the server. */
@@ -93,11 +108,17 @@ function uploadWithXhr(args: {
   url: string
   body: Blob
   contentType?: string
+  /** Write capability for the reservation — sent as a header, never in the URL. */
+  token: string
   onProgress: (loaded: number) => void
 }): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', args.url)
+    // The body goes to the APPLICATION, which authorizes it and then writes to
+    // the object store over the internal endpoint. The object store is never
+    // addressed by the browser, so it needs no public hostname.
+    xhr.open('POST', args.url)
+    xhr.setRequestHeader('x-upload-token', args.token)
     if (args.contentType) xhr.setRequestHeader('Content-Type', args.contentType)
     xhr.upload.onprogress = (event) => args.onProgress(event.loaded)
     xhr.onload = () => {
@@ -113,10 +134,16 @@ export async function uploadReservedFile(
   request: Extract<UploadRequestResult, { ok: true }>,
   file: File,
   onProgress: (percent: number) => void = () => undefined,
+  requestMultipartPartAction?: (input: {
+    uploadId: string
+    partNumber: number
+    token: string
+  }) => Promise<{ ok: true; url: string } | { ok: false; error: string }>,
 ): Promise<FinalizeUploadInput> {
   if (request.mode === 'single') {
     await uploadWithXhr({
       url: request.putUrl,
+      token: request.uploadToken,
       body: file,
       contentType: file.type || 'application/octet-stream',
       onProgress: (loaded) => onProgress(Math.round((loaded / file.size) * 100)),
@@ -124,20 +151,77 @@ export async function uploadReservedFile(
     return { uploadId: request.uploadId }
   }
 
-  const expectedParts = Math.ceil(file.size / request.partSizeBytes)
-  if (request.partUrls.length !== expectedParts) {
-    throw new Error('Storage returned an invalid multipart upload plan')
+  // Multipart mode requires a part-signing action
+  if (!requestMultipartPartAction) {
+    throw new Error('Multipart upload requires requestMultipartPartAction')
   }
-  for (const [index, partUrl] of request.partUrls.entries()) {
-    const start = index * request.partSizeBytes
+
+  const expectedParts = request.partCount
+
+  // Bytes successfully uploaded by prior parts. Progress is reported against this
+  // base, so a retried part does not rewind already-completed work.
+  let uploadedBytes = 0
+
+  for (let partNumber = 1; partNumber <= expectedParts; partNumber += 1) {
+    const start = (partNumber - 1) * request.partSizeBytes
     const end = Math.min(start + request.partSizeBytes, file.size)
     const part = file.slice(start, end, 'application/octet-stream')
-    await uploadWithXhr({
-      url: partUrl,
-      body: part,
-      onProgress: (partLoaded) => onProgress(Math.round(((start + partLoaded) / file.size) * 100)),
+    const partSize = end - start
+
+    let partUrl: string
+    // A fresh URL is minted immediately before the part upload, not at upload
+    // start. Each part therefore carries its own short TTL and cannot expire
+    // simply because an earlier part was slow.
+    const initialUrlResult = await requestMultipartPartAction({
+      uploadId: request.uploadId,
+      partNumber,
+      token: request.uploadToken,
     })
+    if (!initialUrlResult.ok) {
+      throw new Error(`Failed to get URL for part ${partNumber}: ${initialUrlResult.error}`)
+    }
+    partUrl = initialUrlResult.url
+
+    let uploadSuccess = false
+    for (let attempt = 0; !uploadSuccess && attempt < 2; attempt += 1) {
+      // The first attempt reuses the URL just requested. A retry intentionally
+      // refreshes the URL immediately, so a stale/expired URL is never reused
+      // after a failure.
+      if (attempt > 0) {
+        const retryUrlResult = await requestMultipartPartAction({
+          uploadId: request.uploadId,
+          partNumber,
+          token: request.uploadToken,
+        })
+        if (!retryUrlResult.ok) {
+          throw new Error(
+            `Failed to refresh URL for part ${partNumber} after failure: ${retryUrlResult.error}`,
+          )
+        }
+        partUrl = retryUrlResult.url
+      }
+
+      try {
+        await uploadWithXhr({
+          url: partUrl,
+          token: request.uploadToken,
+          body: part,
+          onProgress: (partLoaded) => {
+            const totalUploaded = Math.min(uploadedBytes + partLoaded, file.size)
+            onProgress(Math.round((totalUploaded / file.size) * 100))
+          },
+        })
+        uploadSuccess = true
+      } catch (error) {
+        if (attempt === 0) continue
+        throw error
+      }
+    }
+
+    uploadedBytes += partSize
+    onProgress(Math.round((Math.min(uploadedBytes, file.size) / file.size) * 100))
   }
+
   return {
     uploadId: request.uploadId,
     multipartUploadId: request.multipartUploadId,
@@ -147,6 +231,7 @@ export async function uploadReservedFile(
 export function FileUploader({
   requestUploadAction,
   finalizeUploadAction,
+  requestMultipartPartAction,
   onUploaded,
   kind = 'document',
   accept,
@@ -192,7 +277,12 @@ export function FileUploader({
 
       let finalizeInput: FinalizeUploadInput
       try {
-        finalizeInput = await uploadReservedFile(req, file, (progress) => updateItem({ progress }))
+        finalizeInput = await uploadReservedFile(
+          req,
+          file,
+          (progress) => updateItem({ progress }),
+          requestMultipartPartAction,
+        )
       } catch (err) {
         updateItem({
           status: 'error',
@@ -219,7 +309,15 @@ export function FileUploader({
         url: finalise.url,
       })
     },
-    [finalizeUploadAction, kind, effectiveMaxSize, onUploaded, requestUploadAction, t],
+    [
+      finalizeUploadAction,
+      kind,
+      effectiveMaxSize,
+      onUploaded,
+      requestMultipartPartAction,
+      requestUploadAction,
+      t,
+    ],
   )
 
   const handleFiles = useCallback(

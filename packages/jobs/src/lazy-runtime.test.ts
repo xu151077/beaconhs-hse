@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   redis: vi.fn(),
+  redisOn: vi.fn(),
   redisQuit: vi.fn(async () => 'OK'),
   redisDisconnect: vi.fn(),
   queue: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock('ioredis', () => ({
   Redis: class MockRedis {
     constructor(...args: unknown[]) {
       mocks.redis(...args)
+    }
+
+    on(...args: unknown[]) {
+      return mocks.redisOn(...args)
     }
 
     quit() {
@@ -93,11 +98,16 @@ describe('lazy jobs runtime', () => {
     expect(mocks.redis).toHaveBeenNthCalledWith(1, 'redis://runtime.example.test:6379', {
       enableReadyCheck: false,
       maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      retryStrategy: expect.any(Function),
     })
     expect(mocks.redis).toHaveBeenNthCalledWith(2, 'redis://runtime.example.test:6379', {
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
     })
+    // The shared producer must never crash the process on a broker 'error'
+    // event; failures surface through rejected commands instead.
+    expect(mocks.redisOn).toHaveBeenCalledWith('error', expect.any(Function))
 
     const data = {
       to: 'worker@example.test',
@@ -266,8 +276,8 @@ describe('lazy jobs runtime', () => {
     const repeatOptions = mocks.queueAdd.mock.calls.map(
       ([, , options]) => (options as { repeat: { key: string; pattern: string } }).repeat,
     )
-    expect(repeatOptions).toHaveLength(12)
-    expect(new Set(repeatOptions.map(({ key }) => key))).toHaveLength(12)
+    expect(repeatOptions).toHaveLength(13)
+    expect(new Set(repeatOptions.map(({ key }) => key))).toHaveLength(13)
     expect(repeatOptions).toContainEqual({
       key: 'tick-reports',
       pattern: '*/5 * * * *',
@@ -279,6 +289,53 @@ describe('lazy jobs runtime', () => {
     expect(repeatOptions).toContainEqual({
       key: 'tick-journal-analysis',
       pattern: '20 * * * *',
+    })
+  })
+
+  it('detects missing, extra, mismatched and duplicate repeat schedules', async () => {
+    process.env.REDIS_URL = 'redis://runtime.example.test:6379'
+    const { inspectRepeatableSchedules, registerSchedules } = await import('./queues/scheduled')
+
+    await registerSchedules()
+    const repeatables = mocks.queueAdd.mock.calls.map(([name, , options]) => {
+      const repeat = (options as { repeat: { key: string; pattern: string } }).repeat
+      return { key: repeat.key, name: name as string, pattern: repeat.pattern }
+    })
+    expect(repeatables).toHaveLength(13)
+    expect(inspectRepeatableSchedules(repeatables)).toMatchObject({
+      ok: true,
+      expectedCount: 13,
+      actualCount: 13,
+      missing: [],
+      unexpected: [],
+      duplicates: [],
+      mismatched: [],
+    })
+
+    expect(inspectRepeatableSchedules(repeatables.slice(1))).toMatchObject({
+      ok: false,
+      missing: [repeatables[0]!.key],
+    })
+
+    expect(
+      inspectRepeatableSchedules([
+        ...repeatables,
+        { key: 'tick-stale', name: 'tick:stale', pattern: '* * * * *' },
+      ]),
+    ).toMatchObject({ ok: false, unexpected: ['tick-stale'] })
+
+    const mismatched = repeatables.map((entry, index) =>
+      index === 0 ? { ...entry, pattern: '0 0 * * *' } : entry,
+    )
+    const mismatchHealth = inspectRepeatableSchedules(mismatched)
+    expect(mismatchHealth.ok).toBe(false)
+    expect(mismatchHealth.mismatched).toHaveLength(1)
+    expect(mismatchHealth.mismatched[0]?.key).toBe(repeatables[0]!.key)
+
+    expect(inspectRepeatableSchedules([...repeatables, repeatables[0]!])).toMatchObject({
+      ok: false,
+      actualCount: 14,
+      duplicates: [repeatables[0]!.key],
     })
   })
 

@@ -108,7 +108,6 @@ export const equipmentInspectionRecords = pgTable(
     // Legacy operational fields carried verbatim.
     hours: numeric('hours'), // meter / hour reading at inspection
     serial: text('serial'),
-    certificate: text('certificate'),
     isRental: boolean('is_rental').default(false).notNull(),
     // The work order spawned when this inspection failed (legacy WorkOrderID).
     workOrderId: uuid('work_order_id'),

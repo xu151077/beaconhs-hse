@@ -462,8 +462,12 @@ describe('no Job Titles permission vocabulary was introduced', () => {
 // ---------------------------------------------------------------------------
 
 describe('the catalogue is unchanged by this fix', () => {
-  it('8. the catalogue holds exactly 100 permissions', () => {
-    expect(PERMISSION_CATALOGUE).toHaveLength(100)
+  it('8. the catalogue holds exactly the permissions it should', () => {
+    // 100 before Phase 6Q stage E1, which added the seven storage write-freeze keys
+    // (`admin.storage.freeze.{request,drain,confirm,reconcile,release,fail,recover}`).
+    // The catalogue is still a deliberate, human-audited number: adding a key without
+    // editing this assertion must keep failing, because that is the whole point.
+    expect(PERMISSION_CATALOGUE).toHaveLength(107)
   })
 
   it('every catalogue key is still unique', () => {

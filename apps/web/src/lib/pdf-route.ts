@@ -23,10 +23,17 @@ function errorMessage(error: unknown): string {
 }
 
 export function pdfBufferResponse(pdf: Buffer, filename: string): Response {
+  const originalFilename = filename || 'document.pdf'
+  const sanitizedFilename =
+    originalFilename
+      .replace(/["\r\n]/g, '_')
+      .replace(/^[^a-zA-Z0-9]/, '_')
+      .substring(0, 200) || 'document.pdf'
+  const encodedFilename = encodeURIComponent(originalFilename)
   return new Response(new Uint8Array(pdf), {
     headers: {
       'Cache-Control': 'no-store',
-      'Content-Disposition': `inline; filename="${safePdfFilename(filename)}"`,
+      'Content-Disposition': `inline; filename="${sanitizedFilename}"; filename*=utf-8''${encodedFilename}`,
       'Content-Length': String(pdf.length),
       'Content-Type': 'application/pdf',
     },

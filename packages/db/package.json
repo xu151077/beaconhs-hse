@@ -7,23 +7,26 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts",
-    "./client": "./src/client.ts",
-    "./rls": "./src/rls.ts",
-    "./journal-class": "./src/journal-class.ts",
-    "./work-permit": "./src/work-permit.ts",
     "./canonical-templates": "./src/canonical-templates.ts",
+    "./client": "./src/client.ts",
+    "./journal-class": "./src/journal-class.ts",
+    "./rls": "./src/rls.ts",
+    "./schema": "./src/schema/index.ts",
     "./seed/lift-plan-template": "./src/seed/lift-plan-template.ts",
     "./seed/pdf-templates": "./src/seed/pdf-templates.ts",
-    "./seed/report-definitions": "./src/seed/report-definitions.ts"
+    "./seed/report-definitions": "./src/seed/report-definitions.ts",
+    "./tenant-provisioning": "./src/tenant-provisioning.ts",
+    "./work-permit": "./src/work-permit.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx --env-file=../../.env src/migrate.ts",
+    "provision:first-tenant": "tsx --env-file=../../.env src/scripts/provision-first-tenant.cli.ts",
     "push": "drizzle-kit push",
     "push:ci": "drizzle-kit push --force",
     "studio": "drizzle-kit studio",
     "seed": "tsx --env-file=../../.env src/seed.ts",
+    "backfill:reference-catalogues": "tsx src/scripts/backfill-reference-catalogues.cli.ts",
     "emit:cutover-verification": "tsx src/scripts/emit-cutover-verification.cli.ts",
     "check:migration-drift": "tsx src/scripts/check-migration-drift.ts",
     "test": "vitest run",
@@ -31,8 +34,9 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@braedonsaunders/appkit-reports": "^1.2.0",
     "@beaconhs/forms-core": "workspace:*",
+    "@beaconhs/i18n": "workspace:*",
+    "@braedonsaunders/appkit-reports": "^1.2.0",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "tsx": "^4.23.1"

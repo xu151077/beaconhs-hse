@@ -309,6 +309,62 @@
       "when": 1791008079646,
       "tag": "0044_inspection_type_fk_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791247223846,
+      "tag": "0045_add_zh_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791857520600,
+      "tag": "0046_cute_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791936148355,
+      "tag": "0047_broken_lord_tyger",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791977472391,
+      "tag": "0048_storage_freeze_tenant_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791978365375,
+      "tag": "0049_attachment_upload_multipart_upload_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792049376543,
+      "tag": "0050_repair_0049_multipart_upload_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792640490486,
+      "tag": "0051_ea12_drop_dead_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794051264264,
+      "tag": "0052_old_nextwave",
+      "breakpoints": true
     }
   ]
 }

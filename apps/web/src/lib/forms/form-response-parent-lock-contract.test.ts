@@ -20,6 +20,7 @@ const fillActions = source('../../app/(app)/apps/templates/[id]/fill/actions.ts'
 const lifecycleActions = source('../../app/(app)/apps/responses/[id]/_lifecycle-actions.ts')
 const workflowActions = source('../../app/(app)/apps/responses/[id]/_actions.ts')
 const monitorActions = source('../../app/(app)/apps/responses/[id]/_monitor-actions.ts')
+const deleteResponseActions = source('../../app/(app)/apps/responses/_actions.ts')
 const formFlow = source('../../app/(app)/apps/_lib/form-flow-adapter.ts')
 const hazardOwner = source('../../app/(app)/hazard-assessments/_actions.ts')
 const api = source('../api/builder-apps.ts')
@@ -59,6 +60,7 @@ describe('generic form-response parent-lock contract', () => {
       'app/(app)/apps/responses/[id]/_actions.ts',
       'app/(app)/apps/responses/[id]/_lifecycle-actions.ts',
       'app/(app)/apps/responses/[id]/_monitor-actions.ts',
+      'app/(app)/apps/responses/_actions.ts',
       'app/(app)/apps/templates/[id]/fill/actions.ts',
       'app/(app)/hazard-assessments/_actions.ts',
       'lib/api/builder-apps.ts',
@@ -110,6 +112,9 @@ describe('generic form-response parent-lock contract', () => {
       [lifecycleActions, 4, 4],
       [workflowActions, 4, 3],
       [monitorActions, 2, 2],
+      // responses/_actions.ts deletes one response; it takes the shared lock
+      // before its soft-delete update.
+      [deleteResponseActions, 1, 1],
       [formFlow, 3, 3],
       [pdfWorker, 1, 1],
       // scheduled.ts claims twice per tick: the missed check-in escalation

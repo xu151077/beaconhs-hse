@@ -240,7 +240,10 @@ describe('R3 — a refusal is reported as 403, not as a server fault', () => {
     // Only a refusal is remapped; a real fault must still be a 500, and
     // Unauthorized/NotFound keep their own ApiError statuses.
     const block = errors.slice(errors.indexOf('export function withRouteErrors'))
-    expect(block).toContain('if (err instanceof ForbiddenError) return errorResponse(err)')
+    expect(block).toContain(
+      'if (err instanceof ForbiddenError || err instanceof ImpersonationBlockedError) {',
+    )
+    expect(block).toContain('return errorResponse(err)')
     expect(block).toContain('throw err')
   })
 

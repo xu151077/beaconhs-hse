@@ -16,7 +16,7 @@ import {
   tenantUsers,
   users,
 } from '@beaconhs/db/schema'
-import { presignGet } from '@beaconhs/storage'
+
 import type { RequestContext } from '@beaconhs/tenant'
 import { inspectionCriterionDisplayAnswer } from '@/lib/inspection-response-config'
 import { photoDocumentUrl } from '@/lib/photo-document-url'
@@ -24,6 +24,7 @@ import { spawnCorrectiveActionForSubject } from '../spawn'
 import { buildRecordSummaryPdfJob } from '../pdf-summary'
 import { fmtDateTime, personName, titleize } from '../format'
 import type { FlowSubjectAdapter } from '../types'
+import { storageObjectUrl } from '../../../lib/storage-gateway'
 
 export function createInspectionFlowAdapter(
   ctx: RequestContext,
@@ -218,7 +219,7 @@ export function createInspectionFlowAdapter(
         customer_signer_name: r.customerSignerName ?? '',
         customer_signed_at: fmtDateTime(r.customerSignedAt),
         customer_signature_image: head.customerSignatureKey
-          ? await presignGet({ key: head.customerSignatureKey, expiresInSeconds: 900 })
+          ? await storageObjectUrl(head.customerSignatureKey)
           : '',
         // FK ids for conditions / recipient `field` targets.
         type_id: r.typeId ?? null,
@@ -249,7 +250,7 @@ export function createInspectionFlowAdapter(
         })),
         photos: await Promise.all(
           photos.map(async (p) => {
-            const url = await presignGet({ key: p.r2Key, expiresInSeconds: 900 })
+            const url = await storageObjectUrl(p.r2Key)
             return {
               url: photoDocumentUrl({
                 url,

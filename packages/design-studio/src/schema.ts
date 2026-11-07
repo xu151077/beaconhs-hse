@@ -443,7 +443,7 @@ function normalizeText(input: Partial<TextStyle>): TextStyle {
   return {
     fontFamily:
       input.fontFamily?.slice(0, DESIGN_DOCUMENT_LIMITS.fontFamilyLength) ||
-      "'Archivo', Arial, sans-serif",
+      "'Archivo', Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif",
     fontSize: clampNumber(input.fontSize, 3, 120, 14),
     fontWeight: ['400', '500', '600', '700', '800'].includes(input.fontWeight ?? '')
       ? input.fontWeight

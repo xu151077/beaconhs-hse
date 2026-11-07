@@ -13,7 +13,7 @@ import { and, desc, eq, isNull, type SQL } from 'drizzle-orm'
 import { attachments, documentCategories, documentVersions, documents } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
-import { presignExistingGet } from '@beaconhs/storage'
+import { storageObjectUrl } from '@/lib/storage-gateway'
 import { requireRequestContext } from '@/lib/auth'
 import { documentReadFilter } from '@/lib/assistant/doc-access'
 import { documentVersionVisibilityWhere } from '@/lib/document-version-policy'
@@ -87,7 +87,9 @@ export async function getReaderDocument(id: string): Promise<ReaderResult> {
         .where(eq(attachments.id, pdfCandidateId))
         .limit(1)
       if (att && (version?.pdfAttachmentId || att.contentType === 'application/pdf')) {
-        pdfUrl = await presignExistingGet({ key: att.r2Key, expiresInSeconds: 300 })
+        // The browser must never receive an object-store URL: the gateway
+        // re-checks the caller and streams from the internal endpoint.
+        pdfUrl = storageObjectUrl(att.r2Key)
       }
     }
 

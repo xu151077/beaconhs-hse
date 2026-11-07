@@ -1,4 +1,12 @@
-export const SUPPORTED_LOCALES = ['en', 'fr', 'es'] as const
+/**
+ * BeaconHS stores locales as 2-letter ISO-639-1 codes. Do NOT introduce a
+ * second naming convention (`zh-CN`, `en-GB`): the value is persisted in
+ * `tenants.default_language`, `tenants.enabled_languages` and
+ * `tenant_users.locale_override`, each guarded by a CHECK constraint in
+ * `packages/db/src/schema/core.ts`. Adding a locale means extending this array
+ * and widening those three constraints in the same change.
+ */
+export const SUPPORTED_LOCALES = ['en', 'fr', 'es', 'zh'] as const
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number]
 
@@ -8,11 +16,28 @@ export const LOCALE_OPTIONS = [
   { value: 'en', label: 'English', nativeLabel: 'English' },
   { value: 'fr', label: 'French', nativeLabel: 'Français' },
   { value: 'es', label: 'Spanish', nativeLabel: 'Español' },
+  { value: 'zh', label: 'Chinese', nativeLabel: '简体中文' },
 ] as const satisfies readonly {
   value: AppLocale
   label: string
   nativeLabel: string
 }[]
+
+/**
+ * Script/region subtags that must NOT resolve to the Simplified Chinese
+ * catalogue. `zh` is Simplified only, so a Traditional-Chinese preference
+ * (Taiwan, Hong Kong, Macau, or an explicit `Hant`) falls back to the default
+ * locale rather than being served text in the wrong script.
+ */
+const UNSUPPORTED_ZH_SUBTAGS = new Set(['hant', 'tw', 'hk', 'mo'])
+
+function parseLanguageTag(tag: string): AppLocale | null {
+  const [language = '', ...subtags] = tag.toLowerCase().split('-')
+  if (language === 'zh' && subtags.some((subtag) => UNSUPPORTED_ZH_SUBTAGS.has(subtag))) {
+    return null
+  }
+  return parseAppLocale(language)
+}
 
 export function isAppLocale(value: unknown): value is AppLocale {
   return typeof value === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(value)
@@ -34,7 +59,7 @@ export function localeFromAcceptLanguage(header: string | null | undefined): App
         .find((parameter) => parameter.startsWith('q='))
       const parsedQuality = quality ? Number(quality.slice(2)) : 1
       return {
-        locale: parseAppLocale(tag.toLowerCase().split('-')[0]),
+        locale: parseLanguageTag(tag),
         quality: Number.isFinite(parsedQuality) ? Math.max(0, Math.min(1, parsedQuality)) : 0,
       }
     })

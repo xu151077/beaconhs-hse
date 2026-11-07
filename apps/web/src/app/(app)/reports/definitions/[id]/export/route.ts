@@ -16,9 +16,11 @@ import { isRouterPrefetch } from '@/lib/router-prefetch'
 import { renderWalletCardsForReport, reportSupportsWalletCards } from '@/lib/report-wallet-cards'
 import { loadTenantBranding, runReportForViewer } from '../../../_run'
 
+import { withRouteErrors } from '@/lib/api/errors'
+
 export const dynamic = 'force-dynamic'
 
-export async function GET(
+async function getHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
@@ -82,10 +84,17 @@ export async function GET(
         skipped: wallet.skipped,
       },
     })
+    const originalFilename = wallet.filename || 'wallet.pdf'
+    const sanitizedFilename =
+      originalFilename
+        .replace(/["\r\n]/g, '_')
+        .replace(/^[^a-zA-Z0-9]/, '_')
+        .substring(0, 200) || 'wallet.pdf'
+    const encodedFilename = encodeURIComponent(originalFilename)
     return new Response(new Uint8Array(wallet.bytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${wallet.filename}"`,
+        'Content-Disposition': `attachment; filename="${sanitizedFilename}"; filename*=utf-8''${encodedFilename}`,
       },
     })
   }
@@ -201,3 +210,5 @@ function sheetName(value: string): string {
       .slice(0, 31) || 'Results'
   )
 }
+
+export const GET = withRouteErrors(getHandler)

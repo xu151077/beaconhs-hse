@@ -5,18 +5,14 @@
 // slide images: editing and playback both read this same canonical file.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db, withTenant } from '@beaconhs/db'
 import { attachments, documents, trainingContentItems, trainingLessons } from '@beaconhs/db/schema'
 import { deleteObject, getObjectStream, newAttachmentKey, putObject } from '@beaconhs/storage'
 import { audit } from '@beaconhs/audit'
-import {
-  DOCX_MIME_TYPE,
-  MAX_DOCX_CONVERSION_BYTES,
-  MAX_PPTX_FILE_BYTES,
-  PPTX_MIME_TYPE,
-} from '@beaconhs/office/limits'
+import { officeCeilingFor } from '@beaconhs/office/limits'
 import { verifyWopiToken, type WopiGrant } from '@/lib/wopi'
+import { wopiStorageRefusalStatus } from '@/lib/wopi-storage-refusal'
 import { wopiGrantCanAccessFile, wopiPrincipalIsAuthorized } from '@/lib/wopi-access'
 import {
   readBoundedRequestBody,
@@ -120,12 +116,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ fileId: st
   })
   if (!att) return new NextResponse('File not found', { status: 404 })
 
-  const maxBytes =
-    att.contentType === PPTX_MIME_TYPE
-      ? MAX_PPTX_FILE_BYTES
-      : att.contentType === DOCX_MIME_TYPE
-        ? MAX_DOCX_CONVERSION_BYTES
-        : null
+  const maxBytes = officeCeilingFor(
+    att.contentType,
+    grant.target === 'document' ? 'document' : 'training',
+  )
   if (maxBytes === null) {
     return new NextResponse('Unsupported office file type', { status: 415 })
   }
@@ -182,11 +176,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ fileId: st
     kind: 'document',
     filename: att.filename,
   })
-  await putObject({
-    key: stagedKey,
-    body,
-    contentType: att.contentType || 'application/octet-stream',
-  })
+  try {
+    await putObject({
+      key: stagedKey,
+      body,
+      contentType: att.contentType || 'application/octet-stream',
+    })
+  } catch (error) {
+    const refusalStatus = wopiStorageRefusalStatus(error)
+    if (refusalStatus !== null) {
+      // `putObject` refused before creating the staged object, so there is nothing to
+      // delete. Calling the gated delete path here would be refused for the same
+      // non-ACTIVE freeze state and would turn a clean 423 into a 500.
+      return new NextResponse('Workspace unavailable', { status: refusalStatus })
+    }
+    throw error
+  }
 
   // Uploading a large file can outlast a membership or permission change.
   // Re-check after staging; the new key is still unreferenced and safe to
@@ -238,7 +243,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ fileId: st
           and(
             eq(attachments.id, fileId),
             eq(attachments.r2Key, att.key),
-            eq(attachments.updatedAt, att.updatedAt),
+            // Timestamps round-trip through JavaScript Dates at millisecond
+            // precision, but PostgreSQL stores microseconds: rows written with
+            // a database-side default (`now()`) carry sub-millisecond digits
+            // that a re-sent JS Date can never equal. Truncate both sides so
+            // the optimistic-concurrency check compares what the application
+            // can actually observe, instead of rejecting every save on such
+            // rows as a phantom concurrent edit. The bound is passed as an
+            // ISO string because the postgres driver does not serialize Date
+            // objects inside raw `sql` fragments.
+            sql`date_trunc('milliseconds', ${attachments.updatedAt}) = ${att.updatedAt.toISOString()}::timestamptz`,
           ),
         )
         .returning({ id: attachments.id })

@@ -26,7 +26,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/braedonsaunders/beaconhs
-  COLLABORA_IMAGE: collabora/code:26.04.2.1.1@sha256:df33af88c59e26b7335ea98d91e65f1edf13f33369ce6115941b8d59d3409cb5
+  COLLABORA_IMAGE: collabora/code@sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
-      image_digest: ${{ steps.build-image.outputs.digest }}
+      image_digest: ${{ steps.promote.outputs.digest }}
     steps:
       - name: Require the gated main-branch CI caller
         env:
@@ -63,23 +63,81 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # BuildKit does not include secret content in its layer cache key, so
+      # without this the cached `next build` layer would keep serving the previous
+      # key after a rotation and the image gate would block the deploy. The value
+      # is the 128-bit HMAC-SHA256 fingerprint (a PRF under the key, never the
+      # key), computed by the same dependency-free CLI the local entry point uses.
+      - name: Compute the Server Action key fingerprint
+        id: key-fingerprint
+        env:
+          SERVER_ACTION_KEY: ${{ secrets.DEV_NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          key_file="$(mktemp)"
+          trap 'rm -f "$key_file"' EXIT
+          ( umask 077; printf '%s' "$SERVER_ACTION_KEY" > "$key_file" )
+          echo "fingerprint=$(node scripts/ci/server-action-key-fingerprint.mjs "$key_file")" \
+            >> "$GITHUB_OUTPUT"
+      # The revision stamped into the image must come from the workflow, not from
+      # the caller, and it must describe the tree that is actually checked out.
+      # `verify-source-origin.mjs` compares $GITHUB_SHA against the checked-out
+      # HEAD, refuses unsupported triggers (a PR's synthetic merge commit is not
+      # a release), and refuses a dirty tree. Without this, a 40-hex value is
+      # trusted on shape alone — see EA-53 T7 / EA-55 T5a.
+      # Reads only git state: no network, no API, therefore no credential.
+      - name: Verify the source revision matches the checkout
+        run: >-
+          node scripts/ci/verify-source-origin.mjs
+          --expect "${{ github.sha }}"
+          --event "${{ github.event_name }}"
+          --ref "${{ github.ref }}"
       - id: build-image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           platforms: linux/amd64
+          # Publish to a NON-DEPLOYABLE staging tag only. The release tag is
+          # created by the promote step below, and only after the identity
+          # assertion passes, so a bad artefact never becomes deployable.
+          # Pushing here (rather than `load: true`) is required because `--load`
+          # imports a docker-format image and discards the BuildKit provenance
+          # attestation that the deploy gate verifies.
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ env.IMAGE_NAME }}:staging-${{ github.sha }}
           cache-from: type=gha
           build-args: |
             NEXT_PUBLIC_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
             DEPLOYMENT_VERSION=${{ github.sha }}
+            NEXT_SERVER_ACTIONS_KEY_FINGERPRINT=${{ steps.key-fingerprint.outputs.fingerprint }}
           secrets: |
             next_server_actions_key=${{ secrets.DEV_NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
           # ignore-error: the GHA cache backend intermittently fails the blob
           # write ("error writing layer blob: not_found") AFTER the image is
           # already pushed — don't let a cache hiccup fail the build/deploy.
           cache-to: type=gha,mode=max,ignore-error=true
+      # Reads the identity out of the pushed artefact — not out of a local build
+      # tree and not out of the build log — and compares it with the revision
+      # Step C verified against the checkout. A missing byte, an empty value, a
+      # BUILD_ID, or a mismatch all fail here, before anything is deployable.
+      - name: Assert the built image carries the verified revision
+        run: >-
+          node scripts/ci/verify-image-identity.mjs
+          --image "${IMAGE_NAME}:staging-${GITHUB_SHA}"
+          --expect "${GITHUB_SHA}"
+      # This is the publication step. `imagetools create` copies the manifest
+      # server-side and preserves the digest exactly (verified), so the promoted
+      # tag is byte-identical to the asserted staging tag. If the assertion above
+      # failed, this step never runs and no deployable tag exists.
+      - name: Promote the verified digest to its release tag
+        id: promote
+        run: |
+          set -euo pipefail
+          digest="$(scripts/ci/promote-verified-image.sh \
+            "${IMAGE_NAME}" \
+            '${{ steps.build-image.outputs.digest }}' \
+            "${IMAGE_NAME}:${GITHUB_SHA}")"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: build
@@ -262,6 +320,52 @@ jobs:
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
       - run: pnpm install --frozen-lockfile
 
+      # The image is immutable per digest, but the key it embedded is a build
+      # secret. Prove the pushed image's build-time key equals the expected
+      # deployment key BEFORE migrations and before any traffic moves. The gate
+      # prints only a fingerprint; the key never reaches a log or an artifact.
+      - name: Gate the image's Server Action key
+        env:
+          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.DEV_NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          expected="$(scripts/ci/verify-server-action-key-gate.sh fingerprint --env \
+            | sed -n 's/^fingerprint=//p')"
+          test -n "$expected"
+          scripts/ci/verify-server-action-key-gate.sh image \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}" "$expected"
+          printf 'EXPECTED_SERVER_ACTION_KEY_FINGERPRINT=%s\n' "$expected" >> "$GITHUB_ENV"
+
+      # Gate every identity decision on the candidate image BEFORE migrations and
+      # before any traffic moves. The assembler is the only component that reads
+      # the registry; the gate is the only component that decides. Both are
+      # reused from EA-54 unchanged.
+      - name: Gate the candidate image before deployment
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DOCKER_CONFIG="$(mktemp -d)"
+          chmod 0700 "$DOCKER_CONFIG"
+          export DOCKER_CONFIG
+          candidate="$(mktemp)"
+          trap 'rm -f "$candidate"; docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          # The index must be read with `buildx imagetools inspect --raw`: plain
+          # `docker manifest inspect` strips the attestation descriptor's
+          # annotations, which is where the provenance subject binding lives.
+          if ! docker buildx version >/dev/null 2>&1; then
+            echo "::error::the deploy gate needs the docker buildx plugin to read OCI index annotations (provenance subject binding); install docker-buildx-plugin on this runner"
+            exit 1
+          fi
+          node scripts/ci/assemble-gate-candidate.mjs \
+            --image "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            --expect-revision "${GITHUB_SHA}" \
+            --policy scripts/ci/deploy-gate-policy.json \
+            --out "$candidate"
+          node scripts/ci/deployment-gate.mjs --input "$candidate"
+
       # Forward-only schema migrations run before the redeploy. The unpooled
       # migrator login can SET ROLE to the NOLOGIN owner; neither credential
       # reaches the long-running deployment containers.
@@ -311,6 +415,9 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.DEV_BETTER_AUTH_SECRET }}
           ATTACHMENT_CAPABILITY_SECRET: ${{ secrets.DEV_ATTACHMENT_CAPABILITY_SECRET }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          # Private in-network object-store address for server-side S3 I/O. Distinct
+          # from R2_ENDPOINT, which stays the browser/presign endpoint.
+          R2_INTERNAL_ENDPOINT: ${{ secrets.R2_INTERNAL_ENDPOINT }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
@@ -345,9 +452,11 @@ jobs:
             printf 'SUPERADMIN_DATABASE_URL=%s\n' "$DEV_SUPERADMIN_DATABASE_URL"
             printf 'REDIS_URL=%s\n' "$REDIS_URL"
             printf 'APP_URL=%s\n' "$APP_URL"
+            printf 'PUBLIC_APP_URL=%s\n' "$APP_URL"
             printf 'BETTER_AUTH_SECRET=%s\n' "$BETTER_AUTH_SECRET"
             printf 'ATTACHMENT_CAPABILITY_SECRET=%s\n' "$ATTACHMENT_CAPABILITY_SECRET"
             printf 'R2_ENDPOINT=%s\n' "$R2_ENDPOINT"
+            printf 'R2_INTERNAL_ENDPOINT=%s\n' "$R2_INTERNAL_ENDPOINT"
             printf 'R2_ACCESS_KEY_ID=%s\n' "$R2_ACCESS_KEY_ID"
             printf 'R2_SECRET_ACCESS_KEY=%s\n' "$R2_SECRET_ACCESS_KEY"
             printf 'R2_BUCKET=%s\n' "$R2_BUCKET"
@@ -447,3 +556,69 @@ jobs:
           done
           echo "::error::Deployment did not become externally ready with a healthy login page within 10 minutes (last /login status: ${last_login_status:-000})"
           exit 1
+
+      # Readiness only proves the task the load balancer happened to reach. In the
+      # direct rollout path the tasks are reachable from this runner, so check
+      # EVERY running web task: each must report the expected commit AND use the
+      # build-time key verified above, or a runtime override with the expected
+      # fingerprint. A mixed fleet fails the deployment instead of surfacing later
+      # as "Failed to find Server Action" on cross-instance requests, or as a
+      # half-rolled-out release (Phase EA-8 reproduced two tasks both reporting
+      # "ready" on different commits). The Dokploy compose path has no task access
+      # from the runner: there the image gate above is the binding proof and the
+      # stack runs on the embedded build-time key (deploy/dokploy-dev.compose.yaml
+      # sets no runtime override).
+      - name: Verify every web replica's commit and Server Action key
+        if: env.DOKPLOY_DEPLOY_MODE == 'direct'
+        run: |
+          set -euo pipefail
+          scripts/ci/verify-server-action-key-gate.sh replicas \
+            "$DOKPLOY_TARGET_STACK" "$EXPECTED_SERVER_ACTION_KEY_FINGERPRINT" "$GITHUB_SHA"
+
+      # Gate 5 — reconcile the digest that is ACTUALLY RUNNING with the digest
+      # that was gated. Readiness compares APP_VERSION, which is a runtime
+      # environment variable: a task can answer 200 with the right version while
+      # running a different image (EA56-T23). Only the service spec proves image
+      # identity, so this reads it back and refuses a mixed or stale fleet.
+      #
+      # This runs on every deployment path. A path that cannot expose its running
+      # services is not exempt: the reconciler fails closed when it cannot read a
+      # digest, so the run fails instead of reporting an unverified deployment as
+      # successful. The expected digest, the release tag and a readiness 200 are
+      # never accepted as substitutes for the running digest.
+      #
+      # The roster file states what the stack is DEFINED to run: which gated
+      # services must exist, their replica counts, and which roles must have live
+      # tasks. It is generated here — from this workflow's own values and the
+      # compose file in the checkout — never from a query of the running fleet,
+      # because a roster derived from what was found could not detect a missing
+      # service (EA59 S12 / F-59-1). The reconciler refuses to run without it.
+      - name: Reconcile the running image digest
+        env:
+          WRITER_REPLICAS: 1
+        run: |
+          set -euo pipefail
+          roster="$(mktemp)"
+          trap 'rm -f "$roster"' EXIT
+          {
+            echo "stack=$DOKPLOY_TARGET_STACK"
+            echo "source=deploy/dokploy-dev.compose.yaml + deploy env (WRITER_REPLICAS=$WRITER_REPLICAS)"
+            echo "digest=$IMAGE_DIGEST"
+            for role in web worker; do
+              echo "$role.replicas=$WRITER_REPLICAS"
+              echo "$role.running=true"
+            done
+            # scheduler and storage-init are one-shot: they register jobs /
+            # bootstrap storage and finish successfully, so no live task
+            # survives the rollout. Their identity is proven by the service
+            # spec plus a completed task on the gated digest; requiring a
+            # live task would fail every successful deployment.
+            for role in scheduler storage-init; do
+              echo "$role.replicas=1"
+              echo "$role.running=false"
+            done
+          } > "$roster"
+          if ! scripts/ci/reconcile-running-digest.sh "$DOKPLOY_TARGET_STACK" "$IMAGE_DIGEST" "$roster"; then
+            echo "::error::Gate 5 could not prove that stack '${DOKPLOY_TARGET_STACK}' runs ${IMAGE_DIGEST}. The rollout may have been requested, but this run is not a verified release: the running image digest was not read back and matched, or the fleet did not match its roster." >&2
+            exit 1
+          fi

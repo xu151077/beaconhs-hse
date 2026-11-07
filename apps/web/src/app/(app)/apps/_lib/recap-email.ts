@@ -237,4 +237,5 @@ const RECAP_COPY: Record<
   en: { site: 'Location', attendees: 'Attendees', signed: 'signed', unnamed: '(unnamed)' },
   fr: { site: 'Emplacement', attendees: 'Participants', signed: 'signés', unnamed: '(sans nom)' },
   es: { site: 'Ubicación', attendees: 'Asistentes', signed: 'firmados', unnamed: '(sin nombre)' },
+  zh: { site: '位置', attendees: '出席人员', signed: '已签核', unnamed: '（未署名）' },
 }
