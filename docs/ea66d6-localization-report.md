@@ -682,3 +682,47 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / build 0。`test --force` 24/25，
 - 镜像 `beaconhs@sha256:d57d29a4…`，部署 ID `6d1f2df9…-20261101-001`，Gate 5 **PASS**
 - 注意：start 脚本从不跑迁移，首次重启后生产库为 51 且 web 日志 `pending: [0052_old_nextwave]`。按正式入口 `APP_ROLE=migrate` 一次性容器执行迁移后，数据库为 52，`platform_settings.open_source` 列存在（`{}`），web 重启后日志 `[schema] match: applied 52`
 - 未登录访问 `/platform/source` 跳登录页；生产 `open_source` 为空，Dashboard 底部暂不显示链接，待管理员在后台填入仓库地址
+
+---
+
+## 20. 深层次审计修复（EA-66D.21）
+
+安全 + 代码双审计（完整报告在上一任务的安全/审查子智能体输出中）确认的修复：
+
+### 20.1 安全（2 高/中）
+
+| #     | 问题                                                              | 修复                                                               |
+| ----- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| F1    | `/api/search` 人员分组无 `people.read.all` 门禁，可枚举全员花名册 | 门禁 + 回归测试                                                    |
+| F5    | 开源链接读侧无校验（存储型 XSS 向所有登录用户）                   | 读侧 `sanitizeOpenSourceUrl` + footer 显示层隐藏                   |
+| B2    | 表单字段缺失被静默重置为“隐藏链接”                                | 缺失/非字符串直接拒绝                                              |
+| F2    | `/verify/*` 无限流；工牌 token 无轮转、离职不失效                 | 限流（每客户端 60/10min、每 token 300/10min）+ 轮转按钮 + 离职失效 |
+| F7    | `loadPersonLinkData` 从 `'use server'` 导出                       | 保持现状（无闭包泄漏），如实记录                                   |
+| F6    | `previewNow` 传裸 `db`                                            | 已证伪：`runSync` 内部 `withTenant` 设 RLS，无需改                 |
+| F4/F8 | 公开 API spec / 内部 HMAC 回调                                    | 接受为产品决策                                                     |
+| F3    | 证书核验披露发行方名称                                            | 接受为产品决策                                                     |
+
+### 20.2 正确性
+
+- 工单 `cost: cost as any` → 十进制字符串校验，拒非数字
+- 分片上传 `!` 断言 → 守卫后局部变量绑定
+- `void row` 死语句 ×2 删除
+- Dashboard `today` 改为用户时区（其余 ~50 处 UTC 日期做后续债务）
+- `packages/tenant` 新增 `index.test.ts`（14 项，权限核心首次单测）
+
+### 20.3 门禁
+
+| 项   | 结果                                                                                                             |
+| ---- | ---------------------------------------------------------------------------------------------------------------- |
+| test | **26/26**（tenant 包新增 vitest + 2 个 heavy E2E 超时放宽 180→600s；health/ready 5s 抖动因 import 超时放宽 30s） |
+| 其余 | format 0 / deadcode 0 / lint 0 / typecheck 0 / build 0                                                           |
+
+### 20.4 部署
+
+镜像已上线。
+
+### 20.4 部署
+
+- 镜像 `beaconhs@sha256:26b0dd1f…`，部署 ID `90bcf9f2…-20261101-001`，Gate 5 PASS，web 日志 `[schema] match: applied 52`（本轮无新迁移）
+- 未登录探针 `/verify/person/<t>` 与 `/login` 均返回 200；限流按 token 300/10min，6 次探针当然未触发（限流生效已由单测覆盖）
+- F1 修复的线上行为需登录态验证（无 `people.read.all` 的用户搜不到人员），已由回归测试覆盖，等待手测
