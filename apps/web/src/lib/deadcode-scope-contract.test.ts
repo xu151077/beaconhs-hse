@@ -20,7 +20,9 @@ const playwrightConfig = readFileSync(
 
 describe('dead-code scan scope', () => {
   it('only ignores repo-root operator scratch directories', () => {
-    expect((rootWorkspace?.ignore ?? []).every((pattern) => pattern.startsWith('.tmp-*/'))).toBe(true)
+    expect((rootWorkspace?.ignore ?? []).every((pattern) => pattern.startsWith('.tmp-*/'))).toBe(
+      true,
+    )
   })
 
   it('keeps the Playwright dependency genuinely used instead of ignoring it', () => {
