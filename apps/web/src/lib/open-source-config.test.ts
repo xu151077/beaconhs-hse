@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOpenSourceUrl, sanitizeOpenSourceInput } from './open-source-config'
+import {
+  normalizeOpenSourceUrl,
+  sanitizeOpenSourceInput,
+  sanitizeOpenSourceUrl,
+} from './open-source-config'
 
 describe('normalizeOpenSourceUrl', () => {
   it('accepts a public repository URL and canonicalizes it', () => {
@@ -49,5 +53,32 @@ describe('sanitizeOpenSourceInput', () => {
       url: 'https://example.com/repo',
     })
     expect(sanitizeOpenSourceInput({ url: '' })).toEqual({ url: '' })
+  })
+})
+
+describe('sanitizeOpenSourceUrl (read-path defense in depth)', () => {
+  it('accepts a valid stored value', () => {
+    expect(sanitizeOpenSourceUrl('https://github.com/example/app')).toBe(
+      'https://github.com/example/app',
+    )
+  })
+
+  it('hides the link when the stored value bypassed write validation', () => {
+    // Any value that skipped normalizeOpenSourceUrl (direct SQL, a seed, a
+    // future writer) must not reach the Dashboard as a clickable href.
+    expect(sanitizeOpenSourceUrl('javascript:alert(1)')).toBe('')
+    expect(
+      sanitizeOpenSourceUrl('data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='),
+    ).toBe('')
+    expect(sanitizeOpenSourceUrl('ftp://example.com/repo')).toBe('')
+    expect(sanitizeOpenSourceUrl('https://user:pass@example.com/repo')).toBe('')
+    expect(sanitizeOpenSourceUrl('not-a-url')).toBe('')
+  })
+
+  it('treats non-string stored values as hidden', () => {
+    expect(sanitizeOpenSourceUrl(null)).toBe('')
+    expect(sanitizeOpenSourceUrl(undefined)).toBe('')
+    expect(sanitizeOpenSourceUrl({ url: 'https://example.com' })).toBe('')
+    expect(sanitizeOpenSourceUrl(42)).toBe('')
   })
 })

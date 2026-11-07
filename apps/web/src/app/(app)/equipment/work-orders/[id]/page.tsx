@@ -137,13 +137,15 @@ async function updateActionTaken(formData: FormData) {
   const id = String(formData.get('id') ?? '')
   const actionTaken = String(formData.get('actionTaken') ?? '').trim() || null
   const costRaw = String(formData.get('cost') ?? '').trim()
+  // `numeric(12,2)` accepts only plain decimal strings; anything else is a
+  // data-integrity error, so validate here instead of letting Postgres 500.
   const cost = costRaw ? costRaw : null
+  if (cost !== null && !/^(0|[1-9]\d{0,9})(\.\d{1,2})?$/.test(cost)) {
+    throw new Error('Cost must be a number with up to 2 decimal places.')
+  }
   if (!id) return
   await ctx.db((tx) =>
-    tx
-      .update(equipmentWorkOrders)
-      .set({ actionTaken, cost: cost as any })
-      .where(eq(equipmentWorkOrders.id, id)),
+    tx.update(equipmentWorkOrders).set({ actionTaken, cost }).where(eq(equipmentWorkOrders.id, id)),
   )
   await recordAudit(ctx, {
     entityType: 'equipment_work_order',

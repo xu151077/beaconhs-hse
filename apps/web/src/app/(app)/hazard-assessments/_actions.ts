@@ -1943,7 +1943,6 @@ export async function addSignature(formData: FormData) {
       return created
     },
   )
-  void row
   revalidateAssessment(assessmentId)
 }
 
@@ -2014,7 +2013,6 @@ export async function signSignature(formData: FormData) {
       return updated
     },
   )
-  void row
   revalidateAssessment(assessmentId)
 }
 

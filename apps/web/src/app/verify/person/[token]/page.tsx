@@ -18,6 +18,7 @@ import {
 } from '@beaconhs/db/schema'
 import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import { RawImage } from '@/components/raw-image'
+import { guardPublicPageRateLimit } from '@/lib/public-page-rate-limit'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { activeTenantPredicate } from '@/lib/active-tenant'
 import { EXPIRING_DAYS, formatDay, isoDaysFromNow, standingFor, todayIsoDate } from './_format'
@@ -129,6 +130,18 @@ async function resolveToken(token: string): Promise<Resolved | null> {
 
 export default async function VerifyPersonPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
+  const limited = await guardPublicPageRateLimit('verify-person', token)
+  if (!limited.ok) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-100 p-6">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-red-700">
+            <GeneratedText id="m_061801dbc80306" />
+          </h1>
+        </div>
+      </main>
+    )
+  }
   const result = await resolveToken(token)
 
   if (!result) {

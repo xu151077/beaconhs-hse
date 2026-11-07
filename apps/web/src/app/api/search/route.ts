@@ -107,6 +107,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     const documentsVis: SQL<unknown> | undefined = canReadDocuments
       ? documentReadFilter(ctx)
       : sql`false`
+    // People has an all-or-nothing gate too: the /people page requires
+    // `people.read.all`, so without it the people group must not leak the
+    // roster (names/employee numbers/emails) through the global search.
+    const canReadPeople = can(ctx, 'people.read.all')
 
     const [
       incidentRows,
@@ -202,6 +206,18 @@ export async function GET(req: Request): Promise<NextResponse> {
 
       // ---- people (firstName / lastName / employeeNo / email) -----------
       (() => {
+        if (!canReadPeople)
+          return tx
+            .select({
+              id: people.id,
+              firstName: people.firstName,
+              lastName: people.lastName,
+              employeeNo: people.employeeNo,
+              jobTitle: primaryPersonTitleName(people.id, people.tenantId),
+            })
+            .from(people)
+            .where(sql`false`)
+            .limit(0)
         const where: SQL<unknown>[] = [isNull(people.deletedAt)]
         const match = or(
           ilike(people.firstName, term),
@@ -227,6 +243,11 @@ export async function GET(req: Request): Promise<NextResponse> {
           .limit(PER_GROUP_LIMIT)
       })(),
       (() => {
+        if (!canReadPeople)
+          return tx
+            .select({ c: count() })
+            .from(people)
+            .where(sql`false`)
         const where: SQL<unknown>[] = [isNull(people.deletedAt)]
         const match = or(
           ilike(people.firstName, term),

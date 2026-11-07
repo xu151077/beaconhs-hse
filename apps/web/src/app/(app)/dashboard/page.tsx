@@ -6,6 +6,7 @@ import { PageContainer } from '@/components/page-layout'
 import { loadDashboardMetrics } from './_metrics'
 import { loadDashboardLayout } from './_load-layout'
 import { getPlatformOpenSourceSettings } from '@/lib/open-source-config'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { DashboardGrid } from './_dashboard-grid'
 import { WidgetCard } from './_widget-views'
 import { WIDGETS, WIDGET_CARD_KEY } from './_widget-registry'
@@ -40,7 +41,9 @@ export default async function DashboardPage() {
   const t = await getTranslations('Dashboard')
   const tOpenSource = await getTranslations('OpenSource')
   const today = new Date()
-  const todayIso = today.toISOString().slice(0, 10)
+  // The user's wall-clock day, not the server's UTC day: UTC+8 tenants hit
+  // their "today" boundary ~8 hours before the UTC midnight.
+  const todayIso = dateIsoInTimeZone(today, ctx.timezone)
 
   const [{ layout, role }, data, systemCards, openSource] = await Promise.all([
     loadDashboardLayout(ctx),
@@ -124,6 +127,8 @@ export default async function DashboardPage() {
       : t('tenantSummary', { people: data.peopleCount, incidents: data.incidents30 })
     : null
 
+  const openSourceHost = openSource.url ? displaySourceHost(openSource.url) : ''
+
   return (
     <PageContainer>
       <div className="space-y-5">
@@ -131,7 +136,7 @@ export default async function DashboardPage() {
 
         <DashboardGrid initialLayout={visibleLayout} nodes={nodes} role={role} mode="view" />
 
-        {openSource.url ? (
+        {openSource.url && openSourceHost ? (
           <footer className="flex justify-center pt-2 pb-4">
             <a
               href={openSource.url}
@@ -140,7 +145,7 @@ export default async function DashboardPage() {
               className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-500 underline-offset-4 hover:text-teal-700 hover:underline dark:text-slate-400 dark:hover:text-teal-400"
             >
               <span className="shrink-0">{tOpenSource('linkLabel')}</span>
-              <span className="truncate font-mono">{displaySourceHost(openSource.url)}</span>
+              <span className="truncate font-mono">{openSourceHost}</span>
               <ExternalLink size={12} className="shrink-0" aria-hidden="true" />
             </a>
           </footer>
@@ -153,9 +158,10 @@ export default async function DashboardPage() {
 function displaySourceHost(url: string): string {
   try {
     const parsed = new URL(url)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return ''
     return `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`
   } catch {
-    return url
+    return ''
   }
 }
 

@@ -43,6 +43,30 @@ async function ensurePersonBadgeToken(
   })
 }
 
+/**
+ * Replace the person's badge token so the previously printed (or shared) QR
+ * stops resolving. The next badge render generates a fresh token lazily.
+ * This is the revocation path for a lost/shared badge: the transcript stays
+ * reachable only under the new token.
+ */
+export async function rotatePersonBadgeToken(
+  ctx: RequestContext,
+  personId: string,
+): Promise<boolean> {
+  return ctx.db(async (tx) => {
+    const [person] = await tx
+      .select({ id: people.id })
+      .from(people)
+      .where(and(eq(people.id, personId), isNull(people.deletedAt)))
+      .limit(1)
+      .for('update')
+    if (!person) return false
+    const token = randomBytes(20).toString('hex')
+    await tx.update(people).set({ badgeToken: token }).where(eq(people.id, personId))
+    return true
+  })
+}
+
 function personBadgeVerifyUrl(token: string): string {
   return `${appBaseUrl()}/verify/person/${token}`
 }

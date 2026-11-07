@@ -16,7 +16,14 @@ async function gatePlatform() {
 
 export async function savePlatformOpenSource(formData: FormData) {
   const ctx = await gatePlatform()
-  const url = normalizeUnknown(formData.get('url'))
+  const raw = formData.get('url')
+  // A missing field or a file part means the submit is malformed — reject it
+  // rather than silently clearing a deployment-wide link shown on every
+  // dashboard. Only a deliberate (possibly empty) text field is accepted.
+  if (raw === null || typeof raw !== 'string') {
+    throw new Error('Missing repository URL field.')
+  }
+  const url = raw
   await savePlatformOpenSourceSettings({ url })
   await recordAudit(ctx, {
     entityType: 'platform_settings',
@@ -28,8 +35,4 @@ export async function savePlatformOpenSource(formData: FormData) {
   revalidatePath('/platform/source')
   revalidatePath('/platform')
   revalidatePath('/dashboard')
-}
-
-function normalizeUnknown(value: FormDataEntryValue | null): string {
-  return typeof value === 'string' ? value : ''
 }

@@ -302,7 +302,11 @@ export async function bulkSetPeopleStatus(args: {
     if (changedIds.length === 0) return { updated: 0, skipped }
     await tx
       .update(people)
-      .set({ status })
+      .set(
+        // Inactivation/termination kills the public badge link (see the
+        // single-person edit path for the same rule).
+        status === 'active' ? { status } : { status, badgeToken: null },
+      )
       .where(and(eq(people.tenantId, ctx.tenantId), inArray(people.id, changedIds)))
     await materializeIdentityAudienceObligations(tx, ctx.tenantId, changedIds)
     for (const id of changedIds) {

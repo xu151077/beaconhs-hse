@@ -38,6 +38,18 @@ export function PublicCardNotFound({ backHref }: { backHref: string }) {
   )
 }
 
+export function PublicRateLimited() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-slate-100 p-6">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <h1 className="text-lg font-semibold text-red-700">
+          <GeneratedText id="m_061801dbc80306" />
+        </h1>
+      </div>
+    </main>
+  )
+}
+
 export function PublicCardPage({
   backHref,
   personName,

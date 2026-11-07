@@ -20,8 +20,15 @@ import { appBaseUrl } from '@/lib/app-base-url'
 import { resolveCourseCredentialOutput } from '@/lib/credential-designs'
 import { activeTenantPredicate } from '@/lib/active-tenant'
 import { isUuid } from '@/lib/list-params'
+import { guardPublicPageRateLimit } from '@/lib/public-page-rate-limit'
 import { EXPIRING_DAYS, isoDaysFromNow, standingFor, todayIsoDate } from '../../_format'
-import { factDay, PublicCardNotFound, PublicCardPage, verifyQrDataUrl } from '../../_card-page'
+import {
+  factDay,
+  PublicCardNotFound,
+  PublicCardPage,
+  PublicRateLimited,
+  verifyQrDataUrl,
+} from '../../_card-page'
 import { storageObjectUrl } from '../../../../../../lib/storage-gateway'
 
 export const dynamic = 'force-dynamic'
@@ -33,6 +40,9 @@ export default async function VerifyPersonRecordPage({
 }) {
   const { token, recordId } = await params
   if (!isUuid(recordId)) notFound()
+
+  const limited = await guardPublicPageRateLimit('verify-person', token)
+  if (!limited.ok) return <PublicRateLimited />
 
   const backHref = `/verify/person/${token}`
 

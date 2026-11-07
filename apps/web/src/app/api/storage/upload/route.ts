@@ -110,6 +110,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   const sizeBytes = Number(reservation.sizeBytes)
   let partNumber = 0
   let expected: number
+  // Multipart upload id bound right after the guard below (narrowed once, used
+  // across the await gap without re-asserting).
+  let multipartUploadId: string | null = null
 
   if (isPart) {
     partNumber = Number(partNumberRaw)
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!reservation.multipartUploadId) {
       return new NextResponse('No multipart upload is open for this reference', { status: 409 })
     }
+    multipartUploadId = reservation.multipartUploadId
     const partCount = Math.ceil(sizeBytes / MULTIPART_UPLOAD_PART_SIZE_BYTES)
     if (partNumber > partCount) {
       return new NextResponse('Part number exceeds the upload', { status: 400 })
@@ -161,9 +165,12 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   try {
     if (isPart) {
+      if (!multipartUploadId) {
+        return new NextResponse('No multipart upload is open for this reference', { status: 409 })
+      }
       await uploadStagedPart({
         key: reservation.stagingKey,
-        uploadId: reservation.multipartUploadId!,
+        uploadId: multipartUploadId,
         partNumber,
         body,
         contentLength: expected,

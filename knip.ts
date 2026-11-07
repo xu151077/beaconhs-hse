@@ -39,11 +39,9 @@ const config: KnipConfig = {
       // The Server Action key handling test invokes the application's TS CLI
       // through `pnpm exec tsx`; tsx is a dependency of apps/web, not the root.
       ignoreBinaries: ['tsx'],
-      // Untracked ad-hoc probes from live investigations (`.tmp-cf`, `.tmp-cj`,
-      // `.tmp-ck`, `.tmp-e2e`). They are operator scratch work, not shipped
-      // code. Scope the ignore to the repo-root `.tmp-*` directories so a
-      // similarly named production file cannot hide from the scan.
-      ignore: ['.tmp-*/**'],
+      // Operator scratch directories are gitignored and live outside the repo
+      // tree (their script content is not shipped code; recreate the ignore
+      // here when scratch dirs exist on disk again).
     },
     'apps/web': {
       entry: [

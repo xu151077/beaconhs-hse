@@ -16,6 +16,7 @@ import {
   Mail,
   Paperclip,
   Phone,
+  RefreshCw,
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
@@ -75,7 +76,7 @@ import { attachmentUrl } from '@/lib/attachment-url'
 import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { recentActivityForEntity, recordAuditInTransaction } from '@/lib/audit'
+import { recentActivityForEntity, recordAudit, recordAuditInTransaction } from '@/lib/audit'
 import { ActivityFeed } from '@/components/activity-feed'
 import { RawImage } from '@/components/raw-image'
 import { Section } from '@/components/section'
@@ -98,7 +99,7 @@ import { DirectPrintButton } from '@/components/direct-print-button'
 import { directPrintProvider } from '@beaconhs/design-studio'
 import { getConfiguredDirectPrintProviders } from '@/lib/direct-printing'
 import { normalizePersonBadgeDesign } from '@/lib/person-badge-design'
-import { renderPersonBadgePreview } from '@/lib/person-badge'
+import { renderPersonBadgePreview, rotatePersonBadgeToken } from '@/lib/person-badge'
 import { CredentialFlipCard } from '@/components/credential-flip-card'
 import { setPersonGroups } from '../_actions/groups'
 import { setPersonTitles, setPrimaryPersonTitle } from '../_actions/titles'
@@ -207,7 +208,14 @@ async function updatePersonField(formData: FormData) {
     if (beforeValue === value) return
     const [updated] = await tx
       .update(people)
-      .set({ [field]: value } as Partial<typeof people.$inferInsert>)
+      .set(
+        // Inactivation/termination kills the public badge link: a badge QR is
+        // a durable bearer capability for the training transcript, and a
+        // former holder's link should not outlive the employment it reflects.
+        field === 'status' && value !== 'active'
+          ? ({ [field]: value, badgeToken: null } as Partial<typeof people.$inferInsert>)
+          : ({ [field]: value } as Partial<typeof people.$inferInsert>),
+      )
       .where(and(eq(people.tenantId, ctx.tenantId), eq(people.id, id), isNull(people.deletedAt)))
       .returning({ id: people.id })
     if (!updated) throw new Error('Person no longer exists')
@@ -222,6 +230,24 @@ async function updatePersonField(formData: FormData) {
       before: { [field]: beforeValue },
       after: { [field]: value },
     })
+  })
+  revalidatePath(`/people/${id}`)
+}
+
+/** Give this person a fresh badge QR link; the previously printed/shared one stops resolving. */
+async function rotateBadge(formData: FormData) {
+  'use server'
+  const ctx = await requireRequestContext()
+  assertCanManageModule(ctx, 'people')
+  const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Person not found')
+  const ok = await rotatePersonBadgeToken(ctx, id)
+  if (!ok) throw new Error('Person not found')
+  await recordAudit(ctx, {
+    entityType: 'person',
+    entityId: id,
+    action: 'update',
+    summary: 'Rotated badge QR link',
   })
   revalidatePath(`/people/${id}`)
 }
@@ -708,6 +734,12 @@ export default async function PersonDetailPage({
                     <IdCard size={14} /> <GeneratedText id="m_1036403447ff0f" />
                   </DownloadLink>
                 </Button>
+                <form action={rotateBadge}>
+                  <input type="hidden" name="id" value={id} />
+                  <Button type="submit" variant="ghost" size="sm">
+                    <RefreshCw size={14} /> <GeneratedText id="m_0d20f2f698b2ea" />
+                  </Button>
+                </form>
                 <GeneratedValue
                   value={
                     badgeProvider ? (

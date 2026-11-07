@@ -77,10 +77,25 @@ async function readPlatformOpenSource(): Promise<RawOpenSource> {
   })
 }
 
+/**
+ * Sanitize a stored value the same way the write path does. The read path
+ * must never render a raw row: any value that bypassed `normalizeOpenSourceUrl`
+ * (direct SQL, a seed, a future writer) becomes "hidden" rather than a
+ * `javascript:` href shown to every signed-in user.
+ */
+export function sanitizeOpenSourceUrl(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  try {
+    return normalizeOpenSourceUrl(value)
+  } catch {
+    return ''
+  }
+}
+
 /** UI and runtime view (blank url = hidden). */
 export async function getPlatformOpenSourceSettings(): Promise<OpenSourceSettings> {
   const raw = await readPlatformOpenSource()
-  return { url: typeof raw.url === 'string' ? raw.url.trim() : '' }
+  return { url: sanitizeOpenSourceUrl(raw.url) }
 }
 
 export async function savePlatformOpenSourceSettings(

@@ -5,6 +5,7 @@ import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 
 import { eq } from 'drizzle-orm'
 import { Card, CardContent } from '@beaconhs/ui'
+import { guardPublicPageRateLimit } from '@/lib/public-page-rate-limit'
 import { db, withSuperAdmin } from '@beaconhs/db'
 import {
   people,
@@ -115,6 +116,20 @@ async function resolveToken(token: string): Promise<Resolved | null> {
 
 export default async function VerifyPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
+  const limited = await guardPublicPageRateLimit('verify', token)
+  if (!limited.ok) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 p-6">
+        <Card className="max-w-md">
+          <CardContent className="space-y-2 pt-6 text-center">
+            <h1 className="text-xl font-semibold text-red-700">
+              <GeneratedText id="m_061801dbc80306" />
+            </h1>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
   const result = await resolveToken(token)
 
   if (!result) {
