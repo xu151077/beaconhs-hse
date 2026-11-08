@@ -956,4 +956,4 @@ Nit 顺带：repo 根的 `cosign.key`/`cosign.pub`/scratch 文件加入 .gitigno
 
 ### 27.x 门禁与部署
 
-format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。镜像 `ea66d4-28` 构建完成时补充部署核验；本轮无迁移。
+format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。镜像 `beaconhs@sha256:8e60254d…`（deployment `2d16299224f2…-20261101-001`），Gate 5 **PASS**，web 日志 `[schema] match: applied 53`，公网 `/login` 200。本轮无迁移；品牌色守卫为加载时校验，存量非 hex 值将走 fallback 渲染，持久化值在管理员下次保存设置时清洗。
