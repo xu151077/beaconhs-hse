@@ -9799,7 +9799,9 @@
     "m_1603f0c60745f5": "Every {value0} {value1} on the {value2} {value3} at {value4}",
     "m_1b563fde8bf444": "queued",
     "m_1881f41d84bc8d": "succeeded",
-    "m_087375ffa7bb34": "failed"
+    "m_087375ffa7bb34": "failed",
+    "m_0a8dc204e323fb": "Invalid PPE item.",
+    "m_18d9d3813b3f4f": "Inspection date must be a valid calendar date."
   },
   "OpenSource": {
     "linkLabel": "BeaconHS is open source — source code",

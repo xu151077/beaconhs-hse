@@ -157,6 +157,10 @@ describe('production cutover migration integrity', () => {
       // Data repair: the seeded monitored-sessions report projected technical
       // UUID columns, which the custom-query compiler rejects.
       '0054_repair_monitored_sessions_report.sql',
+      // D8 resolution part 1: drop nine redundant single-column FKs that are
+      // subsumed by composite tenant FKs already in the snapshot, and install
+      // the never-installed ppe_inspection_attachments tenant-attachment FK.
+      '0055_drop_redundant_single_col_fks.sql',
     ])
 
     const journal = JSON.parse(readFileSync(new URL('_journal.json', metaFolder), 'utf8')) as {
@@ -218,6 +222,7 @@ describe('production cutover migration integrity', () => {
       { idx: 52, tag: '0052_old_nextwave' },
       { idx: 53, tag: '0053_bent_the_spike' },
       { idx: 54, tag: '0054_repair_monitored_sessions_report' },
+      { idx: 55, tag: '0055_drop_redundant_single_col_fks' },
     ])
     for (let index = 1; index < journal.entries.length; index++) {
       expect(journal.entries[index]!.when).toBeGreaterThan(journal.entries[index - 1]!.when)

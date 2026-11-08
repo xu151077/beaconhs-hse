@@ -9799,7 +9799,9 @@
     "m_1603f0c60745f5": "每 {value0} {value1} {value2}个{value3} {value4}",
     "m_1b563fde8bf444": "排队中",
     "m_1881f41d84bc8d": "成功",
-    "m_087375ffa7bb34": "失败"
+    "m_087375ffa7bb34": "失败",
+    "m_0a8dc204e323fb": "无效的 PPE 物品。",
+    "m_18d9d3813b3f4f": "检查日期必须是有效的日历日期。"
   },
   "OpenSource": {
     "linkLabel": "BeaconHS 开源 — 源码仓库",

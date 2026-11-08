@@ -379,6 +379,13 @@
       "when": 1794150753416,
       "tag": "0054_repair_monitored_sessions_report",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": 7,
+      "when": 1794177839709,
+      "tag": "0055_drop_redundant_single_col_fks",
+      "breakpoints": true
     }
   ]
 }
