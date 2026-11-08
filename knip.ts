@@ -28,6 +28,9 @@ const config: KnipConfig = {
         'scripts/ea66d3-0-setup-copy.mjs',
         // EA-66D.3.1: derives the storage-gateway catalogue keys the same way.
         'scripts/ea66d3-1-storage-i18n.mjs',
+        // EA-66D.29: derives the report-schedule form catalogue keys the same
+        // way (the prebuilt AppKit form was English-only). Invoked by hand.
+        'scripts/ea66d4-29-report-schedule-i18n.mjs',
         // EA-66D.3.1: builds the source context archive that
         // scripts/build-local-image-with-key-gate.sh consumes. Invoked by hand
         // and by the release runbook; knip cannot see a shell caller.
