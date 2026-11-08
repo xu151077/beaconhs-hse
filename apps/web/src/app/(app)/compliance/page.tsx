@@ -138,80 +138,132 @@ export default async function ComplianceOverviewPage({
               </div>
             ) : (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        <GeneratedText id="m_1e578efe1574cd" />
-                      </TableHead>
-                      <TableHead>
-                        <GeneratedText id="m_186a52fb889daf" />
-                      </TableHead>
-                      <TableHead className="w-28">
-                        <GeneratedText id="m_0ba7a5e1b2fa32" />
-                      </TableHead>
-                      <TableHead className="w-28">
-                        <GeneratedText id="m_10f84ed2d39730" />
-                      </TableHead>
-                      <TableHead className="w-28">
-                        <GeneratedText id="m_1e40bdcf2d1ba1" />
-                      </TableHead>
-                      <TableHead>
-                        <GeneratedText id="m_096d47f60747b3" />
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                {/* Desktop table */}
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <GeneratedText id="m_1e578efe1574cd" />
+                        </TableHead>
+                        <TableHead>
+                          <GeneratedText id="m_186a52fb889daf" />
+                        </TableHead>
+                        <TableHead className="w-28">
+                          <GeneratedText id="m_0ba7a5e1b2fa32" />
+                        </TableHead>
+                        <TableHead className="w-28">
+                          <GeneratedText id="m_10f84ed2d39730" />
+                        </TableHead>
+                        <TableHead className="w-28">
+                          <GeneratedText id="m_1e40bdcf2d1ba1" />
+                        </TableHead>
+                        <TableHead>
+                          <GeneratedText id="m_096d47f60747b3" />
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <GeneratedValue
+                        value={overview.rows.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                <GeneratedValue value={kindLabel(r.kind)} />
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/compliance/obligations/${r.id}`}
+                                className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                              >
+                                <GeneratedValue value={r.title} />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-slate-700 tabular-nums dark:text-slate-300">
+                              <GeneratedValue value={r.completed.toLocaleString()} />
+                            </TableCell>
+                            <TableCell className="text-slate-700 tabular-nums dark:text-slate-300">
+                              <GeneratedValue value={r.total.toLocaleString()} />
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              <GeneratedValue
+                                value={
+                                  r.overdue > 0 ? (
+                                    <Badge variant="destructive">
+                                      <GeneratedValue value={r.overdue} />
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="max-w-xs flex-1">
+                                  <PercentBar percent={r.percent} />
+                                </div>
+                                <span className="min-w-[3rem] text-right text-xs text-slate-600 tabular-nums dark:text-slate-400">
+                                  <GeneratedValue value={r.percent} />%
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      />
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile card list */}
+                <div className="md:hidden">
+                  <div className="space-y-3">
                     <GeneratedValue
                       value={overview.rows.map((r) => (
-                        <TableRow key={r.id}>
-                          <TableCell>
+                        <div
+                          key={r.id}
+                          className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                        >
+                          <div className="mb-2 flex items-center gap-2">
                             <Badge variant="secondary">
                               <GeneratedValue value={kindLabel(r.kind)} />
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/compliance/obligations/${r.id}`}
-                              className="font-medium text-slate-900 hover:underline dark:text-slate-100"
-                            >
-                              <GeneratedValue value={r.title} />
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-slate-700 tabular-nums dark:text-slate-300">
-                            <GeneratedValue value={r.completed.toLocaleString()} />
-                          </TableCell>
-                          <TableCell className="text-slate-700 tabular-nums dark:text-slate-300">
-                            <GeneratedValue value={r.total.toLocaleString()} />
-                          </TableCell>
-                          <TableCell className="tabular-nums">
-                            <GeneratedValue
-                              value={
-                                r.overdue > 0 ? (
-                                  <Badge variant="destructive">
-                                    <GeneratedValue value={r.overdue} />
-                                  </Badge>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="max-w-xs flex-1">
-                                <PercentBar percent={r.percent} />
-                              </div>
-                              <span className="min-w-[3rem] text-right text-xs text-slate-600 tabular-nums dark:text-slate-400">
-                                <GeneratedValue value={r.percent} />%
-                              </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              <GeneratedValue value={r.completed.toLocaleString()} />
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              / {r.total.toLocaleString()}
+                            </span>
+                          </div>
+                          <Link
+                            href={`/compliance/obligations/${r.id}`}
+                            className="mb-2 block font-medium text-slate-900 hover:underline dark:text-slate-100"
+                          >
+                            <GeneratedValue value={r.title} />
+                          </Link>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <PercentBar percent={r.percent} />
                             </div>
-                          </TableCell>
-                        </TableRow>
+                            <span className="min-w-[3rem] text-right text-xs text-slate-600 tabular-nums dark:text-slate-400">
+                              <GeneratedValue value={r.percent} />%
+                            </span>
+                          </div>
+                          {r.overdue > 0 && (
+                            <div className="mt-2">
+                              <Badge variant="destructive">
+                                <GeneratedValue value={r.overdue} />{' '}
+                                <GeneratedText id="m_1e40bdcf2d1ba1" />
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
                       ))}
                     />
-                  </TableBody>
-                </Table>
+                  </div>
+                </div>
+
                 <Pagination
                   basePath={BASE}
                   currentParams={sp}

@@ -233,51 +233,23 @@ export default async function AdminRolesPage({
                 )}
               />
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/60 text-left text-xs tracking-wide text-slate-500 uppercase dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-                      <SortTh column="name" {...sortProps}>
-                        <GeneratedText id="m_02b18d5c7f6f2d" />
-                      </SortTh>
-                      <th className="px-3 py-2">
-                        <GeneratedText id="m_14d923495cf14c" />
-                      </th>
-                      <SortTh column="permissions" {...sortProps}>
-                        <GeneratedText id="m_0f16ebbc2ed672" />
-                      </SortTh>
-                      <SortTh column="members" {...sortProps}>
-                        <GeneratedText id="m_0ef3898622f868" />
-                      </SortTh>
-                      <th className="px-3 py-2">
-                        <GeneratedText id="m_074ba2f160c506" />
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <>
+                {/* Mobile card list */}
+                <div className="md:hidden">
+                  <ul className="space-y-2.5">
                     <GeneratedValue
                       value={rows.map((r) => (
-                        <tr key={r.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/60">
-                          <td className="px-3 py-2">
+                        <li
+                          key={r.id}
+                          className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                        >
+                          <div className="mb-1 flex items-start justify-between gap-2">
                             <Link
                               href={`/admin/roles/${r.id}` as any}
                               className="font-medium text-slate-900 hover:underline dark:text-slate-100"
                             >
                               <GeneratedValue value={r.name} />
                             </Link>
-                          </td>
-                          <td className="max-w-md px-3 py-2 text-slate-600 dark:text-slate-400">
-                            <span className="line-clamp-1">
-                              <GeneratedValue value={r.description ?? '—'} />
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                            <GeneratedValue value={r.permissionCount} />
-                          </td>
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                            <GeneratedValue value={r.memberCount} />
-                          </td>
-                          <td className="px-3 py-2">
                             <GeneratedValue
                               value={
                                 r.isBuiltIn ? (
@@ -291,13 +263,98 @@ export default async function AdminRolesPage({
                                 )
                               }
                             />
-                          </td>
-                        </tr>
+                          </div>
+                          {r.description ? (
+                            <p className="mb-2 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+                              <GeneratedValue value={r.description} />
+                            </p>
+                          ) : null}
+                          <div className="flex gap-4 text-xs text-slate-600 dark:text-slate-400">
+                            <span>
+                              <GeneratedValue value={r.permissionCount} />{' '}
+                              <GeneratedText id="m_0f16ebbc2ed672" />
+                            </span>
+                            <span>
+                              <GeneratedValue value={r.memberCount} />{' '}
+                              <GeneratedText id="m_0ef3898622f868" />
+                            </span>
+                          </div>
+                        </li>
                       ))}
                     />
-                  </tbody>
-                </table>
-              </div>
+                  </ul>
+                </div>
+
+                {/* Desktop table */}
+                <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/60 text-left text-xs tracking-wide text-slate-500 uppercase dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+                        <SortTh column="name" {...sortProps}>
+                          <GeneratedText id="m_02b18d5c7f6f2d" />
+                        </SortTh>
+                        <th className="px-3 py-2">
+                          <GeneratedText id="m_14d923495cf14c" />
+                        </th>
+                        <SortTh column="permissions" {...sortProps}>
+                          <GeneratedText id="m_0f16ebbc2ed672" />
+                        </SortTh>
+                        <SortTh column="members" {...sortProps}>
+                          <GeneratedText id="m_0ef3898622f868" />
+                        </SortTh>
+                        <th className="px-3 py-2">
+                          <GeneratedText id="m_074ba2f160c506" />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      <GeneratedValue
+                        value={rows.map((r) => (
+                          <tr
+                            key={r.id}
+                            className="hover:bg-slate-50/50 dark:hover:bg-slate-800/60"
+                          >
+                            <td className="px-3 py-2">
+                              <Link
+                                href={`/admin/roles/${r.id}` as any}
+                                className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                              >
+                                <GeneratedValue value={r.name} />
+                              </Link>
+                            </td>
+                            <td className="max-w-md px-3 py-2 text-slate-600 dark:text-slate-400">
+                              <span className="line-clamp-1">
+                                <GeneratedValue value={r.description ?? '—'} />
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
+                              <GeneratedValue value={r.permissionCount} />
+                            </td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
+                              <GeneratedValue value={r.memberCount} />
+                            </td>
+                            <td className="px-3 py-2">
+                              <GeneratedValue
+                                value={
+                                  r.isBuiltIn ? (
+                                    <Badge variant="secondary">
+                                      <GeneratedText id="m_09bfd82959f8d2" />
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline">
+                                      <GeneratedText id="m_1721ac81d2a5c0" />
+                                    </Badge>
+                                  )
+                                }
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      />
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )
           }
         />

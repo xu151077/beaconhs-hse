@@ -179,85 +179,137 @@ export default async function TrainingCoursesPage({
             />
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <SortableTh {...sortProps} column="name" active={params.sort === 'name'}>
-                      <GeneratedText id="m_02b18d5c7f6f2d" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="code" active={params.sort === 'code'}>
-                      <GeneratedText id="m_0570e24c85cf95" />
-                    </SortableTh>
-                    <SortableTh
-                      {...sortProps}
-                      column="delivery_type"
-                      active={params.sort === 'delivery_type'}
-                    >
-                      <GeneratedText id="m_03db87cb2e7846" />
-                    </SortableTh>
-                    <SortableTh
-                      {...sortProps}
-                      column="valid_for_months"
-                      active={params.sort === 'valid_for_months'}
-                    >
-                      <GeneratedText id="m_18eaa7e8f340b7" />
-                    </SortableTh>
-                    <TableHead>
-                      <GeneratedText id="m_0ec97074401d0f" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortableTh {...sortProps} column="name" active={params.sort === 'name'}>
+                        <GeneratedText id="m_02b18d5c7f6f2d" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="code" active={params.sort === 'code'}>
+                        <GeneratedText id="m_0570e24c85cf95" />
+                      </SortableTh>
+                      <SortableTh
+                        {...sortProps}
+                        column="delivery_type"
+                        active={params.sort === 'delivery_type'}
+                      >
+                        <GeneratedText id="m_03db87cb2e7846" />
+                      </SortableTh>
+                      <SortableTh
+                        {...sortProps}
+                        column="valid_for_months"
+                        active={params.sort === 'valid_for_months'}
+                      >
+                        <GeneratedText id="m_18eaa7e8f340b7" />
+                      </SortableTh>
+                      <TableHead>
+                        <GeneratedText id="m_0ec97074401d0f" />
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <GeneratedValue
+                      value={rows.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <Link
+                              href={`/training/courses/${c.id}`}
+                              className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                            >
+                              <GeneratedValue value={c.name} />
+                            </Link>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                            <GeneratedValue value={c.code} />
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-400">
+                            <GeneratedValue value={deliveryLabel(c.deliveryType)} />
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-400">
+                            <GeneratedValue
+                              value={
+                                c.validForMonths ? (
+                                  <GeneratedText
+                                    id="m_1fa77753c09829"
+                                    values={{ value0: c.validForMonths }}
+                                  />
+                                ) : (
+                                  <GeneratedText id="m_1bbc44c1ce26a7" />
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-400">
+                            <GeneratedValue
+                              value={
+                                c.durationMinutes ? (
+                                  <GeneratedText
+                                    id="m_190be45ec6aa0b"
+                                    values={{ value0: c.durationMinutes }}
+                                  />
+                                ) : (
+                                  '—'
+                                )
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    />
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile card list */}
+              <div className="md:hidden">
+                <div className="space-y-3">
                   <GeneratedValue
                     value={rows.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell>
-                          <Link
-                            href={`/training/courses/${c.id}`}
-                            className="font-medium text-slate-900 hover:underline dark:text-slate-100"
-                          >
-                            <GeneratedValue value={c.name} />
-                          </Link>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                          <GeneratedValue value={c.code} />
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400">
-                          <GeneratedValue value={deliveryLabel(c.deliveryType)} />
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400">
-                          <GeneratedValue
-                            value={
-                              c.validForMonths ? (
-                                <GeneratedText
-                                  id="m_1fa77753c09829"
-                                  values={{ value0: c.validForMonths }}
-                                />
-                              ) : (
-                                <GeneratedText id="m_1bbc44c1ce26a7" />
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400">
-                          <GeneratedValue
-                            value={
-                              c.durationMinutes ? (
-                                <GeneratedText
-                                  id="m_190be45ec6aa0b"
-                                  values={{ value0: c.durationMinutes }}
-                                />
-                              ) : (
-                                '—'
-                              )
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
+                      <div
+                        key={c.id}
+                        className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                      >
+                        <Link
+                          href={`/training/courses/${c.id}`}
+                          className="mb-2 block font-semibold text-slate-900 hover:underline dark:text-slate-100"
+                        >
+                          <GeneratedValue value={c.name} />
+                        </Link>
+                        <div className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
+                          {c.code && (
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs">{c.code}</span>
+                            </div>
+                          )}
+                          <div>
+                            <GeneratedText id="m_03db87cb2e7846" />
+                            : <GeneratedValue value={deliveryLabel(c.deliveryType)} />
+                          </div>
+                          {c.validForMonths && (
+                            <div>
+                              <GeneratedText
+                                id="m_1fa77753c09829"
+                                values={{ value0: c.validForMonths }}
+                              />
+                            </div>
+                          )}
+                          {c.durationMinutes && (
+                            <div>
+                              <GeneratedText
+                                id="m_190be45ec6aa0b"
+                                values={{ value0: c.durationMinutes }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   />
-                </TableBody>
-              </Table>
+                </div>
+              </div>
+
               <Pagination
                 basePath="/training/courses"
                 currentParams={sp}

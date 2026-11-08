@@ -29,6 +29,7 @@ import { moduleScopeWhere } from '@/lib/visibility'
 import { isUuid, mergeHref, parseListParams, pickString } from '@/lib/list-params'
 import { formatDate } from '@/lib/datetime'
 import { ListPageLayout } from '@/components/page-layout'
+import { ListCard, MobileCardList } from '@/components/list-card'
 import { Pagination } from '@/components/pagination'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -284,7 +285,54 @@ export default async function EquipmentInspectionsPage({
         </>
       }
     >
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <MobileCardList breakpoint="md">
+        <GeneratedValue
+          value={rows.map((r) => {
+            const inspector =
+              r.inspectorUser ??
+              ([r.inspectorFirst, r.inspectorLast].filter(Boolean).join(' ') || null) ??
+              r.inspectorText ??
+              null
+            return (
+              <ListCard
+                key={r.id}
+                href={`/equipment/inspections/${r.id}`}
+                reference={r.reference}
+                status={
+                  <Badge variant={STATUS_VARIANT[r.status] ?? 'secondary'}>
+                    <GeneratedValue value={r.status.replace('_', ' ')} />
+                  </Badge>
+                }
+                title={
+                  <GeneratedValue
+                    value={r.itemName ?? r.equipmentNameSnapshot ?? 'Unregistered unit'}
+                  />
+                }
+                meta={
+                  [
+                    r.typeName,
+                    r.occurredAt
+                      ? formatDate(new Date(r.occurredAt), ctx.timezone, ctx.locale)
+                      : null,
+                    inspector,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
+                footer={
+                  r.result ? (
+                    <Badge variant={RESULT_VARIANT[r.result] ?? 'secondary'}>
+                      <GeneratedValue value={r.result} />
+                    </Badge>
+                  ) : undefined
+                }
+              />
+            )
+          })}
+        />
+      </MobileCardList>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
         <Table>
           <TableHeader>
             <TableRow>

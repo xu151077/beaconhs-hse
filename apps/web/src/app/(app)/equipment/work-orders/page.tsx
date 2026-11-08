@@ -32,6 +32,7 @@ import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
+import { ListCard, MobileCardList } from '@/components/list-card'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
@@ -392,170 +393,242 @@ export default async function WorkOrdersPage({
             />
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <SortableTh
-                      {...sortProps}
-                      column="reference"
-                      active={params.sort === 'reference'}
-                    >
-                      <GeneratedText id="m_036b564bb88dfe" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="summary" active={params.sort === 'summary'}>
-                      <GeneratedText id="m_031c356c80b70f" />
-                    </SortableTh>
-                    <TableHead>
-                      <GeneratedText id="m_17f17df74f7e69" />
-                    </TableHead>
-                    <TableHead>
-                      <GeneratedText id="m_074ba2f160c506" />
-                    </TableHead>
-                    <SortableTh
-                      {...sortProps}
-                      column="priority"
-                      active={params.sort === 'priority'}
-                    >
-                      <GeneratedText id="m_00f0e2904a371c" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="status" active={params.sort === 'status'}>
-                      <GeneratedText id="m_0b9da892d6faf0" />
-                    </SortableTh>
-                    <TableHead>
-                      <GeneratedText id="m_03a84b76ec2cd1" />
-                    </TableHead>
-                    <SortableTh
-                      {...sortProps}
-                      column="opened_at"
-                      active={params.sort === 'opened_at'}
-                    >
-                      <GeneratedText id="m_14dedf0d22e940" />
-                    </SortableTh>
-                    <SortableTh
-                      {...sortProps}
-                      column="closed_at"
-                      active={params.sort === 'closed_at'}
-                    >
-                      <GeneratedText id="m_003ea77d773d2d" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="aging" active={params.sort === 'aging'}>
-                      <GeneratedText id="m_13f84c9a65c7c9" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="cost" active={params.sort === 'cost'}>
-                      <GeneratedText id="m_139ff0f789d1fa" />
-                    </SortableTh>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <GeneratedValue
-                    value={rows.map(({ wo, item, type, assignee, assigneeUser }) => {
-                      const openedMs = new Date(wo.openedAt).getTime()
-                      const closedMs = wo.closedAt ? new Date(wo.closedAt).getTime() : renderedAtMs
-                      const ageDays = Math.max(0, Math.round((closedMs - openedMs) / 86_400_000))
-                      const ageVariant: 'success' | 'warning' | 'destructive' | 'secondary' =
-                        wo.closedAt
-                          ? 'secondary'
-                          : ageDays > 30
-                            ? 'destructive'
-                            : ageDays > 7
-                              ? 'warning'
-                              : 'success'
-                      return (
-                        <TableRow key={wo.id}>
-                          <TableCell className="font-mono text-xs">
-                            <Link
-                              href={`/equipment/work-orders/${wo.id}` as any}
-                              className="hover:underline"
-                            >
-                              <GeneratedValue value={wo.reference} />
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/equipment/work-orders/${wo.id}` as any}
-                              className="font-medium text-slate-900 hover:underline dark:text-slate-100"
-                            >
-                              <GeneratedValue value={htmlToSnippet(wo.summary)} />
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-slate-600 dark:text-slate-300">
+              {/* Phones: tappable cards — 11 columns cannot work in portrait. */}
+              <MobileCardList breakpoint="md">
+                <GeneratedValue
+                  value={rows.map(({ wo, item, assignee, assigneeUser }) => {
+                    const openedMs = new Date(wo.openedAt).getTime()
+                    const closedMs = wo.closedAt ? new Date(wo.closedAt).getTime() : renderedAtMs
+                    const ageDays = Math.max(0, Math.round((closedMs - openedMs) / 86_400_000))
+                    const ageVariant: 'success' | 'warning' | 'destructive' | 'secondary' =
+                      wo.closedAt
+                        ? 'secondary'
+                        : ageDays > 30
+                          ? 'destructive'
+                          : ageDays > 7
+                            ? 'warning'
+                            : 'success'
+                    return (
+                      <ListCard
+                        key={wo.id}
+                        href={`/equipment/work-orders/${wo.id}`}
+                        reference={wo.reference}
+                        status={
+                          <Badge variant={statusBadgeVariant(wo.status)}>
                             <GeneratedValue
                               value={
-                                item ? (
-                                  <Link href={`/equipment/${item.id}`} className="hover:underline">
-                                    <span className="font-mono text-xs">
-                                      <GeneratedValue value={item.assetTag} />
-                                    </span>
-                                    <GeneratedValue value={' '} />
-                                    <span>
-                                      <GeneratedValue value={item.name} />
-                                    </span>
-                                  </Link>
+                                wo.status === 'closed' ? (
+                                  <GeneratedText id="m_18366de1d27889" />
                                 ) : (
-                                  '—'
+                                  wo.status.replace('_', ' ')
                                 )
                               }
                             />
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600 dark:text-slate-300">
-                            <GeneratedValue value={type?.name ?? '—'} />
-                          </TableCell>
-                          <TableCell>
+                          </Badge>
+                        }
+                        title={htmlToSnippet(wo.summary)}
+                        person={assigneeUser?.name ?? assignee?.displayName ?? undefined}
+                        meta={
+                          [
+                            item ? `${item.assetTag} ${item.name}` : null,
+                            formatDate(new Date(wo.openedAt), ctx.timezone, ctx.locale),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || undefined
+                        }
+                        footer={
+                          <>
                             <Badge variant={priorityBadgeVariant(wo.priority)}>
                               <GeneratedValue value={wo.priority} />
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={statusBadgeVariant(wo.status)}>
-                              <GeneratedValue
-                                value={
-                                  wo.status === 'closed' ? (
-                                    <GeneratedText id="m_18366de1d27889" />
-                                  ) : (
-                                    wo.status.replace('_', ' ')
-                                  )
-                                }
-                              />
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-slate-600 dark:text-slate-300">
-                            <GeneratedValue
-                              value={assigneeUser?.name ?? assignee?.displayName ?? '—'}
-                            />
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
-                            <GeneratedValue
-                              value={formatDate(new Date(wo.openedAt), ctx.timezone, ctx.locale)}
-                            />
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
-                            <GeneratedValue
-                              value={
-                                wo.closedAt ? (
-                                  formatDate(new Date(wo.closedAt), ctx.timezone, ctx.locale)
-                                ) : (
-                                  <span className="text-slate-400 dark:text-slate-500">—</span>
-                                )
-                              }
-                            />
-                          </TableCell>
-                          <TableCell className="tabular-nums">
                             <Badge variant={ageVariant}>
                               <GeneratedValue value={ageDays} />
                               <GeneratedText id="m_113dda91012a7a" />
                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
-                            <GeneratedValue
-                              value={wo.cost ? `$${Number(wo.cost).toLocaleString()}` : '—'}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  />
-                </TableBody>
-              </Table>
+                          </>
+                        }
+                      />
+                    )
+                  })}
+                />
+              </MobileCardList>
+
+              {/* Tablet/desktop: full sortable table. */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortableTh
+                        {...sortProps}
+                        column="reference"
+                        active={params.sort === 'reference'}
+                      >
+                        <GeneratedText id="m_036b564bb88dfe" />
+                      </SortableTh>
+                      <SortableTh
+                        {...sortProps}
+                        column="summary"
+                        active={params.sort === 'summary'}
+                      >
+                        <GeneratedText id="m_031c356c80b70f" />
+                      </SortableTh>
+                      <TableHead>
+                        <GeneratedText id="m_17f17df74f7e69" />
+                      </TableHead>
+                      <TableHead>
+                        <GeneratedText id="m_074ba2f160c506" />
+                      </TableHead>
+                      <SortableTh
+                        {...sortProps}
+                        column="priority"
+                        active={params.sort === 'priority'}
+                      >
+                        <GeneratedText id="m_00f0e2904a371c" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="status" active={params.sort === 'status'}>
+                        <GeneratedText id="m_0b9da892d6faf0" />
+                      </SortableTh>
+                      <TableHead>
+                        <GeneratedText id="m_03a84b76ec2cd1" />
+                      </TableHead>
+                      <SortableTh
+                        {...sortProps}
+                        column="opened_at"
+                        active={params.sort === 'opened_at'}
+                      >
+                        <GeneratedText id="m_14dedf0d22e940" />
+                      </SortableTh>
+                      <SortableTh
+                        {...sortProps}
+                        column="closed_at"
+                        active={params.sort === 'closed_at'}
+                      >
+                        <GeneratedText id="m_003ea77d773d2d" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="aging" active={params.sort === 'aging'}>
+                        <GeneratedText id="m_13f84c9a65c7c9" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="cost" active={params.sort === 'cost'}>
+                        <GeneratedText id="m_139ff0f789d1fa" />
+                      </SortableTh>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <GeneratedValue
+                      value={rows.map(({ wo, item, type, assignee, assigneeUser }) => {
+                        const openedMs = new Date(wo.openedAt).getTime()
+                        const closedMs = wo.closedAt
+                          ? new Date(wo.closedAt).getTime()
+                          : renderedAtMs
+                        const ageDays = Math.max(0, Math.round((closedMs - openedMs) / 86_400_000))
+                        const ageVariant: 'success' | 'warning' | 'destructive' | 'secondary' =
+                          wo.closedAt
+                            ? 'secondary'
+                            : ageDays > 30
+                              ? 'destructive'
+                              : ageDays > 7
+                                ? 'warning'
+                                : 'success'
+                        return (
+                          <TableRow key={wo.id}>
+                            <TableCell className="font-mono text-xs">
+                              <Link
+                                href={`/equipment/work-orders/${wo.id}` as any}
+                                className="hover:underline"
+                              >
+                                <GeneratedValue value={wo.reference} />
+                              </Link>
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/equipment/work-orders/${wo.id}` as any}
+                                className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                              >
+                                <GeneratedValue value={htmlToSnippet(wo.summary)} />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-slate-600 dark:text-slate-300">
+                              <GeneratedValue
+                                value={
+                                  item ? (
+                                    <Link
+                                      href={`/equipment/${item.id}`}
+                                      className="hover:underline"
+                                    >
+                                      <span className="font-mono text-xs">
+                                        <GeneratedValue value={item.assetTag} />
+                                      </span>
+                                      <GeneratedValue value={' '} />
+                                      <span>
+                                        <GeneratedValue value={item.name} />
+                                      </span>
+                                    </Link>
+                                  ) : (
+                                    '—'
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 dark:text-slate-300">
+                              <GeneratedValue value={type?.name ?? '—'} />
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={priorityBadgeVariant(wo.priority)}>
+                                <GeneratedValue value={wo.priority} />
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={statusBadgeVariant(wo.status)}>
+                                <GeneratedValue
+                                  value={
+                                    wo.status === 'closed' ? (
+                                      <GeneratedText id="m_18366de1d27889" />
+                                    ) : (
+                                      wo.status.replace('_', ' ')
+                                    )
+                                  }
+                                />
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-slate-600 dark:text-slate-300">
+                              <GeneratedValue
+                                value={assigneeUser?.name ?? assignee?.displayName ?? '—'}
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
+                              <GeneratedValue
+                                value={formatDate(new Date(wo.openedAt), ctx.timezone, ctx.locale)}
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
+                              <GeneratedValue
+                                value={
+                                  wo.closedAt ? (
+                                    formatDate(new Date(wo.closedAt), ctx.timezone, ctx.locale)
+                                  ) : (
+                                    <span className="text-slate-400 dark:text-slate-500">—</span>
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              <Badge variant={ageVariant}>
+                                <GeneratedValue value={ageDays} />
+                                <GeneratedText id="m_113dda91012a7a" />
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 tabular-nums dark:text-slate-300">
+                              <GeneratedValue
+                                value={wo.cost ? `$${Number(wo.cost).toLocaleString()}` : '—'}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    />
+                  </TableBody>
+                </Table>
+              </div>
               <Pagination
                 basePath="/equipment/work-orders"
                 currentParams={sp}
