@@ -722,7 +722,11 @@ async function addCertificate(
   }
   const itemId = input.itemId.trim()
   const inspectedOn = input.inspectedOn.trim()
-  if (!itemId || !inspectedOn) return { ok: false, error: 'Inspection date is required.' }
+  if (!isUuid(itemId)) return { ok: false, error: 'Invalid PPE item.' }
+  if (!inspectedOn) return { ok: false, error: 'Inspection date is required.' }
+  if (!isCalendarDate(inspectedOn)) {
+    return { ok: false, error: 'Inspection date must be a valid calendar date.' }
+  }
   const result: 'pass' | 'fail' | 'remediated' = ['pass', 'fail', 'remediated'].includes(
     input.result,
   )
