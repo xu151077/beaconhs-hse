@@ -25,6 +25,7 @@ import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
+import { ListCard, MobileCardList } from '@/components/list-card'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { TrainingSubNav } from '../_components/training-sub-nav'
@@ -263,52 +264,31 @@ export default async function TrainingCoursesPage({
               </div>
 
               {/* Mobile card list */}
-              <div className="md:hidden">
-                <div className="space-y-3">
-                  <GeneratedValue
-                    value={rows.map((c) => (
-                      <div
-                        key={c.id}
-                        className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-                      >
-                        <Link
-                          href={`/training/courses/${c.id}`}
-                          className="mb-2 block font-semibold text-slate-900 hover:underline dark:text-slate-100"
-                        >
-                          <GeneratedValue value={c.name} />
-                        </Link>
-                        <div className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
-                          {c.code && (
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs">{c.code}</span>
-                            </div>
-                          )}
-                          <div>
-                            <GeneratedText id="m_03db87cb2e7846" />
-                            : <GeneratedValue value={deliveryLabel(c.deliveryType)} />
-                          </div>
-                          {c.validForMonths && (
-                            <div>
-                              <GeneratedText
-                                id="m_1fa77753c09829"
-                                values={{ value0: c.validForMonths }}
-                              />
-                            </div>
-                          )}
-                          {c.durationMinutes && (
-                            <div>
-                              <GeneratedText
-                                id="m_190be45ec6aa0b"
-                                values={{ value0: c.durationMinutes }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  />
-                </div>
-              </div>
+              <MobileCardList breakpoint="md">
+                <GeneratedValue
+                  value={rows.map((c) => (
+                    <ListCard
+                      key={c.id}
+                      href={`/training/courses/${c.id}`}
+                      reference={c.code ?? undefined}
+                      title={tGeneratedValue(c.name)}
+                      meta={
+                        [
+                          `${tGenerated('m_03db87cb2e7846')}: ${deliveryLabel(c.deliveryType)}`,
+                          c.validForMonths
+                            ? tGenerated('m_1fa77753c09829', { value0: c.validForMonths })
+                            : null,
+                          c.durationMinutes
+                            ? tGenerated('m_190be45ec6aa0b', { value0: c.durationMinutes })
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || undefined
+                      }
+                    />
+                  ))}
+                />
+              </MobileCardList>
 
               <Pagination
                 basePath="/training/courses"
