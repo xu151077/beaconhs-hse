@@ -57,10 +57,15 @@ const SUPPORTED_EVENTS = new Set(['push', 'workflow_dispatch'])
 const EXPLICITLY_UNSUPPORTED = new Set(['pull_request', 'pull_request_target', 'merge_group'])
 
 function parseArgs(argv) {
+  // `undefined` means "flag absent" (env fallback applies); a flag present
+  // with an empty value stays empty. Conflating the two let the GitHub
+  // Actions runtime's own GITHUB_SHA/GITHUB_EVENT_NAME leak into a caller's
+  // explicit `--expect ''`, which broke the origin check's CLI contract (and
+  // its tests) inside CI while looking correct on a bare shell.
   const out = {
-    expect: '',
-    event: '',
-    ref: '',
+    expect: undefined,
+    event: undefined,
+    ref: undefined,
     cwd: process.cwd(),
     json: false,
     requireClean: true,
@@ -105,9 +110,12 @@ function git(args, cwd) {
 function main() {
   const args = parseArgs(process.argv.slice(2))
 
-  const expect = args.expect || process.env.GITHUB_SHA || ''
-  const event = args.event || process.env.GITHUB_EVENT_NAME || ''
-  const ref = args.ref || process.env.GITHUB_REF || ''
+  // Env fallbacks apply only when the flag was truly absent (see parseArgs).
+  // A caller passing `--expect ''` means "no revision, fail closed" — the
+  // runtime's own GITHUB_SHA must never refill it.
+  const expect = args.expect ?? process.env.GITHUB_SHA ?? ''
+  const event = args.event ?? process.env.GITHUB_EVENT_NAME ?? ''
+  const ref = args.ref ?? process.env.GITHUB_REF ?? ''
 
   const checks = []
   const add = (id, ok, reason, extra = {}) =>
