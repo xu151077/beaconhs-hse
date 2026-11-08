@@ -75,7 +75,7 @@ import { materializeIdentityAudienceObligations } from '@beaconhs/compliance'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { sanitizeDocumentHtml } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
-import { formatDate } from '@/lib/datetime'
+import { formatDate, isCalendarDate } from '@/lib/datetime'
 import { recentActivityForEntity, recordAudit, recordAuditInTransaction } from '@/lib/audit'
 import { ActivityFeed } from '@/components/activity-feed'
 import { RawImage } from '@/components/raw-image'
@@ -163,7 +163,7 @@ async function updatePersonField(formData: FormData) {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const rawValue = typeof raw === 'string' ? raw.trim() : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
   if (!EDITABLE_FIELDS.has(field)) throw new Error('Field not allowed')
 
   await ctx.db(async (tx) => {
@@ -188,6 +188,15 @@ async function updatePersonField(formData: FormData) {
     // Required identity fields must not be blanked (only reachable when not synced).
     if ((field === 'firstName' || field === 'lastName') && !rawValue) {
       throw new Error('First and last name are required')
+    }
+
+    const DATE_FIELDS = new Set(['dateOfBirth', 'hireDate', 'terminationDate'])
+    if (DATE_FIELDS.has(field) && rawValue && !isCalendarDate(rawValue)) {
+      throw new Error('Invalid date')
+    }
+    const ID_FIELDS = new Set(['departmentId', 'tradeId', 'crewId', 'companyId', 'managerPersonId'])
+    if (ID_FIELDS.has(field) && rawValue && !isUuid(rawValue)) {
+      throw new Error('Invalid ID')
     }
 
     let value: string | null = rawValue || null

@@ -36,7 +36,7 @@ import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { canManageModule } from '@/lib/module-admin/guard'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SearchFilter } from '@/components/search-filter'
 import { Pagination } from '@/components/pagination'
@@ -77,9 +77,9 @@ export default async function SkillsPage({
     allowedSorts: SORTS,
   })
   const statusFilter = pickString(sp.status)
-  const authorityFilter = pickString(sp.authority)
-  const personFilter = pickString(sp.person)
-  const skillFilter = pickString(sp.skill)
+  const authorityFilter = pickUuid(sp.authority)
+  const personFilter = pickUuid(sp.person)
+  const skillFilter = pickUuid(sp.skill)
   const ctx = await requireRequestContext()
   const canManage = canManageModule(ctx, 'training')
   // Skills are person-scoped credentials: viewing the list requires a training

@@ -74,7 +74,7 @@ import { recordModuleFlowEvent } from '@beaconhs/events'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
 import { canSeeRecord } from '@/lib/visibility'
-import { formatDate } from '@/lib/datetime'
+import { formatDate, isCalendarDate } from '@/lib/datetime'
 import { LiveField, LiveRemoteSelect, LiveSelect } from '@/components/live-field'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { CustomFieldsSection } from '@/components/custom-fields/custom-fields-section'
@@ -196,7 +196,7 @@ async function updatePpeField(formData: FormData) {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const value = typeof raw === 'string' ? raw : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
 
   const TEXT = new Set(['serialNumber', 'size', 'notes'])
   const DATE_ONLY = new Set(['purchaseDate', 'expiresOn'])
@@ -207,9 +207,10 @@ async function updatePpeField(formData: FormData) {
 
   let val: string | null
   if (DATE_ONLY.has(field)) {
+    if (value && !isCalendarDate(value)) throw new Error('Invalid date')
     val = value || null
   } else if (FK_REQUIRED.has(field)) {
-    if (!value) throw new Error('This field is required')
+    if (!isUuid(value)) throw new Error('Invalid ID')
     val = value
   } else {
     // Store the trimmed value: a stray space would otherwise make two serials

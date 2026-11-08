@@ -870,6 +870,8 @@ Members choose their own language under **Account settings**. Their choice appli
 
 People groups are the one reusable group list across BeaconHS. The same groups are available in notification rules, Flows, role-based record access, and **Send email** dialogs.
 
+For **Send email**, the People-group picker appears only for members who have the **People: read all** permission, because group e-mail addresses are workforce data. Other senders can still type recipient addresses manually.
+
 1. Open **People**, then **Groups**.
 2. Search by group name or description, or click **Add group**.
 3. Open the group. Enter its name, description, and colour, then click **Save**.

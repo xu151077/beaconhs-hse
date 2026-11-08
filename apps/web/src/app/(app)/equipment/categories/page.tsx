@@ -22,7 +22,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { EQUIPMENT_FIELD_GROUPS } from '@/lib/equipment/field-groups'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickUuid } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -157,7 +157,7 @@ export default async function EquipmentCategoriesPage({
   const tGeneratedValue = await getGeneratedValueTranslations()
   const tGenerated = await getGeneratedTranslations()
   const sp = await searchParams
-  const drawerParam = pickString(sp.drawer)
+  const drawerParam = pickUuid(sp.drawer)
   const params = parseListParams(sp, {
     sort: 'order',
     dir: 'asc',

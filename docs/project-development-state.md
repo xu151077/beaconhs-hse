@@ -559,17 +559,21 @@ register with their verification evidence.
 | **D10** | **FIXED (Phase 12-B).** `report_monitored_sessions` projected the resolved NAME as `subject_person_id`, but `PERSON_COLUMNS` falls back to that column and compares it against a person **uuid**, so a self-tier caller could never match their own sessions — proven live: 0 rows before, correct rows after, and casting the name as a uuid raises `invalid input syntax for type uuid`. It now carries the real `person.id` (NULL when there is no person); the readable name moved to `subject_person_name`.            | `packages/db/src/views.ts`; verified live: self as Alice → only Alice's 2 sessions, self as Bob → only Bob's 2, `read.self` with no person → 0 |
 | ~~D11~~ | **RETRACTED — this was a false finding, not a defect.** `inspection_records` DOES carry the composite FK `inspection_records_tenant_type_fk FOREIGN KEY (tenant_id, type_id) REFERENCES inspection_types(tenant_id, id)`, declared in the Drizzle schema, recorded in every snapshot from `0005` onward, created by `0005_production_cutover.sql`, and present in Postgres as `convalidated = t`, NOT DEFERRABLE, `ON DELETE NO ACTION`. It is already pinned by `packages/db/src/inspection-relational-integrity.test.ts`. | see §Audit corrections                                                                                                                         |
 | **D8**  | 82 foreign keys exist in Postgres but not in the Drizzle snapshot chain (596 in DB vs 513 in snapshot). Systemic and pre-existing; only `equipment_inspection_schedules.inspection_type_id` was reconciled (`0044_inspection_type_fk_snapshot`).                                                                                                                                                                                                                                                                            | `packages/db/drizzle/meta/*.json`                                                                                                              |
-| **D9**  | `canSeeWidget` keys off `WIDGET_PERMISSIONS`, **not** the registry's `rolesShown`. A widget absent from that map falls through to "visible to everyone". Caught live when `op-work-permit-expiry-7d` was first added without a map entry — it would have shown a tenant-wide count to self-tier workers. Fixed for that widget; the trap remains for the next one.                                                                                                                                                          | `apps/web/src/app/(app)/dashboard/_widget-access.ts:101-103`                                                                                   |
+| **D9**  | **FIXED (full-project audit, 2026-11-09).** `canSeeWidget` no longer falls through to "visible to everyone" for an unmapped registered widget: only `personal-*` widgets are ungated, registered org widgets without a `WIDGET_PERMISSIONS` entry are hidden, and non-UUID unknown ids are denied instead of being treated as Insights cards.                                                                                                                                                                               | `apps/web/src/app/(app)/dashboard/_widget-access.ts`; `_widget-access.test.ts`                                                                 |
+| **D12** | **FIXED (full-project audit, 2026-11-09).** Unvalidated list/export filter values reached Postgres enum and UUID columns, so crafted query strings could produce HTTP 500s. List/export pages now use `pickEnum`/`pickUuid`, the public API maps Postgres data exceptions to 400, and inline field actions validate record IDs, foreign-key IDs and calendar dates before writing.                                                                                                                                          | `apps/web/src/lib/list-params.ts`; `apps/web/src/lib/api/query.ts`; affected list/export and inline-edit actions                               |
+| **D13** | **FIXED (full-project audit, 2026-11-09).** The **Send email** People-group server actions required only a signed-in context, so any authenticated tenant member could enumerate group e-mail addresses. Both actions now require `people.read.all`; manual addresses still work for other senders, and the manual states the picker boundary.                                                                                                                                                                              | `apps/web/src/lib/notifications/person-group-emails-action.ts`; `apps/web/src/lib/manual/content/oversight-admin.ts`                           |
+| **D14** | **FIXED (full-project audit, 2026-11-09).** `requestMultipartPartUrl` accepted an upload token without comparing it to the reservation hash. It now verifies the token before issuing a part URL, matching the check already performed by the storage upload route.                                                                                                                                                                                                                                                         | `apps/web/src/lib/uploads.ts`                                                                                                                  |
+| **D15** | **FIXED (full-project audit, 2026-11-09).** The signed internal domain-event route returned the raw exception message to the caller. It now returns a fixed 500 message while keeping the detailed error in server logs.                                                                                                                                                                                                                                                                                                    | `apps/web/src/app/api/internal/domain-events/[id]/route.ts`                                                                                    |
 
 ### Tooling and environment defects
 
-| ID     | Issue                                                                                                                                                                                         |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **T1** | `turbo.json` `globalEnv` omits `R2_ENDPOINT` and `ATTACHMENT_CAPABILITY_SECRET`. Turbo strips unlisted vars, so `pnpm dev` needs `--env-mode=loose` for `R2_ENDPOINT` to reach `next-server`. |
-| **T2** | `packages/storage/src/index.ts:39-40` uses `??`, which does **not** fall back on an empty string, while `.env.example` ships empty R2 credentials.                                            |
-| **T3** | Node is under nvm and not on the default PATH: `export PATH="/home/test/.nvm/versions/node/v24.21.0/bin:$PATH"`.                                                                              |
-| **T4** | `docker-compose.yml` ships empty R2 credentials that must be filled to match compose `MINIO_ROOT_*`.                                                                                          |
-| **T5** | Only `apps/web` has an eslint script, so `pnpm lint` (turbo) covers one package.                                                                                                              |
+| ID     | Issue                                                                                                                                                                                                                                                    |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **T1** | **FIXED (full-project audit, 2026-11-09).** `turbo.json` `globalEnv` now passes the runtime environment keys used by web/worker tasks, including `R2_ENDPOINT` and `ATTACHMENT_CAPABILITY_SECRET`, instead of stripping them from Turbo child processes. |
+| **T2** | `packages/storage/src/index.ts:39-40` uses `??`, which does **not** fall back on an empty string, while `.env.example` ships empty R2 credentials.                                                                                                       |
+| **T3** | Node is under nvm and not on the default PATH: `export PATH="/home/test/.nvm/versions/node/v24.21.0/bin:$PATH"`.                                                                                                                                         |
+| **T4** | `docker-compose.yml` ships empty R2 credentials that must be filled to match compose `MINIO_ROOT_*`.                                                                                                                                                     |
+| **T5** | Only `apps/web` has an eslint script, so `pnpm lint` (turbo) covers one package.                                                                                                                                                                         |
 
 ### Audit corrections (self-corrections vs the earlier audit)
 
@@ -1644,6 +1648,29 @@ When authorised, the sequence from `docs/hse-development-baseline.md` §17:
 - **Gates:** format 0; deadcode 0; lint 0; typecheck 0; build 0. `test --force` is 24/25 with one pre-existing 5 s timeout flake in the worker email/notify tests (pass alone, 5/5).
 - **Boundary:** equipment photos (`equipment_items.photo_attachment_id`) have the same missing-writer gap and were not part of this request; the badge's own photo placeholder remains until a portrait is uploaded.
 - **Evidence:** `docs/ea66d6-localization-report.md` §17.
+
+## Full-project audit addendum (2026-11-09)
+
+A repository-wide audit found and fixed the input-validation and authorization gaps
+recorded as D9 and D12–D15 in the defect register. List and CSV export filters now
+use shared enum/UUID validators; the public API converts uncastable filter values
+from HTTP 500 to HTTP 400; inline field editors validate record, foreign-key and
+calendar-date inputs; People-group e-mail resolution requires `people.read.all`;
+multipart part URLs now verify the reservation token; and the internal domain-event
+route no longer echoes raw exception text. `turbo.json` also passes the runtime
+environment keys used by web/worker child processes.
+
+Gates were run after the final edits: format 0, typecheck 0, lint 0, test 0,
+deadcode 0 and build 0. The first full-test run exposed one false positive in this
+audit (a Better Auth text primary key was incorrectly guarded as a UUID) and one
+parallel-load test timeout; both were resolved and the full test suite was rerun
+green.
+
+Known residual risks not changed in this pass: D8 (82 foreign keys absent from the
+Drizzle snapshot chain), stable attachment capabilities, the 4-digit minimum kiosk
+PIN policy, and purposeful candidate lists returned by module-authorized picker
+lookups. Those need separate product/security decisions rather than silent broad
+changes.
 
 ## 9. Update protocol
 

@@ -34,7 +34,7 @@ import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString, pickUuid } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SearchFilter } from '@/components/search-filter'
 import { Pagination } from '@/components/pagination'
@@ -81,10 +81,10 @@ export default async function TrainingRecordsPage({
     perPage: 25,
     allowedSorts: SORTS,
   })
-  const sourceFilter = pickString(sp.source)
+  const sourceFilter = pickEnum(sp.source, trainingRecords.source.enumValues)
   const expiryFilter = pickString(sp.expiry)
-  const personFilter = pickString(sp.person)
-  const courseFilter = pickString(sp.course)
+  const personFilter = pickUuid(sp.person)
+  const courseFilter = pickUuid(sp.course)
   const ctx = await requireRequestContext()
   // Access control: viewing certificates requires a training-read permission.
   // read.all (or super-admin) sees the whole tenant; read.self is scoped to the
@@ -122,7 +122,7 @@ export default async function TrainingRecordsPage({
         )
         if (cond) filters.push(cond)
       }
-      if (sourceFilter) filters.push(eq(trainingRecords.source, sourceFilter as any))
+      if (sourceFilter) filters.push(eq(trainingRecords.source, sourceFilter))
       if (personFilter) filters.push(eq(trainingRecords.personId, personFilter))
       if (courseFilter) filters.push(eq(trainingRecords.courseId, courseFilter))
       // Defaults to "current" when no expiry param is present; the "All" chip

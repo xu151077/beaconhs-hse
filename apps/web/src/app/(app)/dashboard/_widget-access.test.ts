@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { WIDGETS } from './_widget-registry'
 import {
   canPermissionSetPublishInsights,
+  canPermissionSetSeeWidget,
   canPermissionSetViewInsights,
   canSeeOrgAggregates,
   canSeeWidget,
@@ -61,6 +62,14 @@ describe('dashboard widget access', () => {
     const superAdmin = context([], true)
     expect(canSeeWidget(superAdmin, 'kpi-open-cas')).toBe(true)
     expect(canSeeWidget(superAdmin, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')).toBe(true)
+  })
+
+  it('fails closed for an unknown non-UUID widget id', () => {
+    // Only a placed Insights card (a UUID) may use the analytics fallback. A
+    // typo or a future custom id must not be treated as "personal".
+    expect(canSeeWidget(context([], true), 'kpi-not-registered')).toBe(false)
+    expect(canSeeWidget(manager, 'kpi-not-registered')).toBe(false)
+    expect(canPermissionSetSeeWidget(new Set(['insights.read']), 'kpi-not-registered')).toBe(false)
   })
 
   it('does not treat report or dashboard permissions as Insights access', () => {

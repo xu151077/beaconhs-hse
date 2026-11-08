@@ -10,7 +10,7 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickEnum, pickString } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -68,9 +68,12 @@ export default async function CorrectiveActionsPage({
   })
   // Default the list to open actions; an explicit `status=all` (the "All
   // statuses" chip) clears the default so every status shows.
-  const statusRaw = pickString(sp.status) ?? 'open'
-  const statusFilter = statusRaw === 'all' ? undefined : statusRaw
-  const sevFilter = pickString(sp.severity)
+  const statusRaw = pickString(sp.status)
+  const statusFilter =
+    statusRaw === 'all'
+      ? undefined
+      : (pickEnum(statusRaw, correctiveActions.status.enumValues) ?? 'open')
+  const sevFilter = pickEnum(sp.severity, correctiveActions.severity.enumValues)
   const ctx = await requireRequestContext()
   // The export route accepts any read tier — mirror that here so read.all /
   // read.site-only roles still see the button.
@@ -98,8 +101,8 @@ export default async function CorrectiveActionsPage({
       )
       if (cond) filters.push(cond)
     }
-    if (statusFilter) filters.push(eq(correctiveActions.status, statusFilter as any))
-    if (sevFilter) filters.push(eq(correctiveActions.severity, sevFilter as any))
+    if (statusFilter) filters.push(eq(correctiveActions.status, statusFilter))
+    if (sevFilter) filters.push(eq(correctiveActions.severity, sevFilter))
     const whereClause = and(...filters)
 
     const dirFn = params.dir === 'asc' ? asc : desc

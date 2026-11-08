@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUuid, parsePrefixedListParams } from './list-params'
+import { isUuid, parsePrefixedListParams, pickEnum, pickUuid } from './list-params'
 
 describe('isUuid', () => {
   it('accepts canonical UUIDs regardless of hexadecimal case', () => {
@@ -17,6 +17,32 @@ describe('isUuid', () => {
     'zzzzzzzz-e29b-41d4-a716-446655440000',
   ])('rejects malformed UUID input %j', (value) => {
     expect(isUuid(value)).toBe(false)
+  })
+})
+
+describe('pickEnum', () => {
+  it.each([
+    ['open', 'open'],
+    [['closed', 'ignored'], 'closed'],
+    ['not-a-status', undefined],
+    ['', undefined],
+    [undefined, undefined],
+  ])('returns %j only when it is an allowed value', (input, expected) => {
+    expect(pickEnum(input, ['open', 'closed'] as const)).toBe(expected)
+  })
+})
+
+describe('pickUuid', () => {
+  it('accepts a canonical uuid and rejects anything else', () => {
+    expect(pickUuid('550e8400-e29b-41d4-a716-446655440000')).toBe(
+      '550e8400-e29b-41d4-a716-446655440000',
+    )
+    expect(pickUuid(['550e8400-e29b-41d4-a716-446655440000'])).toBe(
+      '550e8400-e29b-41d4-a716-446655440000',
+    )
+    expect(pickUuid('not-a-uuid')).toBeUndefined()
+    expect(pickUuid('')).toBeUndefined()
+    expect(pickUuid(undefined)).toBeUndefined()
   })
 })
 

@@ -184,9 +184,9 @@ export async function moduleScopeWhere(
 ): Promise<SQL | undefined> {
   const tier = resolveVisibilityTier(ctx, cols.prefix)
 
-  // Opt-in hazid read of others' assessments. It lifts the VISIBILITY tier only:
-  // a self-tier holder sees other people's rows, and it is still bounded by the
-  // caller's own sites when they hold any.
+  // Opt-in hazid read of others' assessments. It lifts the VISIBILITY tier to
+  // the whole tenant (tenant RLS still applies); it is not re-bounded to the
+  // caller's sites. Pinned by hazid-read-others-contract.test.ts.
   const othersTier = cols.prefix === 'hazid' && can(ctx, 'hazid.read.others')
 
   if (tier === 'all' || othersTier) return undefined

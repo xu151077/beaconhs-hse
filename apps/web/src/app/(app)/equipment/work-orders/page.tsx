@@ -26,7 +26,7 @@ import {
 import { htmlToSnippet } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString, pickUuid } from '@/lib/list-params'
 import { formatDate } from '@/lib/datetime'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -100,11 +100,15 @@ export default async function WorkOrdersPage({
     allowedSorts: SORTS,
   })
   // Default to open work orders; the "All statuses" chip (status=all) clears it.
-  const statusRaw = pickString(sp.status) ?? 'open'
-  const statusFilter = statusRaw === 'all' ? undefined : statusRaw
-  const priorityFilter = pickString(sp.priority)
-  const assigneeFilter = pickString(sp.assignee)
-  const typeFilter = pickString(sp.type)
+  // Unknown enum/uuid values are ignored rather than reaching Postgres casts.
+  const statusRaw = pickString(sp.status)
+  const statusFilter =
+    statusRaw === 'all'
+      ? undefined
+      : (pickEnum(statusRaw, equipmentWorkOrders.status.enumValues) ?? 'open')
+  const priorityFilter = pickEnum(sp.priority, equipmentWorkOrders.priority.enumValues)
+  const assigneeFilter = pickUuid(sp.assignee)
+  const typeFilter = pickUuid(sp.type)
   const ageBucketFilter = pickString(sp.age) // 'open7' | 'open30' | 'overdue30'
   const openedFromRaw = pickString(sp.openedFrom)
   const openedToRaw = pickString(sp.openedTo)
@@ -134,8 +138,8 @@ export default async function WorkOrdersPage({
       )
       if (cond) filters.push(cond)
     }
-    if (statusFilter) filters.push(eq(equipmentWorkOrders.status, statusFilter as any))
-    if (priorityFilter) filters.push(eq(equipmentWorkOrders.priority, priorityFilter as any))
+    if (statusFilter) filters.push(eq(equipmentWorkOrders.status, statusFilter))
+    if (priorityFilter) filters.push(eq(equipmentWorkOrders.priority, priorityFilter))
     if (assigneeFilter) filters.push(eq(equipmentWorkOrders.assignedToTenantUserId, assigneeFilter))
     if (typeFilter) filters.push(eq(equipmentItems.typeId, typeFilter))
     if (openedFromRaw) {

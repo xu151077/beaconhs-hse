@@ -842,7 +842,7 @@ export async function updateTextField(formData: FormData) {
   const id = String(formData.get('id') ?? '')
   const field = String(formData.get('field') ?? '')
   const value = nullable(formData.get('value'))
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
   await assertAssessmentEditable(ctx, id)
   const ALLOWED = new Set([
     'jobScope',
@@ -871,7 +871,10 @@ export async function updateTextField(formData: FormData) {
 
   let val: unknown = value
   if (RICH.has(field)) val = nullableRichText(value)
-  if (NULLABLE_IDS.has(field)) val = value || null
+  if (NULLABLE_IDS.has(field)) {
+    if (value && !isUuid(value)) throw new Error('Invalid ID')
+    val = value || null
+  }
   if (DATES.has(field)) {
     // datetime-local wall-clock strings are parsed in the user's timezone.
     const d = value ? parseDatetimeLocal(value, ctx.timezone) : null

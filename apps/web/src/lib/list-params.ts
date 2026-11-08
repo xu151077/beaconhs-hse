@@ -75,6 +75,30 @@ export function pickString(v: string | string[] | undefined): string | undefined
   return v
 }
 
+/**
+ * Return a query-string value only when it is one of `allowed`.
+ *
+ * Filters are user input. Passing an arbitrary `?status=`/`?type=` straight to
+ * a Postgres enum column raises `invalid input value for enum …` and turns the
+ * page into a 500. Callers use this so an unknown value is ignored like an
+ * absent one instead.
+ */
+export function pickEnum<T extends string>(
+  v: string | string[] | undefined,
+  allowed: readonly T[],
+): T | undefined {
+  const value = pickString(v)
+  return value !== undefined && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : undefined
+}
+
+/** Return a query-string value only when it is a canonical UUID. */
+export function pickUuid(v: string | string[] | undefined): string | undefined {
+  const value = pickString(v)
+  return value !== undefined && isUuid(value) ? value : undefined
+}
+
 export function clamp(n: number, min: number, max: number): number {
   if (!Number.isFinite(n)) return min
   return Math.max(min, Math.min(max, Math.trunc(n)))

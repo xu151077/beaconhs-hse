@@ -11,7 +11,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString } from '@/lib/list-params'
 import { moduleScopeWhere } from '@/lib/visibility'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -42,9 +42,13 @@ async function getHandler(req: NextRequest) {
     allowedSorts: SORTS,
   })
   // Mirror the list page: default to open, `status=all` shows every status.
-  const statusRaw = pickString(sp.status) ?? 'open'
-  const statusFilter = statusRaw === 'all' ? undefined : statusRaw
-  const sevFilter = pickString(sp.severity)
+  // Unknown enum values are ignored instead of 500ing the export.
+  const statusRaw = pickString(sp.status)
+  const statusFilter =
+    statusRaw === 'all'
+      ? undefined
+      : (pickEnum(statusRaw, correctiveActions.status.enumValues) ?? 'open')
+  const sevFilter = pickEnum(sp.severity, correctiveActions.severity.enumValues)
   const ctx = await requireExportContext()
 
   // Require a read tier and scope rows to it (mirrors the /corrective-actions
@@ -70,8 +74,8 @@ async function getHandler(req: NextRequest) {
       )
       if (cond) filters.push(cond)
     }
-    if (statusFilter) filters.push(eq(correctiveActions.status, statusFilter as any))
-    if (sevFilter) filters.push(eq(correctiveActions.severity, sevFilter as any))
+    if (statusFilter) filters.push(eq(correctiveActions.status, statusFilter))
+    if (sevFilter) filters.push(eq(correctiveActions.severity, sevFilter))
     const whereClause = filters.length > 0 ? and(...filters) : undefined
 
     const dirFn = params.dir === 'asc' ? asc : desc

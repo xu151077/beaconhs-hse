@@ -45,7 +45,7 @@ import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickString, pickUuid } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -92,9 +92,9 @@ export default async function InspectionRecordsPage({
   // error, so unrecognised values fall back to "no filter".
   const statusRaw = pickString(sp.status)
   const statusFilter = STATUS_OPTIONS.some((o) => o.value === statusRaw) ? statusRaw : undefined
-  const typeFilter = pickString(sp.type)
-  const siteFilter = pickString(sp.site)
-  const inspectorFilter = pickString(sp.inspector)
+  const typeFilter = pickUuid(sp.type)
+  const siteFilter = pickUuid(sp.site)
+  const inspectorFilter = pickUuid(sp.inspector)
   const signedFilter = pickString(sp.signed) // 'yes' | 'no'
   const dateFromRaw = pickString(sp.dateFrom)
   const dateToRaw = pickString(sp.dateTo)
