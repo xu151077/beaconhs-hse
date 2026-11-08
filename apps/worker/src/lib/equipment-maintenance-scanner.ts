@@ -190,6 +190,7 @@ async function claimQueuedEquipmentMaintenanceDispatches(tx: Database, now: Date
           availableAt: equipmentMaintenanceDispatches.publishAvailableAt,
           leaseId: equipmentMaintenanceDispatches.publishLeaseId,
           claimedAt: equipmentMaintenanceDispatches.publishClaimedAt,
+          attempts: equipmentMaintenanceDispatches.publishAttempts,
         },
         now,
       ),

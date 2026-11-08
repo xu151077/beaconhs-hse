@@ -40,7 +40,6 @@ import { loadScopeOptions, describeScope } from '../_scope-data'
 import {
   assignRole,
   clearPermissionOverride,
-  loadPersonLinkData,
   removeAssignment,
   removeMember,
   resendInvite,
@@ -51,6 +50,7 @@ import {
   startImpersonation,
   updateMemberDisplayName,
 } from '../_actions'
+import { loadPersonLinkData } from '../_lib/person-link'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()

@@ -68,6 +68,7 @@ async function claimQueuedReportRuns(tx: Database, now: Date) {
           availableAt: reportRuns.publishAvailableAt,
           leaseId: reportRuns.publishLeaseId,
           claimedAt: reportRuns.publishClaimedAt,
+          attempts: reportRuns.publishAttempts,
         },
         now,
       ),

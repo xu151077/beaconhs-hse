@@ -11,6 +11,7 @@ import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 // All queries pivot on `people.userId = ctx.userId` -> `people.id`.
 
 import Link from 'next/link'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { GraduationCap } from 'lucide-react'
 import {
   and,
@@ -235,7 +236,8 @@ export default async function MyTrainingPage({
     const coursesCount = Number(coursesCountRow?.c ?? 0)
 
     const today = new Date()
-    const todayStr = today.toISOString().slice(0, 10)
+    // The caller's local calendar day (UTC+8 sites flipped at 8pm local).
+    const todayStr = dateIsoInTimeZone(today, ctx.timezone)
     const ninetyDays = new Date()
     ninetyDays.setDate(ninetyDays.getDate() + 90)
     const ninetyDaysStr = ninetyDays.toISOString().slice(0, 10)
@@ -559,7 +561,10 @@ export default async function MyTrainingPage({
     )
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = dateIsoInTimeZone(new Date(), ctx.timezone)
+  const plus90 = new Date()
+  plus90.setDate(plus90.getDate() + 90)
+  const ninetyDaysStr = dateIsoInTimeZone(plus90, ctx.timezone)
   const listPagination = (
     <Pagination
       basePath="/my/training"
@@ -760,12 +765,7 @@ export default async function MyTrainingPage({
                           !superseded &&
                           rec.expiresOn &&
                           rec.expiresOn >= todayStr &&
-                          rec.expiresOn <=
-                            (() => {
-                              const d = new Date()
-                              d.setDate(d.getDate() + 90)
-                              return d.toISOString().slice(0, 10)
-                            })()
+                          rec.expiresOn <= ninetyDaysStr
                         const expired = !superseded && rec.expiresOn && rec.expiresOn < todayStr
                         return (
                           <TableRow key={rec.id}>

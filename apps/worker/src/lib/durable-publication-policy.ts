@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lte, or } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 
 const INITIAL_RETRY_MS = 15_000
@@ -16,6 +16,14 @@ const DURABLE_PUBLICATION_CLAIM_TIMEOUT_MS = 15 * 60_000
 
 /** Re-assert queued report jobs so a Redis data loss cannot orphan the DB ledger. */
 const DURABLE_PUBLICATION_REPUBLISH_MS = 15 * 60_000
+
+/**
+ * Maximum attempts after which a durable publication row is no longer claimed
+ * (see durablePublicationClaimPredicate). Prevents a poison dispatch from
+ * consuming batch slots forever; the final error/hand attempts stay recorded
+ * in the row for operator triage.
+ */
+export const MAX_DURABLE_PUBLICATION_ATTEMPTS = 10
 
 function validDate(value: Date, label: string): Date {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
@@ -38,17 +46,25 @@ export function durablePublicationClaimPredicate(
     availableAt: AnyPgColumn
     leaseId: AnyPgColumn
     claimedAt: AnyPgColumn
+    /** Optional attempts counter. When present, unbounded retry stops here. */
+    attempts?: AnyPgColumn
   },
   now: Date,
 ) {
   const staleBefore = durablePublicationStaleBefore(now)
-  return and(
-    eq(columns.status, 'queued'),
-    or(
-      and(isNull(columns.leaseId), isNull(columns.claimedAt), lte(columns.availableAt, now)),
-      and(isNotNull(columns.leaseId), lte(columns.claimedAt, staleBefore)),
-    ),
+  const base = or(
+    and(isNull(columns.leaseId), isNull(columns.claimedAt), lte(columns.availableAt, now)),
+    and(isNotNull(columns.leaseId), lte(columns.claimedAt, staleBefore)),
   )
+  // A POISON dispatch (invalid payload, rejected webhook) used to be
+  // re-claimed forever and occupy the oldest batch slot every scan, with no
+  // operator signal besides an overwritten lastError. Once attempts are
+  // exhausted the row stays `queued` but is never claimed again, so it stops
+  // consuming retries entirely. Attempts remain visible in the row itself.
+  const bounded = columns.attempts
+    ? and(base, sql`${columns.attempts} < ${MAX_DURABLE_PUBLICATION_ATTEMPTS}`)
+    : base
+  return and(eq(columns.status, 'queued'), bounded)
 }
 
 /** Retry forever with bounded exponential backoff; committed work is never discarded. */

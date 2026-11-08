@@ -4,6 +4,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { htmlToSnippet } from '@beaconhs/forms-core'
 import type { Database } from '@beaconhs/db'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { entryClassWhere } from '@beaconhs/db/journal-class'
 import type { RequestContext } from '@beaconhs/tenant'
 import { can } from '@beaconhs/tenant'
@@ -409,7 +410,9 @@ export async function loadDashboardMetrics(
   const today = new Date(now)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000)
   // `journal_entries.entry_date` is a DATE column, so it needs the ISO day form.
-  const thirtyDaysAgoIso = thirtyDaysAgo.toISOString().slice(0, 10)
+  // The caller's local calendar day, not UTC: UTC+8 sites saw every expiry
+  // tile flip a day early each evening.
+  const thirtyDaysAgoIso = dateIsoInTimeZone(thirtyDaysAgo, ctx.timezone)
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 86_400_000)
   const ninetyDaysAhead = new Date(now.getTime() + 90 * 86_400_000)
   const thirtyDaysAhead = new Date(now.getTime() + 30 * 86_400_000)
@@ -423,10 +426,10 @@ export async function loadDashboardMetrics(
   const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
   const todayStart = new Date(today)
   todayStart.setHours(0, 0, 0, 0)
-  const todayIso = today.toISOString().slice(0, 10)
-  const startOfMonthIso = startOfMonth.toISOString().slice(0, 10)
-  const ninetyIso = ninetyDaysAhead.toISOString().slice(0, 10)
-  const thirtyIso = thirtyDaysAhead.toISOString().slice(0, 10)
+  const todayIso = dateIsoInTimeZone(today, ctx.timezone)
+  const startOfMonthIso = dateIsoInTimeZone(startOfMonth, ctx.timezone)
+  const ninetyIso = dateIsoInTimeZone(ninetyDaysAhead, ctx.timezone)
+  const thirtyIso = dateIsoInTimeZone(thirtyDaysAhead, ctx.timezone)
 
   return await ctx.db(async (tx) => {
     const effectiveRoleKeys = await getEffectiveRoleKeys(ctx, tx)
@@ -769,7 +772,10 @@ export async function loadDashboardMetrics(
       .where(
         and(
           scopeIncidentHours,
-          gte(incidentHoursPeriods.periodStart, twentyFourMonthsAgo.toISOString().slice(0, 10)),
+          gte(
+            incidentHoursPeriods.periodStart,
+            dateIsoInTimeZone(twentyFourMonthsAgo, ctx.timezone),
+          ),
         ),
       )
       .groupBy(sql`to_char(${incidentHoursPeriods.periodStart}, 'YYYY-MM')`)

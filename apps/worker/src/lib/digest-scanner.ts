@@ -117,35 +117,40 @@ export async function scanDigests(scheduledFor: Date = new Date()): Promise<Dige
           byUser.set(item.userId, items)
         }
 
-        for (const { userId, email, total } of recipients) {
-          const items = byUser.get(userId) ?? []
-          if (items.length === 0) continue
-          const list = items
-            .map(
-              (i) =>
-                `<li>${escapeHtml(i.title)}${i.linkPath ? ` — <a href="${escapeHtml(`${appUrl}${i.linkPath}`)}">open</a>` : ''}</li>`,
+        // One small page per await: a tenant with thousands of unread
+        // recipients no longer sends newsletters serially. Bounded by
+        // RECIPIENT_PAGE_SIZE, so the fan-out stays modest.
+        await Promise.all(
+          recipients.map(async ({ userId, email, total }) => {
+            const items = byUser.get(userId) ?? []
+            if (items.length === 0) return
+            const list = items
+              .map(
+                (i) =>
+                  `<li>${escapeHtml(i.title)}${i.linkPath ? ` — <a href="${escapeHtml(`${appUrl}${i.linkPath}`)}">open</a>` : ''}</li>`,
+              )
+              .join('')
+            const subject = `Your ${pol.digestMode} summary — ${total} update${total === 1 ? '' : 's'}`
+            const period = `${pol.digestMode}|${now.toISOString().slice(0, 13)}`
+            const jobId = `digest-email|${createHash('sha256')
+              .update(`${t.id}\0${email.toLowerCase()}\0${period}`)
+              .digest('hex')}`
+            const omitted = total - items.length
+            const moreHtml = omitted > 0 ? `<p>Showing the newest ${items.length} updates.</p>` : ''
+            const moreText = omitted > 0 ? `\nShowing the newest ${items.length} updates.` : ''
+            await enqueueEmail(
+              {
+                to: email,
+                subject,
+                html: `<p>${total} unread notification${total === 1 ? '' : 's'}:</p>${moreHtml}<ul>${list}</ul>`,
+                text: `${items.map((i) => `• ${i.title}`).join('\n')}${moreText}`,
+                meta: { tenantId: t.id, category: 'digest' },
+              },
+              { jobId },
             )
-            .join('')
-          const subject = `Your ${pol.digestMode} summary — ${total} update${total === 1 ? '' : 's'}`
-          const period = `${pol.digestMode}|${now.toISOString().slice(0, 13)}`
-          const jobId = `digest-email|${createHash('sha256')
-            .update(`${t.id}\0${email.toLowerCase()}\0${period}`)
-            .digest('hex')}`
-          const omitted = total - items.length
-          const moreHtml = omitted > 0 ? `<p>Showing the newest ${items.length} updates.</p>` : ''
-          const moreText = omitted > 0 ? `\nShowing the newest ${items.length} updates.` : ''
-          await enqueueEmail(
-            {
-              to: email,
-              subject,
-              html: `<p>${total} unread notification${total === 1 ? '' : 's'}:</p>${moreHtml}<ul>${list}</ul>`,
-              text: `${items.map((i) => `• ${i.title}`).join('\n')}${moreText}`,
-              meta: { tenantId: t.id, category: 'digest' },
-            },
-            { jobId },
-          )
-          result.emails += 1
-        }
+            result.emails += 1
+          }),
+        )
 
         afterUserId = recipients.at(-1)!.userId
         if (recipients.length < RECIPIENT_PAGE_SIZE) break

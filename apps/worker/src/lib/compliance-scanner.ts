@@ -102,6 +102,7 @@ async function claimQueuedComplianceDispatches(tx: Database, now: Date) {
             availableAt: complianceDispatches.publishAvailableAt,
             leaseId: complianceDispatches.publishLeaseId,
             claimedAt: complianceDispatches.publishClaimedAt,
+            attempts: complianceDispatches.publishAttempts,
           },
           now,
         ),

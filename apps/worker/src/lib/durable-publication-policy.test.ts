@@ -4,6 +4,7 @@ import {
   durablePublicationRepublishAt,
   durablePublicationRetryAt,
   durablePublicationStaleBefore,
+  MAX_DURABLE_PUBLICATION_ATTEMPTS,
 } from './durable-publication-policy'
 
 describe('durable publication policy', () => {
@@ -16,6 +17,13 @@ describe('durable publication policy', () => {
     expect(durablePublicationRetryAt(Number.NaN, now).toISOString()).toBe(
       '2026-07-13T12:00:15.000Z',
     )
+  })
+
+  it('bounds claim attempts so a poison row stops consuming retries', () => {
+    // MAX_DURABLE_PUBLICATION_ATTEMPTS is the cap the claim predicate
+    // enforces (attempts < cap). Rows at/above it are never claimed again —
+    // the poison-event equivalent of the domain outbox `dead` state.
+    expect(MAX_DURABLE_PUBLICATION_ATTEMPTS).toBe(10)
   })
 
   it('reclaims abandoned leases and periodically reasserts queued report jobs', () => {

@@ -641,49 +641,6 @@ export async function clearPermissionOverride(formData: FormData): Promise<void>
 
 // --- linked person (employee) record ------------------------------------
 
-type LinkablePerson = {
-  id: string
-  name: string
-  hint: string | null
-}
-
-/**
- * Data for the "Linked person record" control: the person currently linked to
- * this account in the active tenant (if any) plus the active, unlinked people
- * that can be chosen. People already linked to a DIFFERENT account are excluded
- * so the picker can never silently steal another user's link.
- */
-export async function loadPersonLinkData(
-  ctx: Ctx,
-  userId: string,
-): Promise<{ linked: LinkablePerson | null; options: LinkablePerson[] }> {
-  return ctx.db(async (tx) => {
-    const rows = await tx
-      .select({
-        id: people.id,
-        firstName: people.firstName,
-        lastName: people.lastName,
-        employeeNo: people.employeeNo,
-        jobTitle: primaryPersonTitleName(people.id, people.tenantId),
-        userId: people.userId,
-      })
-      .from(people)
-      .where(and(eq(people.status, 'active'), isNull(people.deletedAt)))
-      .orderBy(asc(people.lastName), asc(people.firstName))
-    const toItem = (r: (typeof rows)[number]): LinkablePerson => ({
-      id: r.id,
-      name: `${r.firstName} ${r.lastName}`.trim(),
-      hint: r.employeeNo ?? r.jobTitle ?? null,
-    })
-    const linked = rows.find((r) => r.userId === userId)
-    return {
-      linked: linked ? toItem(linked) : null,
-      // Unlinked people + (defensively) the one already ours.
-      options: rows.filter((r) => !r.userId || r.userId === userId).map(toItem),
-    }
-  })
-}
-
 /**
  * Link this account to an employee (`people`) record in the active tenant, or
  * clear the link (empty personId). Enforces the 1:1 rule the
