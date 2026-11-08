@@ -30,6 +30,7 @@ import { recordAudit } from '@/lib/audit'
 import { materializeEquipmentTypeEvidence } from '@/lib/compliance-type-evidence'
 import { csvRow } from '@/lib/csv'
 import { isBulkActionId, newBulkActionBatchId, parseBulkActionIds } from '@/lib/bulk-actions'
+import { isUuid } from '@/lib/list-params'
 import {
   lockEquipmentCustodyRows,
   lockOpenEquipmentCheckout,
@@ -460,7 +461,7 @@ export async function checkInEquipment(formData: FormData) {
   }
   const condition = rawCondition as ReturnCondition
   const returnedNotes = String(formData.get('returnedNotes') ?? '').trim() || null
-  if (!id) return
+  if (!isUuid(id)) return
   if (returnedNotes && returnedNotes.length > 2_000) {
     throw new Error('Return notes must be 2,000 characters or less')
   }

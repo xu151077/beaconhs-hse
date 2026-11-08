@@ -143,7 +143,7 @@ async function updateActionTaken(formData: FormData) {
   if (cost !== null && !/^(0|[1-9]\d{0,9})(\.\d{1,2})?$/.test(cost)) {
     throw new Error('Cost must be a number with up to 2 decimal places.')
   }
-  if (!id) return
+  if (!isUuid(id)) return
   await ctx.db((tx) =>
     tx.update(equipmentWorkOrders).set({ actionTaken, cost }).where(eq(equipmentWorkOrders.id, id)),
   )
@@ -163,7 +163,7 @@ async function updateStatus(formData: FormData) {
   assertCan(ctx, 'equipment.workorder.close')
   const id = String(formData.get('id') ?? '')
   const status = String(formData.get('status') ?? '') as (typeof STATUSES)[number]
-  if (!id || !STATUSES.includes(status)) return
+  if (!isUuid(id) || !STATUSES.includes(status)) return
   const closing = status === 'closed' || status === 'cancelled'
   const result = await ctx.db(async (tx) => {
     const [existing] = await tx
@@ -206,7 +206,7 @@ async function markComplete(formData: FormData) {
   const ctx = await requireRequestContext()
   assertCan(ctx, 'equipment.workorder.close')
   const id = String(formData.get('id') ?? '')
-  if (!id) return
+  if (!isUuid(id)) return
   const itemId = await ctx.db(async (tx) => {
     const [existing] = await tx
       .select({ itemId: equipmentWorkOrders.itemId })
@@ -239,7 +239,7 @@ async function sendEmailAction(formData: FormData) {
   const ctx = await requireRequestContext()
   assertCan(ctx, 'equipment.read.all')
   const id = String(formData.get('id') ?? '')
-  if (!id) return
+  if (!isUuid(id)) return
   const subjectPrefix = String(formData.get('subjectPrefix') ?? '').trim() || undefined
   const messageOverride = String(formData.get('message') ?? '').trim() || undefined
   const splitEmails = (raw: string) =>

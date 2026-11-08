@@ -38,7 +38,7 @@ import {
   objectRelativePath,
   pumpAndHash,
 } from './hash'
-import { encryptFile, loadAgeRecipient, loadHmacKey, HMAC_ALGORITHM } from './crypto'
+import { decryptFile, encryptFile, loadAgeRecipient, loadHmacKey, HMAC_ALGORITHM } from './crypto'
 import { FORMAT_V2, MANIFEST_ENC_NAME, commitEncryptedManifest } from './vault'
 import {
   MANIFEST_SCHEMA_VERSION,
@@ -212,14 +212,34 @@ export async function runBackup(options: BackupOptions): Promise<BackupResult> {
   let checkpoint: Checkpoint = { schema_version: CHECKPOINT_SCHEMA_VERSION, completed: {} }
   if (options.resume === true) {
     try {
-      const parsed = JSON.parse(await readFile(checkpointPath, 'utf8')) as Checkpoint
+      // Format 2 checkpoints are age-encrypted, so the plaintext checkpoint must
+      // be decrypted before it can be read. Without this, `--resume` silently
+      // starts a full backup even though a valid encrypted checkpoint exists.
+      let raw: string
+      if (encrypted) {
+        const identity = await loadAgeIdentityRef()
+        const plainPath = join(backupDir, `.checkpoint-decrypt-${process.pid}.json`)
+        try {
+          await decryptFile(checkpointPath, plainPath, identity)
+          raw = await readFile(plainPath, 'utf8')
+        } finally {
+          await rm(plainPath, { force: true }).catch(() => undefined)
+        }
+      } else {
+        raw = await readFile(checkpointPath, 'utf8')
+      }
+      const parsed = JSON.parse(raw) as Checkpoint
       if (
         parsed &&
         typeof parsed === 'object' &&
-        parsed.schema_version === CHECKPOINT_SCHEMA_VERSION
+        parsed.schema_version === CHECKPOINT_SCHEMA_VERSION &&
+        parsed.completed &&
+        typeof parsed.completed === 'object'
       ) {
         checkpoint = parsed
         log(`resuming from checkpoint: ${Object.keys(parsed.completed).length} key(s) recorded`)
+      } else {
+        log('no usable checkpoint found; performing a full backup')
       }
     } catch {
       log('no usable checkpoint found; performing a full backup')

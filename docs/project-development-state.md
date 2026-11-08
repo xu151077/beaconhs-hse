@@ -564,6 +564,7 @@ register with their verification evidence.
 | **D13** | **FIXED (full-project audit, 2026-11-09).** The **Send email** People-group server actions required only a signed-in context, so any authenticated tenant member could enumerate group e-mail addresses. Both actions now require `people.read.all`; manual addresses still work for other senders, and the manual states the picker boundary.                                                                                                                                                                              | `apps/web/src/lib/notifications/person-group-emails-action.ts`; `apps/web/src/lib/manual/content/oversight-admin.ts`                           |
 | **D14** | **FIXED (full-project audit, 2026-11-09).** `requestMultipartPartUrl` accepted an upload token without comparing it to the reservation hash. It now verifies the token before issuing a part URL, matching the check already performed by the storage upload route.                                                                                                                                                                                                                                                         | `apps/web/src/lib/uploads.ts`                                                                                                                  |
 | **D15** | **FIXED (full-project audit, 2026-11-09).** The signed internal domain-event route returned the raw exception message to the caller. It now returns a fixed 500 message while keeping the detailed error in server logs.                                                                                                                                                                                                                                                                                                    | `apps/web/src/app/api/internal/domain-events/[id]/route.ts`                                                                                    |
+| **D16** | **FIXED (full-project audit, 2026-11-09).** Encrypted object-store backups advertised `--resume`, but the format-2 checkpoint is age-encrypted and the old resume path tried to parse it as plaintext, so resume silently started over. The resume path now decrypts the checkpoint with the age identity before parsing it.                                                                                                                                                                                                | `packages/object-store-backup/src/backup.ts`                                                                                                   |
 
 ### Tooling and environment defects
 
@@ -1652,12 +1653,13 @@ When authorised, the sequence from `docs/hse-development-baseline.md` §17:
 ## Full-project audit addendum (2026-11-09)
 
 A repository-wide audit found and fixed the input-validation and authorization gaps
-recorded as D9 and D12–D15 in the defect register. List and CSV export filters now
+recorded as D9 and D12–D16 in the defect register. List and CSV export filters now
 use shared enum/UUID validators; the public API converts uncastable filter values
 from HTTP 500 to HTTP 400; inline field editors validate record, foreign-key and
 calendar-date inputs; People-group e-mail resolution requires `people.read.all`;
-multipart part URLs now verify the reservation token; and the internal domain-event
-route no longer echoes raw exception text. `turbo.json` also passes the runtime
+multipart part URLs now verify the reservation token; the internal domain-event
+route no longer echoes raw exception text; and encrypted object-store backups can
+now resume from their encrypted checkpoint. `turbo.json` also passes the runtime
 environment keys used by web/worker child processes.
 
 Gates were run after the final edits: format 0, typecheck 0, lint 0, test 0,
