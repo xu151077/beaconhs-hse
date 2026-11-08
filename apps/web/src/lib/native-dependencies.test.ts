@@ -24,7 +24,12 @@ function createMinimalPdf(): Uint8Array {
   return new TextEncoder().encode(pdf)
 }
 
-describe('native production dependencies', () => {
+// Loading a native backend node module for the first time costs well over
+// vitest's 5s default when 26 packages run tests in parallel on a busy host.
+// The PNG emission itself is trivial; the import is the budget. 30s matches
+// the other native-heavy cases in this repo and keeps the full-parallel
+// `pnpm test --force` from flaking on load.
+describe('native production dependencies', { timeout: 30_000 }, () => {
   it('loads the canvas backend and emits a real PNG', async () => {
     const { createCanvas } = await import('@napi-rs/canvas')
     const canvas = createCanvas(2, 2)

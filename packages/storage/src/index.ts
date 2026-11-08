@@ -112,6 +112,15 @@ const storagePublicOriginCandidate =
 // the browser, where CSP blocks it and users mount their own `127.0.0.1`. Fall
 // back to the runtime-resolved application origin when the configured value is
 // not actually browser-reachable so URLs stay attributable to a public host.
+// A configured `R2_ENDPOINT` that is malformed (e.g. carries a path prefix) is
+// a CONFIG ERROR and must fail fast at import, whether or not the PUBLIC_APP_URL
+// fallback below would rescue presigning. Validating only the post-fallback
+// value let a misconfigured prefix slip through whenever APP_URL was set —
+// exactly what CI caught (APP_URL is set there, so the prefix rejection never
+// fired and the import resolved instead of throwing).
+const configuredR2Endpoint = process.env.R2_ENDPOINT?.trim()
+if (configuredR2Endpoint) assertS3Origin(configuredR2Endpoint, 'R2_ENDPOINT')
+
 const browserReachableR2 = browserReachableStorageOrigin(process.env.R2_ENDPOINT)
 const rawPublicEndpoint = browserReachableR2
   ? process.env.R2_ENDPOINT!.trim()

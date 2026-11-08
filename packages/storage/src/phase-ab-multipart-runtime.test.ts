@@ -13,7 +13,6 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
     },
   })
 }
-
 /**
  * Multipart integrity through the SERVER-SIDE write path.
  *
@@ -22,8 +21,45 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * exact primitive against the real object store, so the multipart behaviour
  * (part numbering, overwrite-on-retry, concurrency, completion, hash) is still
  * proven end to end after the presigned part URLs were removed.
+ *
+ * Integration test: it needs a REAL reachable object store at the module's
+ * resolved internal endpoint (config + defaults = `http://localhost:9000` on
+ * a dev host, or `$R2_INTERNAL_ENDPOINT`). CI runners have neither, so the
+ * suite is skipped there — like the SEED_TEST_SCRATCH gates for the live
+ * database suites — instead of failing with connection errors. The skip
+ * message names the endpoint so it is never silently invisible.
  */
-describe('multipart runtime through the server-side write path', () => {
+async function storeReachable(): Promise<boolean> {
+  const raw = process.env.R2_INTERNAL_ENDPOINT || 'http://localhost:9000'
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return false
+  }
+  const { connect } = await import('node:net')
+  return new Promise<boolean>((resolve) => {
+    const socket = connect(Number(url.port) || 443, url.hostname, () => {
+      socket.end()
+      resolve(true)
+    })
+    socket.on('error', () => resolve(false))
+    socket.setTimeout(2000, () => {
+      socket.destroy()
+      resolve(false)
+    })
+  })
+}
+
+const storeUp = await storeReachable()
+if (!storeUp) {
+  console.warn(
+    '[storage] skipping multipart runtime integration test: object store unreachable ' +
+      `(${process.env.R2_INTERNAL_ENDPOINT ?? 'http://localhost:9000'})`,
+  )
+}
+
+describe.skipIf(!storeUp)('multipart runtime through the server-side write path', () => {
   it('uploads a multi-part object through real multipart, retry, and concurrency', async () => {
     const tenantId = '550e8400-e29b-41d4-a716-446655440000'
     const key = storage.newTenantObjectKey({
