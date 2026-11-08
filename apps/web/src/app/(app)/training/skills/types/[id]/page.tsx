@@ -2,6 +2,7 @@ import { getGeneratedValueTranslations, getGeneratedTranslations } from '@/i18n/
 
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 import Link from 'next/link'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { notFound } from 'next/navigation'
 import {
   and,
@@ -104,12 +105,12 @@ export default async function SkillTypeDetailPage({
     ? (statusParam as 'valid' | 'expiring' | 'expired' | 'no_expiry')
     : undefined
   const now = new Date()
-  const todayIso = now.toISOString().slice(0, 10)
+  const ctx = await requireModuleManage('training')
+  const todayIso = dateIsoInTimeZone(now, ctx.timezone)
   const in30 = new Date(now)
   in30.setDate(in30.getDate() + 30)
-  const in30Iso = in30.toISOString().slice(0, 10)
+  const in30Iso = dateIsoInTimeZone(in30, ctx.timezone)
 
-  const ctx = await requireModuleManage('training')
   const data = await ctx.db(async (tx) => {
     const [row] = await tx
       .select({ type: trainingSkillTypes, authority: trainingSkillAuthorities })

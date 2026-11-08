@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { HardHat } from 'lucide-react'
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { Button, EmptyState, PageHeader } from '@beaconhs/ui'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import {
   people,
   ppeIssues,
@@ -119,7 +120,8 @@ export default async function PpePage({
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'ppe.read.all')
   const canIssue = can(ctx, 'ppe.issue') || can(ctx, 'ppe.manage')
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // The caller's local calendar day (UTC+8 sites flipped at 8pm local).
+  const todayIso = dateIsoInTimeZone(new Date(), ctx.timezone)
   const dueSoonDate = new Date(`${todayIso}T00:00:00.000Z`)
   dueSoonDate.setUTCDate(dueSoonDate.getUTCDate() + 7)
   const dueSoonIso = dueSoonDate.toISOString().slice(0, 10)

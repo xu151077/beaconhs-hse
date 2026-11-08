@@ -44,6 +44,7 @@ import { TableToolbar } from '@/components/table-toolbar'
 import { TrainingSubNav } from '../_components/training-sub-nav'
 import { startTrainingRecord } from './_actions'
 import { TrainingRecordsTable, type TrainingRecordsTableRow } from './_records-table'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -98,7 +99,7 @@ export default async function TrainingRecordsPage({
   const canManage = can(ctx, 'training.record.create')
   const canExport = can(ctx, 'training.read.all')
   const canPrint = can(ctx, 'training.read.all') || can(ctx, 'training.read.self')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const todayMs = new Date(today).getTime()
 
   const { rows, total, sourceCounts, expiryCounts, peopleList, coursesList } = await ctx.db(

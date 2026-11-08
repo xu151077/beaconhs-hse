@@ -8,6 +8,7 @@ import { GeneratedText, GeneratedValue } from '@/i18n/generated'
 // config at /training/skills/types.
 
 import Link from 'next/link'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { notFound } from 'next/navigation'
 import { FileText, Star } from 'lucide-react'
 import {
@@ -94,8 +95,8 @@ export default async function SkillsPage({
     notFound()
   const now = new Date()
   const nowMs = now.getTime()
-  const today = now.toISOString().slice(0, 10)
-  const in90 = new Date(nowMs + 90 * 86_400_000).toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(now, ctx.timezone)
+  const in90 = dateIsoInTimeZone(new Date(nowMs + 90 * 86_400_000), ctx.timezone)
 
   const { rows, total, authorities, peopleList, skillTypesList } = await ctx.db(async (tx) => {
     // read.self → only the viewer's own skills; managers/read.all → everyone.
