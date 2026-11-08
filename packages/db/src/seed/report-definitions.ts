@@ -238,8 +238,10 @@ export const BEACON_REPORT_SEEDS: BeaconReportSeed[] = [
     rows(
       'monitored_sessions',
       [
-        'subject_person_id',
-        'site_org_unit_id',
+        // Display columns, not the technical UUID scope keys: compileCustomReport
+        // rejects hidden/technical columns in a custom query.
+        'subject_person_name',
+        'site_name',
         'monitor_status',
         'created_at',
         'last_checkin_at',

@@ -273,6 +273,9 @@ describe('Phase 11-F introduced no new architecture', () => {
       // EA-66D.23 adds scope-filter indexes and a terminal outbox enum value;
       // no report relation or projection is touched.
       '0053_bent_the_spike',
+      // EA-66D.29 repairs the seed-owned monitored-sessions report definition's
+      // column projection (no schema change, no new relation).
+      '0054_repair_monitored_sessions_report',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))

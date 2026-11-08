@@ -1,5 +1,5 @@
 import { assertCan } from '@beaconhs/tenant'
-import { asc, like } from 'drizzle-orm'
+import { asc, like, or } from 'drizzle-orm'
 import { reportDefinitions } from '@beaconhs/db/schema'
 import {
   DEFAULT_REPORT_LAYOUT,
@@ -23,11 +23,20 @@ export default async function NewReportPage() {
     loadAuthorizedReportCatalog(ctx),
   ])
   const defaultBaseName = tGenerated('m_017ca81c89345d')
+  // The slug is a stable machine key and must stay ASCII kebab-case even when
+  // the display name is localized (a Chinese name would otherwise strip to an
+  // empty slug and fail `assertCustomReportDefinition` on first preview/save).
+  const defaultSlugBase = 'custom-report'
   const existingDefaults = await ctx.db((tx) =>
     tx
-      .select({ name: reportDefinitions.name })
+      .select({ name: reportDefinitions.name, slug: reportDefinitions.slug })
       .from(reportDefinitions)
-      .where(like(reportDefinitions.name, `${defaultBaseName}%`))
+      .where(
+        or(
+          like(reportDefinitions.name, `${defaultBaseName}%`),
+          like(reportDefinitions.slug, `${defaultSlugBase}%`),
+        ),
+      )
       .orderBy(asc(reportDefinitions.name)),
   )
   const existingNames = new Set(existingDefaults.map((row) => row.name))
@@ -35,11 +44,11 @@ export default async function NewReportPage() {
   for (let suffix = 2; existingNames.has(defaultName); suffix += 1) {
     defaultName = `${defaultBaseName} ${suffix}`
   }
-  const defaultSlug = defaultName
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
+  const existingSlugs = new Set(existingDefaults.map((row) => row.slug))
+  let defaultSlug = defaultSlugBase
+  for (let suffix = 2; existingSlugs.has(defaultSlug); suffix += 1) {
+    defaultSlug = `${defaultSlugBase}-${suffix}`
+  }
   const source = catalog.entities[0]!
   const definition: CustomReportDefinition = {
     schemaVersion: 1,
