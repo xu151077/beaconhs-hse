@@ -12,12 +12,14 @@ import {
   trainingLessonProgress,
   trainingLessons,
   trainingRecords,
+  tenantNotificationPolicy,
 } from '@beaconhs/db/schema'
 import { materializeEvidenceTargetObligations } from '@beaconhs/compliance'
 import { issueTrainingCertificate } from '@/lib/training-certificate-issuance'
 import { assertTrainingEnrollmentOpen } from '@/lib/training-mutation-validation'
 import { addMonthsIso } from '../../_lib/dates'
 import { deliveryMeta } from '../../_lib/delivery'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 type CompletionResult = {
   completed: boolean
@@ -64,7 +66,17 @@ async function issueCourseRecordAndComplete(
     .where(and(eq(trainingCourses.id, courseId), isNull(trainingCourses.deletedAt)))
     .limit(1)
   if (!course) throw new Error('Course not found')
-  const completedOn = now.toISOString().slice(0, 10)
+  // The completion date is the LEARNER's calendar day, not the server's UTC
+  // day — a UTC+8 learner finishing at 23:00 local must not get tomorrow's
+  // (UTC) date stamped on their certificate. The tenant's scanTimezone (IANA)
+  // is the workspace's own clock.
+  const [tzRow] = await tx
+    .select({ scanTimezone: tenantNotificationPolicy.scanTimezone })
+    .from(tenantNotificationPolicy)
+    .where(eq(tenantNotificationPolicy.tenantId, tenantId))
+    .limit(1)
+  const learnerTz = tzRow?.scanTimezone ?? 'UTC'
+  const completedOn = dateIsoInTimeZone(now, learnerTz)
   const expiresOn = course.validForMonths ? addMonthsIso(completedOn, course.validForMonths) : null
   const [rec] = await tx
     .insert(trainingRecords)
