@@ -936,3 +936,24 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。
 - 门禁：format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26**（首跑 client-lazy 5s 抖动，重跑+单跑绿）/ build 0
 - 镜像 `beaconhs@sha256:9b942735…`（deployment `e59b7a36647f…-20261101-001`），Gate 5 **PASS**，web 日志 `[schema] match: applied 53`，公网 `/login` 200
 - **时区日界债务清零**：apps/web 内所有用户可见日界已全部走 `ctx.timezone` 或工作区时钟（scanTimezone）；剩余 `toISOString().slice(0,10)` 仅存在于无日界语义处（外部集成 schema、worker 内部时间戳、PDF 页脚）
+
+---
+
+## 27. 第四轮审计（EA-66D.28）
+
+安全轮（认证链/CSRF/模拟登录/API key/AI 面/集成 SSRF/kiosk/任务载荷）结论：**无中高危**。8 区全部 PASS 或仅 INFO/LOW——better-auth 限流为进程内存（单实例部署无影响，多实例需接 Redis）、4 位 kiosk PIN 在租户级 30 次/10min 下约 1–2 天可爆破（建议产品侧升 6 位）、API key 失败尝试无限流（256-bit token 下纯理论）、一条审计员误报的死导出（实际被 work-order 页内联 action 使用，未删）。
+
+正确性轮确认 4 个 should-fix，全部修复：
+
+| #   | 问题                                                                                                                                                                                                                                   | 修复                                                                                                                                                  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 租户 `primaryColor` 未校验即插值进 PDF HTML（书册 compose/控制页/分隔页的 style 属性可被引号/分号越界）                                                                                                                                | 新增 `forms-pdf/safe-color.ts` 单一守卫；设置保存边界 + 书册 compose 双重过滤；外部 appkit-reports `buildReportDocumentCss` 实测忽略该色值（非 sink） |
+| 2   | EA-66D.27 时区清点漏了 14 处日界（compliance signals/hub/mine、corrective-actions 各页+3 报表+新建表单、equipment maintenance 桶+持久化 next-due、training course 过滤、insights AI today、incidents hours 默认值、observations 预填） | 全部改 `dateIsoInTimeZone(ctx.timezone)`；“债务清零”声明修正为真实零                                                                                  |
+| 3   | 书册封面 `published_at` 用 UTC 而正文其余日期用 `BOOK_PRINT_TIMEZONE`                                                                                                                                                                  | 新增 `formatBookDate`，封面与正文印章同钟                                                                                                             |
+| 4   | 书册渲染内存为 per-job 上限（250MiB 源 + 200MiB 产物 + Chromium），pdfs 队列并发 3 可同时三本                                                                                                                                          | document_book 任务经进程内互斥串行化，轻渲染不受影响                                                                                                  |
+
+Nit 顺带：repo 根的 `cosign.key`/`cosign.pub`/scratch 文件加入 .gitignore 按名拒绝（此前距 `git add .` 一步之遥）；design-studio 的 kind/field 校验、logo content-type 按 magic bytes、gate-store 静默返回（状态正确仅 UI 陈旧）列为接受项。
+
+### 27.x 门禁与部署
+
+format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。镜像 `ea66d4-28` 构建完成时补充部署核验；本轮无迁移。
