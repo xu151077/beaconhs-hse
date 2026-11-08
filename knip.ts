@@ -48,6 +48,10 @@ const config: KnipConfig = {
         'public/sw.js',
         'scripts/backfill-credential-outputs.ts',
         'scripts/cleanup-rassaun-credential-designs.ts',
+        // Attachment capability v2 cutover: re-mints caps embedded in persisted
+        // training/form values after the attachment:v1: -> attachment:v2:
+        // namespace bump (audit by default, --apply writes). Invoked by hand.
+        'scripts/backfill-attachment-capability-v2.ts',
         'scripts/backfill-private-attachment-urls.ts',
         'scripts/backfill-signatures-to-storage.ts',
         'scripts/backfill-tenant-storage-keys.ts',
