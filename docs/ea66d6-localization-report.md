@@ -853,3 +853,33 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。
 - 镜像 `beaconhs@sha256:9568de65…`（deployment `3e44f229255b…-20261101-001`），Gate 5 **PASS**；web 日志 `[schema] match: applied 53`，公网 `/login` 200
 - 本轮无迁移（0053 已随 ea66d4-23 上线并核验列与索引存在）
 - **本轮的 2 个修复正是为 CI 而来**（endpoint fail-fast 被 APP_URL 回退吞掉、真实存储集成测试无门禁）——需用户 `git push origin hse-platform` 后首次在 CI 上实证，预期 `pnpm test` 走到存储测试时行为与本地一致
+
+---
+
+## 24. CI 首次跑全程（EA-66D.26）
+
+hse-platform 触发的 CI 首次真实运行暴露 3 处真问题，两个是我的代码，全部修：
+
+### 24.1 CI `BETTER_AUTH_SECRET` 不足 32 字符（环境性真失败）
+
+live suites 里的 `bootstrap-admin` CLI 以 `NODE_ENV=production` 运行，而 CI 的 `BETTER_AUTH_SECRET: ci-secret-not-used-in-prod` 只有 27 字符，低于生产的 ≥32 下限，CLI 直接退出 1。
+
+修复：CI secret 改为 `ci-secret-not-used-in-production-32chars`（38 字符）。本地 `.env` 里的真 secret 本就 51 字符，所以本地一直绿。
+
+### 24.2 日模板期望清单滞后（测试与种子不一致）
+
+`tenant-provisioning.test.ts` 与 `tenant-reference-data.test.ts` 硬编造了 4 个模板（lift-plan + 3 HAZID），而 provisioning 实际已种子 8 个（+环境监测、法定合规、toolbox-talk、work-permit）。与前次 job 失败的 8 vs 4 逐项对上。
+
+修复：两个测试的期望改为从源常量派生 `DAY_ONE_TEMPLATE_KEYS`（8），而不是重写字面量（以后加日模板也是同类过期）。
+
+### 24.3 Dependabot 失败（dependency-review）
+
+`Dependency graph is enabled` — Dependency graph 开关未开。`.github/dependabot.yml` 本身无问题；打开仓库设置即可。用户手点后截图确认已打开（Advanced Security → Dependency graph = On）。
+
+### 24.4 门禁
+
+format 0 / deadcode 0 / lint 0 / typecheck 0 / test 26/26 / build 0。
+
+### 24.5 部署与 push
+
+本轮无功能改动、无迁移——无需新镜像；只改测试与 CI 秘密。已随 `docs` commit 前进，待用户 `git push origin hse-platform` 后看 CI 全绿。
