@@ -926,3 +926,12 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。
 ### 25.8 部署
 
 镜像 `ea66d4-27` 构建完成时补充；本轮无迁移。剩余债务：仅文档类（PDF 模板内联脚本属产品功能、PDF JS 硬化有 CSP 覆盖、S1/S3/S5 已证伪或产品决策）。
+
+---
+
+## 26. 时区日界清零收尾（EA-66D.27b/c）
+
+- **27b**：skills 页、skill-type 详情、training records、PPE 列表加入 `dateIsoInTimeZone(ctx.timezone)`（today/30d/90d/24mo 视界），镜像 `ea66d4-27b` 构建核验通过（deployment `3a05c043…`）
+- **27c**：课程完成日期改读工作区自身时钟——`completedOn` 从 UTC 改为 `tenantNotificationPolicy.scanTimezone`（合规扫描同一 IANA 时钟，同事务读取），UTC+8 学员 23:00 完课不再拿到 UTC 明日日期；`addMonthsIso` 到期计算以此为基
+- 门禁：format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26**（首跑 client-lazy 5s 抖动，重跑+单跑绿）/ build 0
+- 镜像 `ea66d4-27c` 构建完成时补充
