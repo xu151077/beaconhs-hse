@@ -821,3 +821,35 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0（含 mi
 - 上线前先以新镜像执行 `APP_ROLE=migrate`（0053）：生产迁移计数 53，`domain_event_outbox_status` 含 `dead`，4 个新索引（`corrective_actions_site_idx` 等）均已创建并核验
 - web/worker 日志无错误，公网 `/login` 200
 - CI 工作流改动（`.github/workflows/ci.yml` + `security.yml` 监听 `hse-platform`）已随 commit `1b268c92` 提交；需用户 `git push origin hse-platform` 后首次真正跑 CI 确认全绿
+
+---
+
+## 23. CI 环境差异修复（EA-66D.25）
+
+### 23.1 `endpoint-routing` 在 CI 挂了（真实 bug）
+
+`APP_URL` 回退逻辑（EA-66D.4 引入）在 CI 环境下吞掉了配置校验：CI 设置了 `APP_URL=http://localhost:3000`，模块加载时走“R2_ENDPOINT 不可浏览器访问 → 回退到 APP_URL”分支，把 `rawPublicEndpoint` 换成了 APP_URL（纯 origin），于是 `assertS3Origin` 永不抛错——带 path prefix 的坏 `R2_ENDPOINT` 也能加载成功，fail-fast 被架空。
+
+修复：配置了 `R2_ENDPOINT` 时先无条件按 origin-only 校验（在 fallback 前），再走回退。CI 环境下已重现并验证：前缀值现在正确抛错，不影响合法的内部端点（`http://minio:9000` 仍被放行并走回退）。
+
+### 23.2 multipart 集成测试无环境门禁（我的测试 bug）
+
+`phase-ab-multipart-runtime` 是一组针对真实对象存储的集成测试，在本地 MinIO 起来所以全绿；CI runner 没有 MinIO 却硬跑，必然失败（这是 EA-66D.4-20 的新测试，之前它本就没在任何 CI 环境验证过）。改为 TCP 探测解析后内部端点的可达性，CI 无存储时**响亮跳过**（带 endpoint 警告行），本机 MinIO 在时仍真实执行并通过。符合仓库 `SEED_TEST_SCRATCH_*` 门禁先例。
+
+### 23.3 native 依赖 5 秒抖动（同根因）
+
+`@napi-rs/canvas` 首次加载在 26 包并行下超过 5 秒，给 `native-dependencies` 套件 30s。
+
+### 23.4 关于 Dependabot 失败（38/9 的 `dependency-review`）
+
+`Dependency graph is enabled` 是仓库设置问题——需在 GitHub 仓库 Settings → Security → Dependency graph 里打开。`.github/dependabot.yml` 本身无问题，打开后 PR 自动恢复。
+
+### 23.5 门禁
+
+format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。
+
+### 23.6 部署
+
+- 镜像 `beaconhs@sha256:9568de65…`（deployment `3e44f229255b…-20261101-001`），Gate 5 **PASS**；web 日志 `[schema] match: applied 53`，公网 `/login` 200
+- 本轮无迁移（0053 已随 ea66d4-23 上线并核验列与索引存在）
+- **本轮的 2 个修复正是为 CI 而来**（endpoint fail-fast 被 APP_URL 回退吞掉、真实存储集成测试无门禁）——需用户 `git push origin hse-platform` 后首次在 CI 上实证，预期 `pnpm test` 走到存储测试时行为与本地一致
