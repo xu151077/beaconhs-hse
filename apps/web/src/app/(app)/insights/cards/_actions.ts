@@ -43,6 +43,7 @@ function columnsForSuggest(result: BhqlResult): ResultColumn[] {
  *  Builder-only: this executes an arbitrary client-supplied query (including
  *  raw-row projections over any registry entity), so it is gated exactly like
  *  the studio that calls it — view access alone is not enough. */
+import { dateIsoInTimeZone } from '@/lib/datetime'
 export async function previewCard(payload: {
   query: unknown
 }): Promise<Ok<{ result: BhqlResult; suggestedViz: VizKey }> | Err> {
@@ -87,7 +88,7 @@ export async function generateCard(
     return { ok: false, error: 'AI is not configured. Set a provider + key under Admin → AI.' }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const gen = await generateBhqlFromPrompt(aiConfig, trimmed, today)
   if (!gen.ok) return { ok: false, error: gen.error }
   const query = gen.value

@@ -15,6 +15,7 @@ import { isUuid, parsePrefixedListParams, pickString } from '@/lib/list-params'
 import { courseCredentialOutputIds, enabledCredentialOutputs } from '@/lib/credential-designs'
 import { CourseWorkspace } from './_workspace'
 import { loadCoursePresentation } from './_lib/presentation'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,7 +88,7 @@ export default async function CoursePage({
     const presentation = await loadCoursePresentation(tx, id)
     if (!presentation) return null
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = dateIsoInTimeZone(new Date(), ctx.timezone)
     const recordBase = and(
       eq(trainingRecords.courseId, id),
       isNotNull(trainingRecords.personId),

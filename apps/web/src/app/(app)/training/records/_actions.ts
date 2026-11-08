@@ -179,7 +179,7 @@ export async function startTrainingRecord(): Promise<void> {
       .values({
         tenantId: ctx.tenantId,
         source: 'external_upload',
-        completedOn: isoToday(),
+        completedOn: isoToday(ctx.timezone),
         issuedByTenantUserId: ctx.membership?.id ?? null,
       })
       .returning({ id: trainingRecords.id })
@@ -331,7 +331,7 @@ export async function renewTrainingRecord(formData: FormData): Promise<void> {
       .limit(1)
     if (!course) throw new Error('The course is no longer available.')
 
-    const completedOn = isoToday()
+    const completedOn = isoToday(ctx.timezone)
     const expiresOn = expiryForValidity(completedOn, course.validForMonths)
     const [created] = await tx
       .insert(trainingRecords)
@@ -545,7 +545,7 @@ export async function bulkRenewTrainingRecords(args: {
   if (!parsedIds.ok) return parsedIds
   const ids = parsedIds.ids
   const batchId = newBulkActionBatchId()
-  const today = isoToday()
+  const today = isoToday(ctx.timezone)
   const issuedByTenantUserId = ctx.membership?.id ?? null
 
   const result = await ctx.db(async (tx) => {

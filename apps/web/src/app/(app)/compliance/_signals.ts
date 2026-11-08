@@ -28,6 +28,7 @@ import {
   trainingRecords,
 } from '@beaconhs/db/schema'
 import type { RequestContext } from '@beaconhs/tenant'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export type SignalStatus = 'overdue' | 'expired' | 'due_soon' | 'open'
 
@@ -111,9 +112,11 @@ export async function listDueSignals(
 ): Promise<DueSignalListResult> {
   const tid = ctx.tenantId!
   const now = new Date()
-  const today = now.toISOString().slice(0, 10)
+  // Day boundaries follow the caller's timezone: a UTC+8 site must not see a
+  // due item flip to overdue at 16:00 local.
+  const today = dateIsoInTimeZone(now, ctx.timezone)
   const horizonDate = new Date(now.getTime() + HORIZON_DAYS * 24 * 60 * 60 * 1000)
-  const horizonIso = horizonDate.toISOString().slice(0, 10)
+  const horizonIso = dateIsoInTimeZone(horizonDate, ctx.timezone)
   const page = Math.max(1, Math.min(10_000, Math.trunc(options.page ?? 1)))
   const perPage = Math.max(5, Math.min(100, Math.trunc(options.perPage ?? 50)))
   const offset = (page - 1) * perPage

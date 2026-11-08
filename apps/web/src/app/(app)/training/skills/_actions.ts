@@ -138,7 +138,7 @@ export async function startSkillAssignment(): Promise<void> {
       .insert(trainingSkillAssignments)
       .values({
         tenantId: ctx.tenantId,
-        grantedOn: isoToday(),
+        grantedOn: isoToday(ctx.timezone),
         grantedByTenantUserId: ctx.membership?.id ?? null,
       })
       .returning({ id: trainingSkillAssignments.id })
@@ -295,7 +295,7 @@ export async function renewSkillAssignment(formData: FormData): Promise<void> {
       .limit(1)
     if (!skillType) throw new Error('The skill type is no longer available.')
 
-    const grantedOn = isoToday()
+    const grantedOn = isoToday(ctx.timezone)
     const expiresOn = skillExpiry(grantedOn, skillType.validForMonths)
     const [row] = await tx
       .insert(trainingSkillAssignments)

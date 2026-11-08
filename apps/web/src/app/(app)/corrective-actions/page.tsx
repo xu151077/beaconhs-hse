@@ -18,6 +18,7 @@ import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { CorrectiveActionsSubNav } from '@/components/corrective-actions-sub-nav'
 import { RecordsTable, type RecordsTableRow } from './_records-table'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -157,7 +158,7 @@ export default async function CorrectiveActionsPage({
     }
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
 
   const tableRows: RecordsTableRow[] = rows.map(({ ca, site, owner, ownerAccount }) => ({
     id: ca.id,

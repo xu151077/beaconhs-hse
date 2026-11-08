@@ -94,3 +94,12 @@ packages/etl/
 .playwright-mcp/
 .docker/
 .opencode/*.before-*
+
+# Signing key material and operator scratch at the repo root — one
+# `git add .` away from a secret in history, so they are refused by name.
+/cosign.key
+/cosign.pub
+/20
+/Dockerfile.test
+/docker-compose.yml.bak
+/docker-compose.yml.pre-cleanup-backup

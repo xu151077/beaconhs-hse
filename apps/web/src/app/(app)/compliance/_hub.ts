@@ -11,6 +11,7 @@ import {
 } from '@beaconhs/db/schema'
 import type { requireRequestContext } from '@/lib/auth'
 import { type ObligationKind, kindLabel } from './obligations/_meta'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 type Ctx = Awaited<ReturnType<typeof requireRequestContext>>
 
@@ -202,10 +203,9 @@ type AgingRow = { kind: ObligationKind; bucket: AgingBucket; count: number }
 
 /** Overdue / expiring subjects bucketed by age of due date. */
 export async function agingFromStatus(ctx: Ctx): Promise<AgingRow[]> {
-  const today = new Date()
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
-  const t7 = iso(new Date(today.getTime() - 7 * 864e5))
-  const t30 = iso(new Date(today.getTime() - 30 * 864e5))
+  const iso = (d: Date) => dateIsoInTimeZone(d, ctx.timezone)
+  const t7 = iso(new Date(Date.now() - 7 * 864e5))
+  const t30 = iso(new Date(Date.now() - 30 * 864e5))
   return ctx.db(async (tx) => {
     const bucket = sql<AgingBucket>`case
       when ${complianceStatus.dueOn} is null then 'no_date'

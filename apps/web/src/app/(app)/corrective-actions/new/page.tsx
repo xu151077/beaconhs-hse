@@ -27,6 +27,7 @@ import { pickString } from '@/lib/list-params'
 import { PageContainer } from '@/components/page-layout'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { nextReference } from '@/lib/reference'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -57,7 +58,7 @@ async function createCA(formData: FormData) {
   const sourceEntityType = String(formData.get('sourceEntityType') ?? '').trim() || null
   const siteOrgUnitId = String(formData.get('siteOrgUnitId') ?? '').trim() || null
   const dueOn = String(formData.get('dueOn') ?? '').trim() || null
-  const assignedOn = new Date().toISOString().slice(0, 10)
+  const assignedOn = dateIsoInTimeZone(new Date(), ctx.timezone)
 
   const row = await ctx.db(async (tx) => {
     const reference = await nextReference(tx, ctx.tenantId, 'corrective_action')

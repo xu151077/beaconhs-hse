@@ -63,6 +63,7 @@ export {
   type RenderedCredentialPdf,
   type RenderedCredentialPrint,
 } from './training-credentials'
+export { DEFAULT_PRIMARY_COLOR, safeColor } from './safe-color'
 export { renderWalletCardsForReport } from './report-wallet-cards'
 
 // --- Certificate and on-demand wallet-card PDFs --------------------------

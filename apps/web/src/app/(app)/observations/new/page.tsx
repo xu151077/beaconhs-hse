@@ -7,6 +7,7 @@ import { PageContainer } from '@/components/page-layout'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { createObservationDraft } from '../_actions'
 import { isObservationDefinition, type ObservationDefinition } from '@beaconhs/db/schema'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -45,6 +46,8 @@ async function submit(formData: FormData) {
 export default async function NewObservationPage() {
   const tGenerated = await getGeneratedTranslations()
   const ctx = await requireRequestContext()
+  // Pre-fill "observed on" with the field user's LOCAL calendar day — night
+  // shift on UTC+8 must not get tomorrow's (UTC) date as data entry.
   // A caller with no create right has no business on the compose form at all.
   if (!canCreateJournal(ctx)) redirect('/observations')
   // The form edits in place on the detail page via `journals.update.own`; this
@@ -96,7 +99,7 @@ export default async function NewObservationPage() {
                 name="observedAt"
                 type="date"
                 required
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={dateIsoInTimeZone(new Date(), ctx.timezone)}
               />
             </div>
 

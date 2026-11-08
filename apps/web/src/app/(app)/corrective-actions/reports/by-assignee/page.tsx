@@ -16,6 +16,7 @@ import { SearchInput } from '@/components/search-input'
 import { SortTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
 import { parseListParams, pickString } from '@/lib/list-params'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -65,7 +66,7 @@ export default async function ByAssigneeReport({
     (attention) => attention === attentionParam,
   )
   const ctx = await requireRequestContext()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
 
   const rows = await ctx.db(async (tx) => {
     // Per-user record visibility — same predicate as the /corrective-actions

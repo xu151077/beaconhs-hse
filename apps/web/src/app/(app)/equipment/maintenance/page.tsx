@@ -54,7 +54,7 @@ import { moduleScopeWhere } from '@/lib/visibility'
 import { clamp, isUuid, mergeHref, pickString } from '@/lib/list-params'
 import { EquipmentInspectionDrawer } from '../inspections/_inspection-panel'
 import { StartInspectionButton } from '../inspections/_start-button'
-import { formatDate } from '@/lib/datetime'
+import { dateIsoInTimeZone, formatDate } from '@/lib/datetime'
 import { formatInterval } from '@/lib/equipment/intervals'
 import { ListPageLayout } from '@/components/page-layout'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
@@ -152,7 +152,9 @@ export default async function EquipmentMaintenancePage({
   const ctx = await requireRequestContext()
   const manage = can(ctx, 'equipment.manage')
 
-  const today = isoDate(new Date())
+  // The due/overdue buckets follow the viewer's timezone; the month grid
+  // stays UTC-date math (it navigates by URL `month` param).
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const currentMonth = today.slice(0, 7)
   const rawMonth = pickString(sp.month)
   const month = rawMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth) ? rawMonth : currentMonth

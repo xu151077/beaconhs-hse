@@ -32,6 +32,7 @@ import {
   requireUuidInput,
 } from '@/lib/mutation-input'
 
+import { dateIsoInTimeZone } from '@/lib/datetime'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function revalidateMaintenance(itemId: string) {
@@ -331,7 +332,7 @@ export async function completeEquipmentReminder(formData: FormData) {
       })
       .where(eq(equipmentReminders.id, id))
     if (reminder.repeatIntervalValue && reminder.repeatIntervalUnit) {
-      const todayIso = new Date().toISOString().slice(0, 10)
+      const todayIso = dateIsoInTimeZone(new Date(), ctx.timezone)
       let nextDue = addIntervalToDate(
         reminder.dueOn,
         reminder.repeatIntervalValue,

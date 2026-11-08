@@ -34,6 +34,7 @@ import { complianceActionLabel, resolveComplianceLink } from '../_resolve-link'
 import { StatusBadge, SummaryStrip } from '../_shared'
 import { ComplianceSubNav } from '../_sub-nav'
 import { OBLIGATION_KINDS, type ObligationKind } from '../obligations/_meta'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -79,7 +80,7 @@ export default async function MyCompliancePage({
   )
 
   const allRows = person ? await personCompliance(ctx, person.id) : []
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = dateIsoInTimeZone(new Date(), ctx.timezone)
   const currentPeriodRows = allRows.filter(
     (row) =>
       row.kind !== 'document' &&

@@ -36,6 +36,7 @@ import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
 import { IncidentsSubNav } from '../_sub-nav'
 import { HoursDrawer, type HoursEditing } from './_drawers'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -235,7 +236,7 @@ export default async function HoursPage({
 
   const hasFilters = Boolean(params.q || siteParam)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const lastMonthStart = new Date()
   lastMonthStart.setDate(1)
   lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
@@ -243,8 +244,8 @@ export default async function HoursPage({
   lastMonthEnd.setDate(0)
   const defaults = {
     today,
-    start: lastMonthStart.toISOString().slice(0, 10),
-    end: lastMonthEnd.toISOString().slice(0, 10),
+    start: dateIsoInTimeZone(lastMonthStart, ctx.timezone),
+    end: dateIsoInTimeZone(lastMonthEnd, ctx.timezone),
     label: lastMonthStart.toLocaleString(ctx.locale, { month: 'long', year: 'numeric' }),
   }
 

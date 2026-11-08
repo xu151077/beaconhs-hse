@@ -4,9 +4,11 @@
 // Feb 28, never Mar 3). Used by class completion, LMS completion, assessment
 // passes, renewals, and the bulk renew action — one formula, no drift.
 
-/** Today's date as an ISO `YYYY-MM-DD` string (UTC). */
-export function isoToday(): string {
-  return new Date().toISOString().slice(0, 10)
+import { dateIsoInTimeZone } from '@/lib/datetime'
+
+/** Today's date as an ISO `YYYY-MM-DD` string in `timeZone` (falls back to UTC). */
+export function isoToday(timeZone?: string): string {
+  return timeZone ? dateIsoInTimeZone(new Date(), timeZone) : new Date().toISOString().slice(0, 10)
 }
 
 /** Add calendar months to an ISO `YYYY-MM-DD` date (UTC, month-end clamped). */

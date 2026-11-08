@@ -51,7 +51,7 @@ import {
 } from '@beaconhs/storage'
 import { renderDocumentMasterPdf, renderDocumentVersion } from './document-render'
 import { countPages, pdfUnite } from '@beaconhs/office'
-import { composeDocumentBook, type ComposeBookNode } from './document-book-compose'
+import { composeDocumentBook, formatBookDate, type ComposeBookNode } from './document-book-compose'
 import { renderTemplate } from '@beaconhs/email-render'
 import { audit } from '@beaconhs/audit'
 import { assertEmailAttachmentSize } from '../lib/email-attachment-policy'
@@ -279,10 +279,28 @@ async function dispatchPdf(data: PdfJobData): Promise<unknown> {
     case 'document_master_pdf':
       return await renderDocumentMasterPdf(data)
     case 'document_book':
-      return await renderDocumentBook(data.tenantId, data.bookId)
+      // Books hold every source PDF in memory at once (per-job 250 MiB cap +
+      // up to 200 MiB output + a Chromium instance). Three concurrent books on
+      // the ~3.4 GB host AGENTS.md documents as OOM-prone would add to ~1.4 GB
+      // of buffers alone, so books serialize through a process-wide mutex
+      // while cheaper renders keep the queue's full concurrency.
+      return await withBookRenderSlot(() => renderDocumentBook(data.tenantId, data.bookId))
     case 'document_bundle':
       return await renderDocumentBundle(data)
   }
+}
+
+// Serializes document-book renders. FIFO: a queued book waits for the in-flight
+// one; non-book jobs are untouched. The promise never rejects (release in a
+// finally chain), so a failed render cannot wedge the slot.
+let bookRenderChain: Promise<void> = Promise.resolve()
+function withBookRenderSlot<T>(task: () => Promise<T>): Promise<T> {
+  const run = bookRenderChain.then(task, task)
+  bookRenderChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
 }
 
 function isRenderedArtifact(v: unknown): v is RenderedPdfArtifact {
@@ -901,7 +919,9 @@ async function renderDocumentBook(tenantId: string, bookId: string): Promise<Sto
       book_title: row.b.title,
       book_description: row.b.description ?? '',
       tenant_name: row.tenant.name,
-      published_at: row.b.publishedAt ? row.b.publishedAt.toISOString().slice(0, 10) : '',
+      // Same print timezone the rest of the book is stamped with — the cover
+      // date must agree with the book's own "Issued" stamps.
+      published_at: row.b.publishedAt ? formatBookDate(row.b.publishedAt, BOOK_PRINT_TIMEZONE) : '',
       document_count: entries.filter((entry) => entry.kind === 'document').length,
       chapter_count: entries.filter((entry) => entry.kind === 'chapter').length,
       section_count: entries.filter((entry) => entry.kind === 'section').length,

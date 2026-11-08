@@ -21,6 +21,7 @@ import {
 import { db, hashKioskPin, normalizeKioskPin, withSuperAdmin } from '@beaconhs/db'
 import { tenantUsers, tenants } from '@beaconhs/db/schema'
 import { LOCALE_OPTIONS, normalizeLocalePolicy } from '@beaconhs/i18n'
+import { safeColor, DEFAULT_PRIMARY_COLOR } from '@beaconhs/forms-pdf'
 import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import { can, resolveRegulatoryTerminology } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
@@ -70,7 +71,15 @@ async function saveSettings(formData: FormData) {
   }
   const branding = {
     logoUrl: String(formData.get('logoUrl') ?? '').trim() || undefined,
-    primaryColor: String(formData.get('primaryColor') ?? '').trim() || undefined,
+    // primaryColor is interpolated into PDF/report stylesheets — only a
+    // well-formed hex value may be persisted (one canonical guard for every
+    // consumer: book compose, credential themes, report document CSS). An
+    // unparsable entry falls back to the default so the stored value is
+    // always either empty or clean hex.
+    primaryColor: safeColor(
+      String(formData.get('primaryColor') ?? '').trim() || undefined,
+      DEFAULT_PRIMARY_COLOR,
+    ),
     pdfLetterhead: String(formData.get('pdfLetterhead') ?? '').trim() || undefined,
   }
   const regulatoryTerminology = resolveRegulatoryTerminology({

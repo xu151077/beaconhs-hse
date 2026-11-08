@@ -173,7 +173,7 @@ async function finalizeAssessmentAttempt(
       .from(trainingCourses)
       .where(eq(trainingCourses.id, attempt.courseId))
       .limit(1)
-    const completedOn = isoToday()
+    const completedOn = isoToday(ctx.timezone)
     const expiresOn = course?.validForMonths
       ? addMonthsIso(completedOn, course.validForMonths)
       : null

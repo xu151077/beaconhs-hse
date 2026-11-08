@@ -1,7 +1,7 @@
 import { composePdf, pageGeometry, type ComposePart } from '@beaconhs/office'
 import type { DocumentBookPrintSettings } from '@beaconhs/db/schema'
 import { resolveBookPrintSettings } from '@beaconhs/db'
-import { renderHtmlDocumentPdf } from '@beaconhs/forms-pdf'
+import { renderHtmlDocumentPdf, safeColor } from '@beaconhs/forms-pdf'
 import { CONTROLLED_HEADER_BAND_PT } from '@beaconhs/office/docx-page-size'
 
 // Assembling a document book.
@@ -96,6 +96,11 @@ function formatMonthYear(value: Date | null | undefined, timeZone: string): stri
   return new Intl.DateTimeFormat('en-CA', { month: 'long', year: 'numeric', timeZone }).format(
     value,
   )
+}
+
+/** The date-only form of `value` in `timeZone` (en-CA gives ISO YYYY-MM-DD). */
+export function formatBookDate(value: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { dateStyle: 'short', timeZone }).format(value)
 }
 
 function formatStamp(value: Date, timeZone: string): string {
@@ -261,7 +266,10 @@ function tableOfContentsHtml(rows: TocRow[], accent: string): string {
  */
 export async function composeDocumentBook(input: ComposeBookInput): Promise<Buffer> {
   const settings = resolveBookPrintSettings(input.settings)
-  const accent = input.accentColor?.trim() || '#0f172a'
+  // The accent colour is interpolated into style attributes below; only a
+  // well-formed hex value is ever rendered (defense-in-depth alongside the
+  // settings-save guard — a legacy row or direct DB write stays safe).
+  const accent = safeColor(input.accentColor?.trim(), '#0f172a')
   const now = input.now ?? new Date()
   const geometry = pageGeometry(settings.paperSize, settings.orientation)
   const paper = { paperSize: settings.paperSize, orientation: settings.orientation } as const
