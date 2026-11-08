@@ -49,7 +49,28 @@ import {
   HAZID_CONFINED_SPACE_APP_KEY,
   HAZID_FALL_PROTECTION_APP_KEY,
 } from './seed/hazard-assessment-app-templates'
+import {
+  ENVIRONMENT_MONITORING_APP_KEY,
+  STATUTORY_REGISTER_APP_KEY,
+} from './seed/phase11e-register-apps'
+import { WORK_PERMIT_APP_KEY } from './work-permit'
 import { BUILTIN_ROLES } from './schema/iam'
+
+/**
+ * The day-one builder templates, derived from the owning constants — the
+ * earlier 4-template list went stale when the register/template seeders joined
+ * provisioning (CI: expected 4, got 8).
+ */
+const DAY_ONE_TEMPLATE_KEYS = [
+  'lift-plan',
+  HAZID_CONFINED_SPACE_APP_KEY,
+  HAZID_ARC_FLASH_APP_KEY,
+  HAZID_FALL_PROTECTION_APP_KEY,
+  ENVIRONMENT_MONITORING_APP_KEY,
+  STATUTORY_REGISTER_APP_KEY,
+  'toolbox-talk',
+  WORK_PERMIT_APP_KEY,
+] as const
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CLI = resolve(PKG_DIR, 'src/scripts/provision-first-tenant.cli.ts')
@@ -249,17 +270,12 @@ describeDb('reference data provisioned for a tenant', () => {
     )
     expect(roleRows.map((r) => r.key).sort()).toEqual(Object.keys(BUILTIN_ROLES).sort())
 
-    // The day-one templates: the Lift Plan plus the HAZID embedded apps, whose
-    // `hazid_assessment_type_apps.template_id` is a real foreign key.
+    // The day-one templates: the Lift Plan, the HAZID embedded apps (whose
+    // `hazid_assessment_type_apps.template_id` is a real foreign key), and the
+    // register/template apps from the phase-11E + template seeders. The set is
+    // derived from their source constants, never restated as a stale literal.
     const templates = await query<{ key: string }>('select key from form_templates', [])
-    expect(templates.map((t) => t.key).sort()).toEqual(
-      [
-        'lift-plan',
-        HAZID_CONFINED_SPACE_APP_KEY,
-        HAZID_ARC_FLASH_APP_KEY,
-        HAZID_FALL_PROTECTION_APP_KEY,
-      ].sort(),
-    )
+    expect(templates.map((t) => t.key).sort()).toEqual([...DAY_ONE_TEMPLATE_KEYS].sort())
 
     // And no demo business data whatsoever. This is the property the whole split exists
     // to protect, so it is asserted per table rather than as one aggregate that could

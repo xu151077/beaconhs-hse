@@ -41,7 +41,7 @@ jobs:
       DATABASE_OWNER_ROLE: beaconhs_owner
       DATABASE_BACKUP_ROLE: beaconhs_backup
       REDIS_URL: redis://localhost:6379
-      BETTER_AUTH_SECRET: ci-secret-not-used-in-prod
+      BETTER_AUTH_SECRET: ci-secret-not-used-in-production-32chars
       ATTACHMENT_CAPABILITY_SECRET: ci-attachment-capability-secret-32-chars
       BETTER_AUTH_URL: http://localhost:3000
       APP_URL: http://localhost:3000

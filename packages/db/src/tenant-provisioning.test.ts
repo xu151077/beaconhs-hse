@@ -56,16 +56,38 @@ import {
   HAZID_FALL_PROTECTION_APP_KEY,
 } from './seed/hazard-assessment-app-templates'
 import {
+  ENVIRONMENT_MONITORING_APP_KEY,
+  STATUTORY_REGISTER_APP_KEY,
+} from './seed/phase11e-register-apps'
+import { WORK_PERMIT_APP_KEY } from './work-permit'
+import {
   normaliseArgs,
   parseArgs,
   resolveLanguagePolicy,
 } from './scripts/provision-first-tenant.cli'
 
-/** The three HAZID embedded-app templates a provisioned tenant also receives. */
+/** The day-one builder templates a provisioned tenant receives. */
 const HAZID_APP_TEMPLATE_KEYS = [
   HAZID_CONFINED_SPACE_APP_KEY,
   HAZID_ARC_FLASH_APP_KEY,
   HAZID_FALL_PROTECTION_APP_KEY,
+] as const
+
+/**
+ * The full day-one template set, derived from the modules that own each key
+ * (not a restated literal list). It grew beyond the original lift-plan +
+ * HAZID set: the phase-11E/register/template seeders that `provisionTenant`
+ * now runs also create the environmental monitoring log, statutory register,
+ * toolbox-talk and work-permit apps. The null/undefined row counts in earlier
+ * revisions of these tests failed CI with exactly this gap (expected 4 got 8).
+ */
+const DAY_ONE_TEMPLATE_KEYS = [
+  'lift-plan',
+  ...HAZID_APP_TEMPLATE_KEYS,
+  ENVIRONMENT_MONITORING_APP_KEY,
+  STATUTORY_REGISTER_APP_KEY,
+  'toolbox-talk',
+  WORK_PERMIT_APP_KEY,
 ] as const
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -448,12 +470,13 @@ describeDb('the first-tenant provisioner (live database)', () => {
     expect(after.tenants).toBe(1)
     expect(after.audit_rows).toBe(1)
 
-    // Four templates, and the expected set is derived from the source constants rather
-    // than restated: the Lift Plan the product designates as required on day one, plus
-    // the three HAZID embedded-app templates. The HAZID ones are not decoration —
-    // `hazid_assessment_type_apps.template_id` is a foreign key, so provisioning the
-    // HAZID library without them would leave the library unlinked.
-    expect(after.form_templates).toBe(1 + HAZID_APP_TEMPLATE_KEYS.length)
+    // Day-one templates: the Lift Plan plus the HAZID embedded apps and the
+    // register/template apps seeded from their owning constants — never a
+    // literal that silently goes stale when a new day-one app is added.
+    // HAZID ones are not decoration: `hazid_assessment_type_apps.template_id`
+    // is a foreign key, so provisioning the HAZID library without them would
+    // leave the library unlinked.
+    expect(after.form_templates).toBe(DAY_ONE_TEMPLATE_KEYS.length)
 
     // The built-in roles, and ONLY them. Four is the count that matters, but it is
     // compared against the real BUILTIN_ROLES rather than a literal, so adding a role
@@ -594,9 +617,10 @@ describeDb('the first-tenant provisioner (live database)', () => {
       url,
       `select key, status, category from form_templates order by key`,
     )
-    // Derived from the source constants, not a literal list, so adding a HAZID app
-    // template is a deliberate contract change rather than a silent test failure.
-    expect(rows.map((r) => r.key).sort()).toEqual(['lift-plan', ...HAZID_APP_TEMPLATE_KEYS].sort())
+    // Derived from the source constants, not a literal list: the previous
+    // four-template list went stale when the register/template seeders joined
+    // provisioning (CI: expected 4, got 8).
+    expect(rows.map((r) => r.key).sort()).toEqual([...DAY_ONE_TEMPLATE_KEYS].sort())
 
     const liftPlan = rows.find((r) => r.key === 'lift-plan')
     expect(liftPlan).toBeDefined()
