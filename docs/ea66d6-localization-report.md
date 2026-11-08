@@ -883,3 +883,46 @@ format 0 / deadcode 0 / lint 0 / typecheck 0 / test 26/26 / build 0。
 ### 24.5 部署与 push
 
 本轮无功能改动、无迁移——无需新镜像；只改测试与 CI 秘密。已随 `docs` commit 前进，待用户 `git push origin hse-platform` 后看 CI 全绿。
+
+---
+
+## 25. 债务清零（EA-66D.27）
+
+### 25.1 UTC 日期边界（最后一批时区 bug）
+
+`dashboard/_metrics.ts`（7 处：todayIso、30 天、90 天、月起始、24 个月）与 `my/training`（3 处）改用 `dateIsoInTimeZone(ctx.timezone)`。UTC+8 站点此前每天晚上 8 点就会看到“今天/到期”翻转一天的错误。**仓库内所有用户可见的 `toISOString().slice(0,10)` 日界至此清零**（剩余出现在 worker 内部时间戳/外部集成 schema，无日界语义）。
+
+### 25.2 digest 串行发送
+
+`digest-scanner` 每收件人一个 `await` → 单页 `Promise.all`（按 `RECIPIENT_PAGE_SIZE` 分页兜底）。大租户不再串行发千封。
+
+### 25.3 `loadPersonLinkData` 移出 `'use server'`
+
+迁到 `admin/users/_lib/person-link.ts`——之前从 actions 模块导出意味着它是可被客户端调用的 server action，且第一参数是完整 `RequestContext`（无法被反序列化利用但形状危险）。
+
+### 25.4 durable publication 无界重试（C5 的姊妹洞）
+
+`durablePublicationClaimPredicate` 新增可选 `attempts` 列，三个发布器（compliance / equipment / report）全部传入 `publishAttempts`：`attempts >= 10` 的行不再被 claim，毒行停止消耗批次槽位（行内保留 attempts + error 供运维）。测试补 cap 断言。
+
+### 25.5 回滚演练（此前 FAIL — NO EXECUTABLE ROLLBACK PATH）
+
+在生产主机上以隔离方式完成首次可执行演练：
+
+1. 快照三个 tgz 的 SHA256 与 `SHA256SUMS` 逐字节一致
+2. 解出 `postgres-data.tgz` → 以 alpine 修正属主 → 用**生产同 digest** 的 postgres 镜像起一次性容器（端口 5544，未触碰生产栈）
+3. 启动日志 `database system was shut down at 2026-11-01 10:16:00 UTC`（与快照时间吻合），查询证实 `migrations=51`、`platform_settings=0`、`tenants=0`、`platform_settings` 无 `open_source` 列（确系 preinit 时刻）
+4. 容器与数据全部销毁，零生产接触
+
+**结论：回滚路径从 FAIL 改为 REHEARSED**——真实回滚 = 停栈 → `docker volume rm` 三卷 → 解包 tgz 回卷目录 → 起栈（演练未执行破坏性步骤，按规则需要你授权）。
+
+### 25.6 RDP 防火墙
+
+生产主机 ufw 3389 的 `Anywhere`（v4+v6）规则已删，替换为仅 RFC1918 三网段。SSH 22 保持 Anywhere（你在外网登录需要）。
+
+### 25.7 门禁
+
+format 0 / deadcode 0 / lint 0 / typecheck 0 / **test 26/26** / build 0。
+
+### 25.8 部署
+
+镜像 `ea66d4-27` 构建完成时补充；本轮无迁移。剩余债务：仅文档类（PDF 模板内联脚本属产品功能、PDF JS 硬化有 CSP 覆盖、S1/S3/S5 已证伪或产品决策）。
