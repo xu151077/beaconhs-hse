@@ -153,11 +153,13 @@ describe('picker options route policy', () => {
       'training-skill-assignment-people',
       'training-assessment-people',
       'training-class-attendee-candidates',
+      'training-class-instructors',
       'report-people',
       'journal-supervisors',
       'compliance-by-person',
       'incident-people',
       'inspection-people',
+      'inspection-record-filter-inspectors',
       'document-signoff-people',
       'ppe-register-filter-holders',
       'ppe-active-people',
@@ -165,8 +167,13 @@ describe('picker options route policy', () => {
       'equipment-custody-holders',
       'equipment-reminder-assignees',
       'equipment-work-order-reporters',
+      'equipment-work-order-assignees',
+      'equipment-work-order-filter-assignees',
       'equipment-station-holders',
       'compliance-obligation-audience-people',
+      'safe-distance-supervisors',
+      'corrective-action-owners',
+      'management-review-members',
     ])
     const grants = directoryLookups.has(lookupName) ? [permission, 'people.pick'] : [permission]
     state.context = { isSuperAdmin: false, permissions: new Set(grants), db }
@@ -182,6 +189,16 @@ describe('picker options route policy', () => {
     // incidents.investigate satisfies incident-people purpose, people.pick is absent.
     state.context = { isSuperAdmin: false, permissions: new Set(['incidents.investigate']), db }
     const response = await request('lookup=incident-people')
+    expect(response.status).toBe(403)
+    expect(db).not.toHaveBeenCalled()
+  })
+
+  it('denies account-identity pickers to a purpose-authorized caller without people.pick', async () => {
+    const db = vi.fn().mockRejectedValue(new Error('query sentinel'))
+    // tools.safe-distance.use satisfies safe-distance-supervisors purpose, people.pick is absent.
+    // Every worker holds this purpose — the account email list must still be gated.
+    state.context = { isSuperAdmin: false, permissions: new Set(['tools.safe-distance.use']), db }
+    const response = await request('lookup=safe-distance-supervisors')
     expect(response.status).toBe(403)
     expect(db).not.toHaveBeenCalled()
   })

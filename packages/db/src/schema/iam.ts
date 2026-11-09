@@ -218,10 +218,13 @@ export const PERMISSION_CATALOGUE = [
   // module deliberately does not read.
   'people.read.all',
   // Picking a person is a separate, weaker grant than reading the roster:
-  // the unified `/api/picker-options` people lookups additionally require
+  // the unified `/api/picker-options` person lookups additionally require
   // this key on top of each lookup's own purpose permission, so module
-  // access alone can never enumerate the workforce directory through a
-  // picker. Flat like `people.read.all` — only the tenant-wide tier exists.
+  // access alone can never enumerate tenant members through a picker. It
+  // covers both the workforce directory (`people`) and account identities
+  // (`tenantUsers`, including e-mail hints) — members cannot tell the two
+  // enumerations apart, so they share one gate. Flat like `people.read.all`
+  // — only the tenant-wide tier exists.
   'people.pick',
   // PPE
   'ppe.read.all',

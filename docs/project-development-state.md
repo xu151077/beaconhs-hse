@@ -1731,13 +1731,19 @@ fingerprints are digest-bound); this container matches none of them. The
 script is ready for the deployment environment; the dev database holds zero
 persisted attachment-route references on all five rewrite surfaces.
 
-**PARKED for a product call:** user-identity picker lookups over `tenantUsers`
-(`safe-distance-supervisors/operators`, `corrective-action-owners`,
-`management-review-members`, `training-class-instructors`) return display
-names **and emails** in picker hints under only a purpose permission — the
-same enumeration problem `people.pick` solved for the workforce directory, one
-level more sensitive. Whether those hints should be redacted, or a `users.pick`
-equivalent added, needs an explicit decision rather than a silent patch.
+**Identity pickers converged onto people.pick (2026-11-09, after the addendum
+above).** Follow-up inventory found seven more lookups returning account-identity
+rows (`tenantUsers` + e-mail hints) under purpose-only gates: `training-class-instructors`,
+`inspection-record-filter-inspectors`, `safe-distance-supervisors`,
+`corrective-action-owners`, `management-review-members`, `equipment-work-order-assignees`,
+`equipment-work-order-filter-assignees`. The sharpest case was
+`safe-distance-supervisors`: its purpose (`tools.safe-distance.use`) is held by
+every worker, so any account could enumerate the tenant's login accounts with
+e-mails. Decision: one convergence key, not two — the seven were folded into
+`people.pick` (members cannot distinguish the two enumerations anyway). All
+built-ins already hold the key, so the picker UX is unchanged and no catalogue
+or migration delta was needed. Org-unit lookups (locations/sites) and
+module-record filters still run on purpose alone: they return no member rows.
 
 ## 9. Update protocol
 

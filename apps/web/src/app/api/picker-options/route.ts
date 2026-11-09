@@ -195,22 +195,27 @@ const EQUIPMENT_INSPECTION_TYPE_ORDER = [
 ]
 
 /**
- * Every lookup whose rows come out of the workforce directory (`people`).
- * These converge on ONE additional gate (`people.pick`) so picker access to
- * the directory cannot be re-introduced accidentally module by module.
- * User-identity lookups over `tenantUsers` are deliberately NOT in this set:
- * they return account identities, not the workforce directory.
+ * Every lookup whose rows come out of the person registries (`people` or
+ * `tenantUsers` account identities). These converge on ONE additional gate
+ * (`people.pick`) so picker access to tenant members cannot be re-introduced
+ * accidentally module by module: nobody enumerates a tenant-wide list of
+ * members (record rows, or login-account rows with e-mail hints) through a
+ * picker without it. Org-unit lookups (locations/sites) and module-record
+ * filters (types/categories/etc.) are NOT in this set: they return no member
+ * rows, so the purpose permission alone is their boundary.
  */
 const PEOPLE_PICKER_LOOKUPS = new Set<PickerLookup>([
   'training-evaluation-people',
   'training-skill-assignment-people',
   'training-assessment-people',
   'training-class-attendee-candidates',
+  'training-class-instructors',
   'report-people',
   'journal-supervisors',
   'compliance-by-person',
   'incident-people',
   'inspection-people',
+  'inspection-record-filter-inspectors',
   'document-signoff-people',
   'ppe-register-filter-holders',
   'ppe-active-people',
@@ -218,8 +223,13 @@ const PEOPLE_PICKER_LOOKUPS = new Set<PickerLookup>([
   'equipment-custody-holders',
   'equipment-reminder-assignees',
   'equipment-work-order-reporters',
+  'equipment-work-order-assignees',
+  'equipment-work-order-filter-assignees',
   'equipment-station-holders',
   'compliance-obligation-audience-people',
+  'safe-distance-supervisors',
+  'corrective-action-owners',
+  'management-review-members',
 ])
 
 function pickerAuthorized(ctx: RequestContext, lookup: PickerLookup): boolean {
