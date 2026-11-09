@@ -194,7 +194,47 @@ const EQUIPMENT_INSPECTION_TYPE_ORDER = [
   asc(equipmentInspectionTypes.id),
 ]
 
+/**
+ * Every lookup whose rows come out of the workforce directory (`people`).
+ * These converge on ONE additional gate (`people.pick`) so picker access to
+ * the directory cannot be re-introduced accidentally module by module.
+ * User-identity lookups over `tenantUsers` are deliberately NOT in this set:
+ * they return account identities, not the workforce directory.
+ */
+const PEOPLE_PICKER_LOOKUPS = new Set<PickerLookup>([
+  'training-evaluation-people',
+  'training-skill-assignment-people',
+  'training-assessment-people',
+  'training-class-attendee-candidates',
+  'report-people',
+  'journal-supervisors',
+  'compliance-by-person',
+  'incident-people',
+  'inspection-people',
+  'document-signoff-people',
+  'ppe-register-filter-holders',
+  'ppe-active-people',
+  'vehicle-drivers',
+  'equipment-custody-holders',
+  'equipment-reminder-assignees',
+  'equipment-work-order-reporters',
+  'equipment-station-holders',
+  'compliance-obligation-audience-people',
+])
+
 function pickerAuthorized(ctx: RequestContext, lookup: PickerLookup): boolean {
+  // Purpose is necessary but not sufficient for directory lookups: the
+  // purpose permission decides whether the caller may use that picker at
+  // all, and `people.pick` decides whether their role may pick from the
+  // workforce directory. Super-admin bypasses both, matching canManage.
+  if (!pickerPurposeAuthorized(ctx, lookup)) return false
+  if (PEOPLE_PICKER_LOOKUPS.has(lookup)) {
+    return ctx.isSuperAdmin || can(ctx, 'people.pick')
+  }
+  return true
+}
+
+function pickerPurposeAuthorized(ctx: RequestContext, lookup: PickerLookup): boolean {
   const canAny = (...permissions: string[]) =>
     ctx.isSuperAdmin || permissions.some((permission) => can(ctx, permission))
   const canManage = (moduleKey: string) => {

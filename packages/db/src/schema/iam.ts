@@ -217,6 +217,12 @@ export const PERMISSION_CATALOGUE = [
   // person↔org-unit relationship lives in `people_assignments`, which this
   // module deliberately does not read.
   'people.read.all',
+  // Picking a person is a separate, weaker grant than reading the roster:
+  // the unified `/api/picker-options` people lookups additionally require
+  // this key on top of each lookup's own purpose permission, so module
+  // access alone can never enumerate the workforce directory through a
+  // picker. Flat like `people.read.all` — only the tenant-wide tier exists.
+  'people.pick',
   // PPE
   'ppe.read.all',
   'ppe.read.site',
@@ -386,6 +392,10 @@ export const BUILTIN_ROLES: Record<
       'hazid.create',
       'hazid.update',
       'training.read.self',
+      // The worker picks people in the incident/journal/inspection pickers
+      // it is allowed to create; without this the purpose permission alone
+      // would not open those lookups.
+      'people.pick',
       // A worker sees the gear issued to them in the PPE register.
       'ppe.read.self',
       'documents.read',
@@ -424,6 +434,7 @@ export const BUILTIN_ROLES: Record<
       'training.read.all',
       'equipment.read.site',
       'equipment.inspect',
+      'people.pick',
       // Matches `equipment.read.site` above. ppe_items carries no org-unit
       // column, so the site tier cannot filter by location and falls back to the
       // holder column — see ppe-read-tier-contract.test.ts.
@@ -493,6 +504,7 @@ export const BUILTIN_ROLES: Record<
       'equipment.workorder.create',
       'equipment.workorder.close',
       'people.read.all',
+      'people.pick',
       'ppe.read.all',
       'ppe.manage',
       'ppe.issue',

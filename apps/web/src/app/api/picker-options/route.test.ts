@@ -146,11 +146,43 @@ describe('picker options route policy', () => {
     ['lookup=admin-navigation-form-templates', 'admin.nav.manage'],
   ])('accepts the canonical permission for %s', async (query, permission) => {
     const db = vi.fn().mockRejectedValue(new Error('query sentinel'))
-    state.context = { isSuperAdmin: false, permissions: new Set([permission]), db }
+    const lookupName = new URLSearchParams(query).get('lookup') ?? ''
+    // Directory lookups additionally require people.pick on top of purpose.
+    const directoryLookups = new Set([
+      'training-evaluation-people',
+      'training-skill-assignment-people',
+      'training-assessment-people',
+      'training-class-attendee-candidates',
+      'report-people',
+      'journal-supervisors',
+      'compliance-by-person',
+      'incident-people',
+      'inspection-people',
+      'document-signoff-people',
+      'ppe-register-filter-holders',
+      'ppe-active-people',
+      'vehicle-drivers',
+      'equipment-custody-holders',
+      'equipment-reminder-assignees',
+      'equipment-work-order-reporters',
+      'equipment-station-holders',
+      'compliance-obligation-audience-people',
+    ])
+    const grants = directoryLookups.has(lookupName) ? [permission, 'people.pick'] : [permission]
+    state.context = { isSuperAdmin: false, permissions: new Set(grants), db }
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const response = await request(query)
     consoleError.mockRestore()
     expect(response.status).toBe(500)
     expect(db).toHaveBeenCalledOnce()
+  })
+
+  it('denies people pickers to a purpose-authorized caller without people.pick', async () => {
+    const db = vi.fn().mockRejectedValue(new Error('query sentinel'))
+    // incidents.investigate satisfies incident-people purpose, people.pick is absent.
+    state.context = { isSuperAdmin: false, permissions: new Set(['incidents.investigate']), db }
+    const response = await request('lookup=incident-people')
+    expect(response.status).toBe(403)
+    expect(db).not.toHaveBeenCalled()
   })
 })
