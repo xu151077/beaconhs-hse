@@ -2416,7 +2416,7 @@ export async function createHazardSet(formData: FormData) {
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidHazardSets)
@@ -2436,10 +2436,11 @@ export async function updateHazardSet(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Hazard set not found.')
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const updates = {
     name: String(formData.get('name') ?? '').trim() || undefined,
     description: nullable(formData.get('description')),
@@ -2459,6 +2460,7 @@ export async function deleteHazardSet(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Hazard set not found.')
   await ctx.db((tx) => tx.delete(hazidHazardSets).where(eq(hazidHazardSets.id, id)))
   await recordAudit(ctx, {
     entityType: 'hazid_hazard_set',
@@ -2479,7 +2481,7 @@ export async function createTaskLibrary(formData: FormData) {
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidTasks)
@@ -2509,10 +2511,11 @@ export async function updateTaskLibrary(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Task not found.')
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const updates = {
     name: String(formData.get('name') ?? '').trim() || undefined,
     description: nullable(formData.get('description')),
@@ -2561,7 +2564,7 @@ export async function createAssessmentType(formData: FormData) {
   const availableToGroupIds = String(formData.get('availableToGroupIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidAssessmentTypes)
