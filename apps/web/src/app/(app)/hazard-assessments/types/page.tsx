@@ -24,7 +24,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { HazidSubNav } from '../_subnav'
 
 export async function generateMetadata() {
@@ -61,8 +61,8 @@ export default async function AssessmentTypesPage({
   const { rows, total, taskBasedCount, hazardBasedCount } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(hazidAssessmentTypes.name, `%${params.q}%`),
-          ilike(hazidAssessmentTypes.description, `%${params.q}%`),
+          ilike(hazidAssessmentTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(hazidAssessmentTypes.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const active = isNull(hazidAssessmentTypes.deletedAt)

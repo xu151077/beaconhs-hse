@@ -436,18 +436,19 @@ work, and do not silently work around it. Fixed entries stay with their evidence
 | D4  | **FIXED (EA-12).** PPE failed-inspection corrective actions now emit `corrective_action.created` and are notified.     |
 | D5  | **FIXED (EA-12).** Equipment flow profile includes all real work-order statuses, including `repaired` and `verified`.  |
 | D6  | **FIXED (EA-12).** Canonical-template comment now matches `CANONICAL_TEMPLATES`.                                       |
+| D9  | **FIXED (full-project audit, 2026-11-09).** Unmapped org widgets fail closed; unknown non-UUID widget IDs are denied.  |
 
 Open defects, kept for a scoped follow-up:
 
-| ID  | Defect                                                                                                                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| D8  | 82 foreign keys exist in Postgres but not in the Drizzle snapshot chain. Systemic, pre-existing, out of scope for EA-12.                    |
-| D9  | `canSeeWidget` falls through to "visible to everyone" for a widget missing from `WIDGET_PERMISSIONS`. The trap remains for the next widget. |
+| ID  | Defect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D8  | **FIXED (full-project audit, 2026-11-09; migration `0055`).** Of the 82 DB-only FKs: nine single-column CASCADE leftovers (subsumed by composite tenant FKs already declared in schema) were dropped, and the never-installed `ppe_inspection_attachments` tenant-attachment FK was added (`NOT VALID` + `VALIDATE`). The residual 73 (+1) are intentionally SQL-only — 67 partial `ON DELETE SET NULL (col)` keys Drizzle cannot express (tenant_id is NOT NULL) plus attachment-manifest CASCADE keys — now pinned as an allowlist in `packages/db/src/fk-snapshot-coverage.test.ts`. Schema and snapshot FK counts agree (517). |
 
 Environment and tooling issues also on record:
 
-- `turbo.json` `globalEnv` omits `R2_ENDPOINT` and `ATTACHMENT_CAPABILITY_SECRET`,
-  so `pnpm dev` needs `--env-mode=loose`.
+- `turbo.json` `globalEnv` now includes the runtime environment keys used by
+  web/worker tasks, including `R2_ENDPOINT` and
+  `ATTACHMENT_CAPABILITY_SECRET`.
 - `packages/storage/src/index.ts:39-40` uses `??`, which does not fall back on an
   empty string, and `.env.example` ships empty R2 credentials.
 - This host has ~3.4 GB RAM; Next.js page compiles have OOM-killed the dev

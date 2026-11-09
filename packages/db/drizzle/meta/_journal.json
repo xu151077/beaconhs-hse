@@ -372,6 +372,34 @@
       "when": 1794088352531,
       "tag": "0053_bent_the_spike",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": 7,
+      "when": 1794150753416,
+      "tag": "0054_repair_monitored_sessions_report",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": 7,
+      "when": 1794177839709,
+      "tag": "0055_drop_redundant_single_col_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": 7,
+      "when": 1794211734486,
+      "tag": "0056_audit_log_and_fk_replay_safety",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": 7,
+      "when": 1794212734486,
+      "tag": "0057_audit_immutable_trigger_owner_fix",
+      "breakpoints": true
     }
   ]
 }

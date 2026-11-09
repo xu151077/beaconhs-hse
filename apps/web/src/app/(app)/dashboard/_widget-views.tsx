@@ -444,7 +444,9 @@ function CountTile({
         </span>
       </div>
       <div className="mt-1 flex-1">
-        <div className={`text-4xl leading-none font-semibold tabular-nums ${valueClass}`}>
+        <div
+          className={`text-3xl leading-none font-semibold break-words tabular-nums sm:text-4xl ${valueClass}`}
+        >
           <AnimatedNumber value={value ?? 0} format={(v) => Math.round(v).toLocaleString()} />
         </div>
       </div>
@@ -526,7 +528,7 @@ function RateTile({
                 <AnimatedNumber
                   value={value!}
                   format={formatFn}
-                  className="text-4xl leading-none font-semibold text-slate-900 tabular-nums dark:text-slate-100"
+                  className="text-3xl leading-none font-semibold break-words text-slate-900 tabular-nums sm:text-4xl dark:text-slate-100"
                 />
                 <GeneratedValue
                   value={
@@ -539,7 +541,7 @@ function RateTile({
                 />
               </>
             ) : (
-              <span className="text-4xl leading-none font-semibold text-slate-400 tabular-nums dark:text-slate-500">
+              <span className="text-3xl leading-none font-semibold text-slate-400 tabular-nums sm:text-4xl dark:text-slate-500">
                 —
               </span>
             )
@@ -786,7 +788,7 @@ function SeverityPyramid({ dist }: { dist: DashboardMetrics['severityDistributio
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.06 + idx * 0.05, duration: 0.32 }}
-                className="grid grid-cols-[110px_1fr_44px] items-center gap-3 text-xs"
+                className="grid grid-cols-[80px_1fr_36px] items-center gap-2 text-xs sm:grid-cols-[110px_1fr_44px] sm:gap-3"
               >
                 <span className="truncate text-slate-700 dark:text-slate-200">
                   <GeneratedValue value={r.label} />

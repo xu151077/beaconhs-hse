@@ -21,7 +21,7 @@ import { extractRows } from '@beaconhs/db'
 import { equipmentCategories, equipmentItems, equipmentTypes } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
 import { Pagination } from '@/components/pagination'
@@ -99,10 +99,10 @@ export default async function TruckLogSummaryPage({
     const { where: vehicleWhere } = await resolveVehicleEquipmentWhere(ctx, tx)
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(equipmentItems.assetTag, `%${params.q}%`),
-          ilike(equipmentItems.name, `%${params.q}%`),
-          ilike(equipmentCategories.name, `%${params.q}%`),
-          ilike(equipmentTypes.name, `%${params.q}%`),
+          ilike(equipmentItems.assetTag, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentItems.name, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentCategories.name, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentTypes.name, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const where = and(vehicleWhere, search)!

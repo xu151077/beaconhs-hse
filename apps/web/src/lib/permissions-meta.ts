@@ -14,6 +14,7 @@ const GROUP_LABELS: Record<string, string> = {
   hazid: 'Hazard assessments',
   training: 'Training',
   equipment: 'Equipment',
+  people: 'People',
   ppe: 'PPE',
   documents: 'Documents',
   journals: 'Journals',
@@ -79,6 +80,9 @@ const PERMISSION_LABELS: Record<string, string> = {
   'equipment.inspect': 'Inspect equipment',
   'equipment.workorder.create': 'Open work orders',
   'equipment.workorder.close': 'Close work orders',
+
+  'people.read.all': 'View people directory',
+  'people.pick': 'Pick people',
 
   'ppe.read.all': 'View all PPE',
   'ppe.manage': 'Manage PPE',

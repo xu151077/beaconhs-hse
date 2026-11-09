@@ -36,7 +36,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -126,10 +126,10 @@ export default async function SyncRunPage({
     if (!conn || !run) return null
     const search: SQL<unknown> | undefined = listParams.q
       ? or(
-          ilike(syncRecordChanges.externalId, `%${listParams.q}%`),
-          ilike(syncRecordChanges.message, `%${listParams.q}%`),
-          ilike(syncRecordChanges.entity, `%${listParams.q}%`),
-          sql`${syncRecordChanges.canonicalId}::text ilike ${`%${listParams.q}%`}`,
+          ilike(syncRecordChanges.externalId, `%${escapeIlike(listParams.q)}%`),
+          ilike(syncRecordChanges.message, `%${escapeIlike(listParams.q)}%`),
+          ilike(syncRecordChanges.entity, `%${escapeIlike(listParams.q)}%`),
+          sql`${syncRecordChanges.canonicalId}::text ilike ${`%${escapeIlike(listParams.q)}%`}`,
         )
       : undefined
     const where = and(

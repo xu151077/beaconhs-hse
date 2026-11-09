@@ -30,7 +30,7 @@ import {
 } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -90,7 +90,7 @@ export default async function HazardSetsPage({
     async (tx) => {
       const filters: SQL<unknown>[] = []
       if (params.q) {
-        const term = `%${params.q}%`
+        const term = `%${escapeIlike(params.q)}%`
         const cond = or(ilike(hazidHazardSets.name, term), ilike(hazidHazardSets.description, term))
         if (cond) filters.push(cond)
       }

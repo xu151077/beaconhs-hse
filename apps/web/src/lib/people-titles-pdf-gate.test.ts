@@ -424,9 +424,13 @@ describe('no Job Titles permission vocabulary was introduced', () => {
     expect(peopleReadKeys).toEqual([])
   })
 
-  it('the catalogue holds exactly one people read key', () => {
+  it('the catalogue holds exactly the people keys it should', () => {
+    // `people.pick` is the deliberate second member: a FLAT non-read key
+    // gating the unified picker directory lookups, not a titles vocabulary
+    // and not a read tier (the people table still has no location/owner
+    // column, so no people.read.site/self family may be implied).
     const peopleKeys = PERMISSION_CATALOGUE.filter((k) => k.startsWith('people.'))
-    expect(peopleKeys).toEqual(['people.read.all'])
+    expect(peopleKeys).toEqual(['people.read.all', 'people.pick'])
   })
 
   it('no built-in role references a people.titles.* key', () => {
@@ -464,10 +468,11 @@ describe('no Job Titles permission vocabulary was introduced', () => {
 describe('the catalogue is unchanged by this fix', () => {
   it('8. the catalogue holds exactly the permissions it should', () => {
     // 100 before Phase 6Q stage E1, which added the seven storage write-freeze keys
-    // (`admin.storage.freeze.{request,drain,confirm,reconcile,release,fail,recover}`).
+    // (`admin.storage.freeze.{request,drain,confirm,reconcile,release,fail,recover}`),
+    // and 108 after the picker convergence added `people.pick`.
     // The catalogue is still a deliberate, human-audited number: adding a key without
     // editing this assertion must keep failing, because that is the whole point.
-    expect(PERMISSION_CATALOGUE).toHaveLength(107)
+    expect(PERMISSION_CATALOGUE).toHaveLength(108)
   })
 
   it('every catalogue key is still unique', () => {

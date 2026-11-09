@@ -1,6 +1,6 @@
 // Rate limiting for unauthenticated public pages (/verify/*).
 //
-// The kiosk PIN limiter (./public-pin-rate-limit) guards a 4–12 digit PIN
+// The kiosk PIN limiter (./public-pin-rate-limit) guards a 6–12 digit PIN
 // space; the verify pages carry 160-bit bearer tokens, so enumeration is
 // infeasible — the limit here guards against scraping, credential-link
 // abuse and mis-sharing, not guessing. Every visit consumes one budget slot

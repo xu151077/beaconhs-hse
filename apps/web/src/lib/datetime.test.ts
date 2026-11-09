@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { dateIsoInTimeZone, datetimeLocalValue, parseDatetimeLocal } from './datetime'
+import {
+  dateIsoInTimeZone,
+  datetimeLocalValue,
+  isCalendarDate,
+  parseDatetimeLocal,
+} from './datetime'
 
 describe('timezone-aware datetime helpers', () => {
+  it('accepts only real calendar dates', () => {
+    expect(isCalendarDate('2026-02-28')).toBe(true)
+    expect(isCalendarDate('2024-02-29')).toBe(true)
+    expect(isCalendarDate('2026-02-30')).toBe(false)
+    expect(isCalendarDate('2025-02-29')).toBe(false)
+    expect(isCalendarDate('2026-13-01')).toBe(false)
+    expect(isCalendarDate('not-a-date')).toBe(false)
+    expect(isCalendarDate('2026-02-28T00:00:00Z')).toBe(false)
+  })
   it('formats the calendar date in the requested timezone', () => {
     const instant = new Date('2026-07-14T02:30:00.000Z')
     expect(dateIsoInTimeZone(instant, 'America/Toronto')).toBe('2026-07-13')

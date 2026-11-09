@@ -3,7 +3,11 @@ import { sql, type SQL } from 'drizzle-orm'
 import postgres from 'postgres'
 import * as schema from './schema'
 
-const DEFAULT_URL = 'postgresql://beaconhs:beaconhs@localhost:5432/beaconhs'
+// Local dev matches .env.example and docker-compose (`--profile local-db`
+// publishes Postgres on 127.0.0.1:5433): runtime app role, compose-init
+// password. Any Juice-style default pointing at a plain `beaconhs:beaconhs`
+// account on 5432 does not exist in this cluster.
+const DEFAULT_URL = 'postgresql://beaconhs_app:beaconhs_app@localhost:5433/beaconhs'
 
 function runtimeDatabaseUrl(): string {
   const value = process.env.DATABASE_URL

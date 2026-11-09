@@ -54,7 +54,7 @@ import { ConfirmButton } from '@/components/confirm-button'
 import { StatTile, type StatTone } from '@/components/stat-tile'
 import { DetailPageLayout } from '@/components/page-layout'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
-import { isUuid, parseListParams } from '@/lib/list-params'
+import { isUuid, parseListParams, escapeIlike } from '@/lib/list-params'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -133,10 +133,10 @@ export default async function TrainingRecordPage({
     const attachmentBase = eq(trainingRecordFiles.recordId, id)
     const attachmentSearch = attachmentParams.q
       ? or(
-          ilike(trainingRecordFiles.label, `%${attachmentParams.q}%`),
-          ilike(trainingRecordFiles.kind, `%${attachmentParams.q}%`),
-          ilike(attachments.filename, `%${attachmentParams.q}%`),
-          ilike(attachments.contentType, `%${attachmentParams.q}%`),
+          ilike(trainingRecordFiles.label, `%${escapeIlike(attachmentParams.q)}%`),
+          ilike(trainingRecordFiles.kind, `%${escapeIlike(attachmentParams.q)}%`),
+          ilike(attachments.filename, `%${escapeIlike(attachmentParams.q)}%`),
+          ilike(attachments.contentType, `%${escapeIlike(attachmentParams.q)}%`),
         )
       : undefined
     const attachmentWhere = and(attachmentBase, attachmentSearch)

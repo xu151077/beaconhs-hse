@@ -51,7 +51,7 @@ import { can } from '@beaconhs/tenant'
 import type { AppLocale } from '@beaconhs/i18n'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { clamp, isUuid, mergeHref, pickString } from '@/lib/list-params'
+import { clamp, isUuid, mergeHref, pickString, pickUuid } from '@/lib/list-params'
 import { EquipmentInspectionDrawer } from '../inspections/_inspection-panel'
 import { StartInspectionButton } from '../inspections/_start-button'
 import { dateIsoInTimeZone, formatDate } from '@/lib/datetime'
@@ -175,7 +175,7 @@ export default async function EquipmentMaintenancePage({
   const horizon = monthEnd > addDays(today, 60) ? monthEnd : addDays(today, 60)
 
   const kindFilter = pickString(sp.kind)
-  const catFilter = pickString(sp.cat)
+  const catFilter = pickUuid(sp.cat)
   const q = pickString(sp.q)?.trim().toLowerCase() || undefined
   const page = clamp(Number(pickString(sp.page) ?? '1'), 1, 10_000)
   const drawerKey = pickString(sp.drawer)

@@ -48,7 +48,7 @@ import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
 import { formatDate, formatDateTime } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { permissionGroupLabel } from '@/lib/permissions-meta'
 import { PermissionMatrix } from '../roles/_components/permission-matrix'
 import { createApiKey, dismissReveal, revokeApiKey } from './_actions'
@@ -131,7 +131,10 @@ export default async function ApiKeysPage({
   const [list, builderApps] = await Promise.all([
     ctx.db(async (tx) => {
       const search: SQL<unknown> | undefined = params.q
-        ? or(ilike(apiKeys.name, `%${params.q}%`), ilike(apiKeys.prefix, `%${params.q}%`))
+        ? or(
+            ilike(apiKeys.name, `%${escapeIlike(params.q)}%`),
+            ilike(apiKeys.prefix, `%${escapeIlike(params.q)}%`),
+          )
         : undefined
       const active = and(
         isNull(apiKeys.revokedAt),

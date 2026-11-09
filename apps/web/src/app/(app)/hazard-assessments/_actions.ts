@@ -87,6 +87,10 @@ async function resolveAssessmentAccess(
   ctx: HazidCtx,
   assessmentId: string,
 ): Promise<{ locked: boolean }> {
+  // Funnel guard: every assessmentId reaching here came from FormData or
+  // request params. A non-UUID would turn a missing record into a Postgres
+  // uuid-cast 500; treat it exactly like a record that does not exist.
+  if (!isUuid(assessmentId)) throw new Error('Assessment not found')
   const row = await ctx.db(async (tx) => {
     const [found] = await tx
       .select({
@@ -122,6 +126,7 @@ async function lockVisibleAssessment(
   tx: HazidTx,
   assessmentId: string,
 ): Promise<{ locked: boolean }> {
+  if (!isUuid(assessmentId)) throw new Error('Assessment not found')
   const [row] = await tx
     .select({
       reportedByTenantUserId: hazidAssessments.reportedByTenantUserId,
@@ -842,7 +847,7 @@ export async function updateTextField(formData: FormData) {
   const id = String(formData.get('id') ?? '')
   const field = String(formData.get('field') ?? '')
   const value = nullable(formData.get('value'))
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
   await assertAssessmentEditable(ctx, id)
   const ALLOWED = new Set([
     'jobScope',
@@ -871,7 +876,10 @@ export async function updateTextField(formData: FormData) {
 
   let val: unknown = value
   if (RICH.has(field)) val = nullableRichText(value)
-  if (NULLABLE_IDS.has(field)) val = value || null
+  if (NULLABLE_IDS.has(field)) {
+    if (value && !isUuid(value)) throw new Error('Invalid ID')
+    val = value || null
+  }
   if (DATES.has(field)) {
     // datetime-local wall-clock strings are parsed in the user's timezone.
     const d = value ? parseDatetimeLocal(value, ctx.timezone) : null
@@ -2408,7 +2416,7 @@ export async function createHazardSet(formData: FormData) {
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidHazardSets)
@@ -2428,10 +2436,11 @@ export async function updateHazardSet(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Hazard set not found.')
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const updates = {
     name: String(formData.get('name') ?? '').trim() || undefined,
     description: nullable(formData.get('description')),
@@ -2451,6 +2460,7 @@ export async function deleteHazardSet(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Hazard set not found.')
   await ctx.db((tx) => tx.delete(hazidHazardSets).where(eq(hazidHazardSets.id, id)))
   await recordAudit(ctx, {
     entityType: 'hazid_hazard_set',
@@ -2471,7 +2481,7 @@ export async function createTaskLibrary(formData: FormData) {
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidTasks)
@@ -2501,10 +2511,11 @@ export async function updateTaskLibrary(formData: FormData) {
   const ctx = await ctxWithTenant()
   assertCanManageModule(ctx, 'hazid')
   const id = String(formData.get('id') ?? '')
+  if (!isUuid(id)) throw new Error('Task not found.')
   const hazardIds = String(formData.get('hazardIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const updates = {
     name: String(formData.get('name') ?? '').trim() || undefined,
     description: nullable(formData.get('description')),
@@ -2553,7 +2564,7 @@ export async function createAssessmentType(formData: FormData) {
   const availableToGroupIds = String(formData.get('availableToGroupIds') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => isUuid(s))
   const [row] = await ctx.db((tx) =>
     tx
       .insert(hazidAssessmentTypes)

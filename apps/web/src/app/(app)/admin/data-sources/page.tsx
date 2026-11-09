@@ -43,7 +43,7 @@ import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SortTh } from '@/components/sortable-th'
 import { ListCard, MobileCardList } from '@/components/list-card'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { collectDataSourceUsage } from './_usage'
 import { createDataSource, deleteDataSource } from './_actions'
 
@@ -81,9 +81,9 @@ export default async function DataSourcesPage({
   const { sources, templates, total, kindCounts } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(dataSources.name, `%${params.q}%`),
-          ilike(dataSources.key, `%${params.q}%`),
-          ilike(dataSources.description, `%${params.q}%`),
+          ilike(dataSources.name, `%${escapeIlike(params.q)}%`),
+          ilike(dataSources.key, `%${escapeIlike(params.q)}%`),
+          ilike(dataSources.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const active = isNull(dataSources.deletedAt)

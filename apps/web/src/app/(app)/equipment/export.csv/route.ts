@@ -18,7 +18,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -38,7 +38,11 @@ async function getHandler(req: NextRequest) {
     perPage: 25,
     allowedSorts: SORTS,
   })
-  const statusFilter = pickString(sp.status)
+  // Mirror the register: `all` clears the status filter and an unknown value is
+  // ignored. Passing either straight to the enum column would 500 the export.
+  const statusRaw = pickString(sp.status)
+  const statusFilter =
+    statusRaw === 'all' ? undefined : pickEnum(statusRaw, equipmentItems.status.enumValues)
   const ctx = await requireExportContext()
   // Read-tier gate: must hold at least the site read tier (equipment has no
   // self tier), and the export is bounded to that tier so a site-scoped user
@@ -55,7 +59,7 @@ async function getHandler(req: NextRequest) {
     })
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(equipmentItems.assetTag, term),
         ilike(equipmentItems.name, term),
@@ -63,7 +67,7 @@ async function getHandler(req: NextRequest) {
       )
       if (cond) filters.push(cond)
     }
-    if (statusFilter) filters.push(eq(equipmentItems.status, statusFilter as any))
+    if (statusFilter) filters.push(eq(equipmentItems.status, statusFilter))
     const whereClause = filters.length > 0 ? and(...filters) : undefined
 
     const orderBy =

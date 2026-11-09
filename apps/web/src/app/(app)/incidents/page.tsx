@@ -11,7 +11,7 @@ import { IncidentsSubNav } from './_sub-nav'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickEnum, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -58,8 +58,8 @@ export default async function IncidentsPage({
     perPage: 25,
     allowedSorts: SORTS,
   })
-  const typeFilter = pickString(sp.type)
-  const statusFilter = pickString(sp.status)
+  const typeFilter = pickEnum(sp.type, incidents.type.enumValues)
+  const statusFilter = pickEnum(sp.status, incidents.status.enumValues)
 
   const ctx = await requireRequestContext()
   // The export route accepts any read tier — mirror that here so read.all /
@@ -82,7 +82,7 @@ export default async function IncidentsPage({
     const filters: SQL<unknown>[] = [isNull(incidents.deletedAt)]
     if (vis) filters.push(vis)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(incidents.reference, term),
         ilike(incidents.title, term),
@@ -90,8 +90,8 @@ export default async function IncidentsPage({
       )
       if (cond) filters.push(cond)
     }
-    if (typeFilter) filters.push(eq(incidents.type, typeFilter as any))
-    if (statusFilter) filters.push(eq(incidents.status, statusFilter as any))
+    if (typeFilter) filters.push(eq(incidents.type, typeFilter))
+    if (statusFilter) filters.push(eq(incidents.status, statusFilter))
     const whereClause = and(...filters)
 
     const dirFn = params.dir === 'asc' ? asc : desc

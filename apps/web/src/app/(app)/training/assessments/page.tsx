@@ -28,7 +28,7 @@ import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate, formatDateTime } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { isUuid, mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -118,7 +118,7 @@ export default async function AssessmentsPage({
     filters.push(isNull(trainingAssessments.deletedAt))
     if (vis) filters.push(vis)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const search = or(
         ilike(people.firstName, term),
         ilike(people.lastName, term),

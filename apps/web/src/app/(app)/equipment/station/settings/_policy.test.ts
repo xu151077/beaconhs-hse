@@ -8,7 +8,7 @@ describe('equipment station settings policy', () => {
     expect(
       parseStationSettingsInput({
         defaultCheckInOrgUnitId: ID.toUpperCase(),
-        stationPin: ' 4821 ',
+        stationPin: ' 482913 ',
         clearStationPin: false,
         scanMode: 'explicit',
         requireHolderOnCheckout: true,
@@ -17,7 +17,7 @@ describe('equipment station settings policy', () => {
       }),
     ).toEqual({
       defaultCheckInOrgUnitId: ID,
-      stationPin: '4821',
+      stationPin: '482913',
       clearStationPin: false,
       scanMode: 'explicit',
       requireHolderOnCheckout: true,
@@ -46,7 +46,7 @@ describe('equipment station settings policy', () => {
       /Station settings is invalid/,
     )
     expect(() =>
-      parseStationSettingsInput({ ...valid, stationPin: '4821', clearStationPin: true }),
+      parseStationSettingsInput({ ...valid, stationPin: '482913', clearStationPin: true }),
     ).toThrow(/either a new kiosk PIN or disable/)
   })
 

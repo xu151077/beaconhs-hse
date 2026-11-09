@@ -3,7 +3,7 @@ import { and, asc, count, desc, eq, ilike, isNull, or } from 'drizzle-orm'
 import { PageHeader } from '@beaconhs/ui'
 import { equipmentStationSettings, orgUnits, tenants } from '@beaconhs/db/schema'
 import { appBaseUrl } from '@/lib/app-base-url'
-import { parsePrefixedListParams, pickString } from '@/lib/list-params'
+import { parsePrefixedListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { ListPageLayout } from '@/components/page-layout'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
@@ -42,7 +42,10 @@ export default async function StationSettingsPage({
       .limit(1)
 
     const search = baseParams.q
-      ? or(ilike(orgUnits.name, `%${baseParams.q}%`), ilike(orgUnits.code, `%${baseParams.q}%`))
+      ? or(
+          ilike(orgUnits.name, `%${escapeIlike(baseParams.q)}%`),
+          ilike(orgUnits.code, `%${escapeIlike(baseParams.q)}%`),
+        )
       : undefined
     const baseFilter =
       baseState === 'base'

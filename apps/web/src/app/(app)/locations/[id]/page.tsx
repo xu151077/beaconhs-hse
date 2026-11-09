@@ -65,7 +65,7 @@ import { SearchInput } from '@/components/search-input'
 import { Section } from '@/components/section'
 import { TableToolbar } from '@/components/table-toolbar'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import {
   archiveLocation,
   createContactFromDrawer,
@@ -251,9 +251,9 @@ async function loadIncidentsForUnits(
     const base = and(inArray(incidents.siteOrgUnitId, orgUnitIds), isNull(incidents.deletedAt), vis)
     const search = params.q
       ? or(
-          ilike(incidents.reference, `%${params.q}%`),
-          ilike(incidents.title, `%${params.q}%`),
-          ilike(incidents.description, `%${params.q}%`),
+          ilike(incidents.reference, `%${escapeIlike(params.q)}%`),
+          ilike(incidents.title, `%${escapeIlike(params.q)}%`),
+          ilike(incidents.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const filtered = and(base, search, status ? eq(incidents.status, status) : undefined)
@@ -299,11 +299,11 @@ async function loadEquipmentForUnits(
     )
     const search = params.q
       ? or(
-          ilike(equipmentItems.name, `%${params.q}%`),
-          ilike(equipmentItems.assetTag, `%${params.q}%`),
-          ilike(equipmentTypes.name, `%${params.q}%`),
-          ilike(people.firstName, `%${params.q}%`),
-          ilike(people.lastName, `%${params.q}%`),
+          ilike(equipmentItems.name, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentItems.assetTag, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(people.firstName, `%${escapeIlike(params.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const filtered = and(base, search, status ? eq(equipmentItems.status, status) : undefined)
@@ -348,10 +348,10 @@ async function loadContactsForUnit(
     const base = eq(customerContacts.orgUnitId, orgUnitId)
     const search = params.q
       ? or(
-          ilike(customerContacts.name, `%${params.q}%`),
-          ilike(customerContacts.role, `%${params.q}%`),
-          ilike(customerContacts.email, `%${params.q}%`),
-          ilike(customerContacts.phone, `%${params.q}%`),
+          ilike(customerContacts.name, `%${escapeIlike(params.q)}%`),
+          ilike(customerContacts.role, `%${escapeIlike(params.q)}%`),
+          ilike(customerContacts.email, `%${escapeIlike(params.q)}%`),
+          ilike(customerContacts.phone, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const filtered = and(base, search)
@@ -535,7 +535,10 @@ async function renderCustomer({
     ctx.db(async (tx) => {
       const projectBase = and(eq(orgUnits.parentId, id), eq(orgUnits.level, 'project'))
       const projectSearch = listParams.q
-        ? or(ilike(orgUnits.name, `%${listParams.q}%`), ilike(orgUnits.code, `%${listParams.q}%`))
+        ? or(
+            ilike(orgUnits.name, `%${escapeIlike(listParams.q)}%`),
+            ilike(orgUnits.code, `%${escapeIlike(listParams.q)}%`),
+          )
         : undefined
       const projectWhere = and(projectBase, projectSearch)
       const siteBase = and(
@@ -544,9 +547,9 @@ async function renderCustomer({
       )
       const siteSearch = listParams.q
         ? or(
-            ilike(orgUnits.name, `%${listParams.q}%`),
-            ilike(orgUnits.code, `%${listParams.q}%`),
-            ilike(siteParent.name, `%${listParams.q}%`),
+            ilike(orgUnits.name, `%${escapeIlike(listParams.q)}%`),
+            ilike(orgUnits.code, `%${escapeIlike(listParams.q)}%`),
+            ilike(siteParent.name, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const siteWhere = and(siteBase, siteSearch)
@@ -856,7 +859,10 @@ async function renderProject({
     ctx.db(async (tx) => {
       const base = and(eq(orgUnits.parentId, id), eq(orgUnits.level, 'site'))
       const search = listParams.q
-        ? or(ilike(orgUnits.name, `%${listParams.q}%`), ilike(orgUnits.code, `%${listParams.q}%`))
+        ? or(
+            ilike(orgUnits.name, `%${escapeIlike(listParams.q)}%`),
+            ilike(orgUnits.code, `%${escapeIlike(listParams.q)}%`),
+          )
         : undefined
       const filtered = and(base, search)
       const [[totalRow], [filteredRow], rows] = await Promise.all([

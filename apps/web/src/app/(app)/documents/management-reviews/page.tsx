@@ -26,7 +26,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { DocumentsSubNav } from '../_components/documents-sub-nav'
 import { createManagementReview } from './[id]/actions'
 
@@ -64,7 +64,7 @@ export default async function ManagementReviewsPage({
   const { rows, total, scheduledCount, unscheduledCount } = await ctx.db(async (tx) => {
     const active = isNull(documentManagementReviews.deletedAt)
     const search: SQL<unknown> | undefined = params.q
-      ? ilike(documentManagementReviews.title, `%${params.q}%`)
+      ? ilike(documentManagementReviews.title, `%${escapeIlike(params.q)}%`)
       : undefined
     const next =
       nextFilter === 'scheduled'

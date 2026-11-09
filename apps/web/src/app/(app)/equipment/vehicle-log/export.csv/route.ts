@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server'
+import { escapeIlike } from '@/lib/list-params'
 import { and, asc, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { extractRows } from '@beaconhs/db'
 import { equipmentCategories, equipmentItems, equipmentTypes } from '@beaconhs/db/schema'
@@ -44,10 +45,10 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     const { where: vehicleWhere } = await resolveVehicleEquipmentWhere(ctx, tx)
     const search: SQL<unknown> | undefined = q
       ? or(
-          ilike(equipmentItems.assetTag, `%${q}%`),
-          ilike(equipmentItems.name, `%${q}%`),
-          ilike(equipmentCategories.name, `%${q}%`),
-          ilike(equipmentTypes.name, `%${q}%`),
+          ilike(equipmentItems.assetTag, `%${escapeIlike(q)}%`),
+          ilike(equipmentItems.name, `%${escapeIlike(q)}%`),
+          ilike(equipmentCategories.name, `%${escapeIlike(q)}%`),
+          ilike(equipmentTypes.name, `%${escapeIlike(q)}%`),
         )
       : undefined
     const where = and(vehicleWhere, search)!

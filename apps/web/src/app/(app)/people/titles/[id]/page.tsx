@@ -23,7 +23,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
-import { isUuid, parseListParams } from '@/lib/list-params'
+import { isUuid, parseListParams, escapeIlike } from '@/lib/list-params'
 import {
   archiveTitle,
   restoreTitle,
@@ -74,9 +74,9 @@ export default async function TitleDetailPage({
     const assignmentBase = and(eq(personTitleAssignments.titleId, id), isNull(people.deletedAt))
     const personSearch = personParams.q
       ? or(
-          ilike(people.firstName, `%${personParams.q}%`),
-          ilike(people.lastName, `%${personParams.q}%`),
-          ilike(people.employeeNo, `%${personParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(personParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(personParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(personParams.q)}%`),
         )
       : undefined
     const assignmentWhere = and(assignmentBase, personSearch)

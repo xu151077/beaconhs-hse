@@ -11,7 +11,7 @@ import {
 } from '@beaconhs/db/schema'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { isUuid, parsePrefixedListParams, pickString } from '@/lib/list-params'
+import { isUuid, parsePrefixedListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { courseCredentialOutputIds, enabledCredentialOutputs } from '@/lib/credential-designs'
 import { CourseWorkspace } from './_workspace'
 import { loadCoursePresentation } from './_lib/presentation'
@@ -98,9 +98,9 @@ export default async function CoursePage({
       recordBase,
       recordParams.q
         ? or(
-            ilike(people.firstName, `%${recordParams.q}%`),
-            ilike(people.lastName, `%${recordParams.q}%`),
-            ilike(people.employeeNo, `%${recordParams.q}%`),
+            ilike(people.firstName, `%${escapeIlike(recordParams.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(recordParams.q)}%`),
+            ilike(people.employeeNo, `%${escapeIlike(recordParams.q)}%`),
           )
         : undefined,
       recordStatus === 'expired'
@@ -114,7 +114,7 @@ export default async function CoursePage({
     const classBase = eq(trainingClasses.courseId, id)
     const classWhere = and(
       classBase,
-      classParams.q ? ilike(trainingClasses.title, `%${classParams.q}%`) : undefined,
+      classParams.q ? ilike(trainingClasses.title, `%${escapeIlike(classParams.q)}%`) : undefined,
       classStatus === 'scheduled'
         ? and(isNull(trainingClasses.cancelledAt), isNull(trainingClasses.completedAt))
         : classStatus === 'completed'
@@ -128,8 +128,8 @@ export default async function CoursePage({
       fileBase,
       fileParams.q
         ? or(
-            ilike(trainingCourseFiles.label, `%${fileParams.q}%`),
-            ilike(attachments.filename, `%${fileParams.q}%`),
+            ilike(trainingCourseFiles.label, `%${escapeIlike(fileParams.q)}%`),
+            ilike(attachments.filename, `%${escapeIlike(fileParams.q)}%`),
           )
         : undefined,
       fileType === 'image'

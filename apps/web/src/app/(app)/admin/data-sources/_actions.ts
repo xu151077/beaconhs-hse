@@ -8,6 +8,7 @@ import { dataSources, formTemplateVersions, type DataSourceColumn } from '@beaco
 import type { FormSchemaV1 } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
+import { isUuid } from '@/lib/list-params'
 import { deriveColumnsFromSchema, slugify } from './_shared'
 
 async function guard() {
@@ -89,7 +90,7 @@ export async function deleteDataSource(formData: FormData): Promise<void> {
   const ctx = await guard()
   if (!ctx) return
   const id = String(formData.get('id') ?? '')
-  if (!id) return
+  if (!id || !isUuid(id)) return
   await ctx.db((tx) =>
     tx.update(dataSources).set({ deletedAt: new Date() }).where(eq(dataSources.id, id)),
   )

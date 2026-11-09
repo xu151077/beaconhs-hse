@@ -46,7 +46,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { DocumentsSubNav } from '../_components/documents-sub-nav'
 
 export async function generateMetadata() {
@@ -161,9 +161,9 @@ export default async function DocumentTypesPage({
     const active = isNull(documentTypes.deletedAt)
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(documentTypes.name, `%${params.q}%`),
-          ilike(documentTypes.key, `%${params.q}%`),
-          ilike(documentTypes.description, `%${params.q}%`),
+          ilike(documentTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(documentTypes.key, `%${escapeIlike(params.q)}%`),
+          ilike(documentTypes.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const hasDocuments = exists(

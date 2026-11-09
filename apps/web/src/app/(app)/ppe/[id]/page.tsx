@@ -74,7 +74,7 @@ import { recordModuleFlowEvent } from '@beaconhs/events'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
 import { canSeeRecord } from '@/lib/visibility'
-import { formatDate } from '@/lib/datetime'
+import { formatDate, isCalendarDate } from '@/lib/datetime'
 import { LiveField, LiveRemoteSelect, LiveSelect } from '@/components/live-field'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { CustomFieldsSection } from '@/components/custom-fields/custom-fields-section'
@@ -84,7 +84,7 @@ import { CertificateDrawer, type CertificateInput } from './_certificate-drawer'
 import { deletePpeItem } from '../_actions'
 import { DeletePpeButton } from './_delete-button'
 import { PpeInspectionForm } from './_inspection-form'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { DetailGrid } from '@/components/detail-grid'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -196,7 +196,7 @@ async function updatePpeField(formData: FormData) {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const value = typeof raw === 'string' ? raw : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
 
   const TEXT = new Set(['serialNumber', 'size', 'notes'])
   const DATE_ONLY = new Set(['purchaseDate', 'expiresOn'])
@@ -207,9 +207,10 @@ async function updatePpeField(formData: FormData) {
 
   let val: string | null
   if (DATE_ONLY.has(field)) {
+    if (value && !isCalendarDate(value)) throw new Error('Invalid date')
     val = value || null
   } else if (FK_REQUIRED.has(field)) {
-    if (!value) throw new Error('This field is required')
+    if (!isUuid(value)) throw new Error('Invalid ID')
     val = value
   } else {
     // Store the trimmed value: a stray space would otherwise make two serials
@@ -721,7 +722,11 @@ async function addCertificate(
   }
   const itemId = input.itemId.trim()
   const inspectedOn = input.inspectedOn.trim()
-  if (!itemId || !inspectedOn) return { ok: false, error: 'Inspection date is required.' }
+  if (!isUuid(itemId)) return { ok: false, error: 'Invalid PPE item.' }
+  if (!inspectedOn) return { ok: false, error: 'Inspection date is required.' }
+  if (!isCalendarDate(inspectedOn)) {
+    return { ok: false, error: 'Inspection date must be a valid calendar date.' }
+  }
   const result: 'pass' | 'fail' | 'remediated' = ['pass', 'fail', 'remediated'].includes(
     input.result,
   )
@@ -1037,7 +1042,7 @@ export default async function PpeDetailPage({
   const listData = await ctx.db(async (tx) => {
     if (active === 'inspections') {
       const base = eq(ppeInspections.itemId, id)
-      const searchPattern = listParams.q ? `%${listParams.q}%` : null
+      const searchPattern = listParams.q ? `%${escapeIlike(listParams.q)}%` : null
       const search = listParams.q
         ? or(
             ilike(ppeInspections.notes, searchPattern!),
@@ -1105,12 +1110,12 @@ export default async function PpeDetailPage({
       const base = eq(ppeAnnualRecords.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeAnnualRecords.inspectorName, `%${listParams.q}%`),
-            ilike(ppeAnnualRecords.inspectorCompany, `%${listParams.q}%`),
-            ilike(ppeAnnualRecords.notes, `%${listParams.q}%`),
-            ilike(people.firstName, `%${listParams.q}%`),
-            ilike(people.lastName, `%${listParams.q}%`),
-            ilike(attachments.filename, `%${listParams.q}%`),
+            ilike(ppeAnnualRecords.inspectorName, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeAnnualRecords.inspectorCompany, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeAnnualRecords.notes, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
+            ilike(attachments.filename, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(
@@ -1148,10 +1153,10 @@ export default async function PpeDetailPage({
       const base = eq(ppeIssueReports.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeIssueReports.description, `%${listParams.q}%`),
-            ilike(ppeIssueReports.resolution, `%${listParams.q}%`),
-            ilike(ppeIssueReports.source, `%${listParams.q}%`),
-            ilike(ppeIssueReports.reportedByNameSnapshot, `%${listParams.q}%`),
+            ilike(ppeIssueReports.description, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.resolution, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.source, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.reportedByNameSnapshot, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(
@@ -1182,9 +1187,9 @@ export default async function PpeDetailPage({
       const base = eq(ppeIssues.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeIssues.note, `%${listParams.q}%`),
-            ilike(people.firstName, `%${listParams.q}%`),
-            ilike(people.lastName, `%${listParams.q}%`),
+            ilike(ppeIssues.note, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(

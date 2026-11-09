@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { escapeIlike } from '@/lib/list-params'
 import {
   and,
   asc,
@@ -90,7 +91,7 @@ function filterConds(userId: string, filter?: InboxFilter): SQL[] {
     conds.push(eq(notifications.category, filter.category))
   const q = filter?.q?.trim()
   if (q) {
-    const like = `%${q}%`
+    const like = `%${escapeIlike(q)}%`
     conds.push(or(ilike(notifications.title, like), ilike(notifications.body, like)) as SQL)
   }
   return conds

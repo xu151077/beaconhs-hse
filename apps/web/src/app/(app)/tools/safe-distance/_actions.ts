@@ -72,7 +72,11 @@ async function validateReferences(
     operatorPersonId: string | null
   },
 ): Promise<string | null> {
+  // Ref ids come straight from FormData; validate before casting so a crafted
+  // value fails as "not available" instead of a uuid-cast 500.
   if (refs.siteOrgUnitId) {
+    if (!isUuid(refs.siteOrgUnitId))
+      return 'The selected location is not available in this workspace.'
     const [location] = await tx
       .select({ id: orgUnits.id })
       .from(orgUnits)
@@ -81,6 +85,8 @@ async function validateReferences(
     if (!location) return 'The selected location is not available in this workspace.'
   }
   if (refs.supervisorTenantUserId) {
+    if (!isUuid(refs.supervisorTenantUserId))
+      return 'The selected supervisor is not an active workspace member.'
     const [supervisor] = await tx
       .select({ id: tenantUsers.id })
       .from(tenantUsers)
@@ -89,6 +95,8 @@ async function validateReferences(
     if (!supervisor) return 'The selected supervisor is not an active workspace member.'
   }
   if (refs.operatorPersonId) {
+    if (!isUuid(refs.operatorPersonId))
+      return 'The selected operator is not an active person in this workspace.'
     const [operator] = await tx
       .select({ id: people.id })
       .from(people)

@@ -4,6 +4,7 @@
 // audits the edit against the owning entity. PPTX masters have no derived
 // slide images: editing and playback both read this same canonical file.
 
+import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db, withTenant } from '@beaconhs/db'
@@ -37,7 +38,10 @@ async function cleanupObject(key: string, reason: string): Promise<void> {
   try {
     await deleteObject({ key })
   } catch (error) {
-    console.error(`[wopi] failed to delete ${reason} object ${key}`, error)
+    // Keep tenant-scoped object keys out of logs; the short hash still lets an
+    // operator correlate retries without exposing the bucket path.
+    const keyRef = createHash('sha256').update(key).digest('hex').slice(0, 12)
+    console.error(`[wopi] failed to delete ${reason} object ref=${keyRef}`, error)
   }
 }
 

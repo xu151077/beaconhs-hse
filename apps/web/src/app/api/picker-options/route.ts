@@ -65,7 +65,7 @@ import {
   type PickerLookup,
   type PickerOptionsResponse,
 } from '../../../lib/picker-options'
-import { isUuid } from '../../../lib/list-params'
+import { escapeIlike, isUuid } from '../../../lib/list-params'
 import { moduleScopeWhere } from '../../../lib/visibility'
 import { templateAccessWhere } from '../../(app)/apps/_lib/access'
 import { resolveVehicleEquipmentWhere } from '../../(app)/equipment/vehicle-log/_equipment-policy'
@@ -97,10 +97,6 @@ const PERSON_OPTION_SELECTION = {
   lastName: people.lastName,
   employeeNo: people.employeeNo,
   jobTitle: primaryPersonTitleName(people.id, people.tenantId),
-}
-
-function escapeIlike(value: string): string {
-  return value.replace(/[%_\\]/g, (match) => `\\${match}`)
 }
 
 function option(value: string, label: string, hint?: string | null, meta?: Option['meta']): Option {
@@ -194,7 +190,57 @@ const EQUIPMENT_INSPECTION_TYPE_ORDER = [
   asc(equipmentInspectionTypes.id),
 ]
 
+/**
+ * Every lookup whose rows come out of the person registries (`people` or
+ * `tenantUsers` account identities). These converge on ONE additional gate
+ * (`people.pick`) so picker access to tenant members cannot be re-introduced
+ * accidentally module by module: nobody enumerates a tenant-wide list of
+ * members (record rows, or login-account rows with e-mail hints) through a
+ * picker without it. Org-unit lookups (locations/sites) and module-record
+ * filters (types/categories/etc.) are NOT in this set: they return no member
+ * rows, so the purpose permission alone is their boundary.
+ */
+const PEOPLE_PICKER_LOOKUPS = new Set<PickerLookup>([
+  'training-evaluation-people',
+  'training-skill-assignment-people',
+  'training-assessment-people',
+  'training-class-attendee-candidates',
+  'training-class-instructors',
+  'report-people',
+  'journal-supervisors',
+  'compliance-by-person',
+  'incident-people',
+  'inspection-people',
+  'inspection-record-filter-inspectors',
+  'document-signoff-people',
+  'ppe-register-filter-holders',
+  'ppe-active-people',
+  'vehicle-drivers',
+  'equipment-custody-holders',
+  'equipment-reminder-assignees',
+  'equipment-work-order-reporters',
+  'equipment-work-order-assignees',
+  'equipment-work-order-filter-assignees',
+  'equipment-station-holders',
+  'compliance-obligation-audience-people',
+  'safe-distance-supervisors',
+  'corrective-action-owners',
+  'management-review-members',
+])
+
 function pickerAuthorized(ctx: RequestContext, lookup: PickerLookup): boolean {
+  // Purpose is necessary but not sufficient for directory lookups: the
+  // purpose permission decides whether the caller may use that picker at
+  // all, and `people.pick` decides whether their role may pick from the
+  // workforce directory. Super-admin bypasses both, matching canManage.
+  if (!pickerPurposeAuthorized(ctx, lookup)) return false
+  if (PEOPLE_PICKER_LOOKUPS.has(lookup)) {
+    return ctx.isSuperAdmin || can(ctx, 'people.pick')
+  }
+  return true
+}
+
+function pickerPurposeAuthorized(ctx: RequestContext, lookup: PickerLookup): boolean {
   const canAny = (...permissions: string[]) =>
     ctx.isSuperAdmin || permissions.some((permission) => can(ctx, permission))
   const canManage = (moduleKey: string) => {

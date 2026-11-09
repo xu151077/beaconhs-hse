@@ -82,7 +82,7 @@ import { attachmentUrl } from '@/lib/attachment-url'
 import { parsePhotoEdits } from '@/lib/photo-edits'
 import { validateTenantImageAttachmentIdsInTx } from '@/lib/attachment-validation'
 import { requireRequestContext } from '@/lib/auth'
-import { formatDate, formatDateTime } from '@/lib/datetime'
+import { formatDate, formatDateTime, isCalendarDate } from '@/lib/datetime'
 import { nextReference } from '@/lib/reference'
 import { assertCan, can, getRegulatoryTerminology } from '@beaconhs/tenant'
 import { canSeeRecord } from '@/lib/visibility'
@@ -287,7 +287,7 @@ async function updateTextField(formData: FormData) {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const value = typeof raw === 'string' ? raw : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
 
   const ENUMS: Record<string, readonly string[]> = { type: TYPES, severity: SEVERITIES }
   const NULLABLE_IDS = new Set([
@@ -392,6 +392,7 @@ async function updateTextField(formData: FormData) {
     if (!ENUMS[field]!.includes(value)) throw new Error('Invalid value')
     val = value
   } else if (NULLABLE_IDS.has(field)) {
+    if (value && !isUuid(value)) throw new Error('Invalid ID')
     val = value || null
   } else if (TS_REQUIRED.has(field)) {
     const d = new Date(value)
@@ -405,6 +406,7 @@ async function updateTextField(formData: FormData) {
       val = d
     }
   } else if (DATE_ONLY.has(field)) {
+    if (value && !isCalendarDate(value)) throw new Error('Invalid date')
     val = value || null
   } else if (INTS.has(field)) {
     if (value.trim() === '') val = null

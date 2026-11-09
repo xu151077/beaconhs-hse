@@ -31,7 +31,7 @@ function kioskAccess(record: Record<string, unknown>): { tenantId: string; pin: 
   }
   if (typeof record.pin !== 'string') throw new Error('Kiosk request is invalid.')
   const pin = normalizeKioskPin(record.pin)
-  if (!pin) throw new Error('Kiosk PIN must be 4–12 digits.')
+  if (!pin) throw new Error('Kiosk PIN must be 6–12 digits.')
   return { tenantId: record.tenantId.toLowerCase(), pin }
 }
 

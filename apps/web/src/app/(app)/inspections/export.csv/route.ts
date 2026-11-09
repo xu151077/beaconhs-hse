@@ -32,7 +32,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid, escapeIlike } from '@/lib/list-params'
 import { parseDateFilter } from '../_datetime'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
@@ -63,9 +63,9 @@ async function getHandler(req: NextRequest) {
   const statusFilter = (STATUS_VALUES as readonly string[]).includes(statusRaw ?? '')
     ? (statusRaw as (typeof STATUS_VALUES)[number])
     : undefined
-  const typeFilter = pickString(sp.type)
-  const siteFilter = pickString(sp.site)
-  const inspectorFilter = pickString(sp.inspector)
+  const typeFilter = pickUuid(sp.type)
+  const siteFilter = pickUuid(sp.site)
+  const inspectorFilter = pickUuid(sp.inspector)
   const signedFilter = pickString(sp.signed) // 'yes' | 'no'
   const dateFrom = parseDateFilter(pickString(sp.dateFrom), 'start')
   const dateTo = parseDateFilter(pickString(sp.dateTo), 'end')
@@ -86,7 +86,7 @@ async function getHandler(req: NextRequest) {
     })
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const c = or(
         ilike(inspectionRecords.reference, term),
         ilike(inspectionTypes.name, term),

@@ -11,7 +11,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -38,7 +38,7 @@ async function getHandler(req: NextRequest) {
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [eq(orgUnits.level, 'customer')]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(orgUnits.name, term), ilike(orgUnits.code, term))
       if (cond) filters.push(cond)
     }

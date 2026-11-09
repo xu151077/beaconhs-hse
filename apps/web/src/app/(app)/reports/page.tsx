@@ -88,70 +88,109 @@ export default async function ReportsPage({
       }
     >
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>
-                <GeneratedText id="m_0ab5a972fc80fd" />
-              </TableHead>
-              <TableHead>
-                <GeneratedText id="m_1d05fa7a091a9b" />
-              </TableHead>
-              <TableHead>
-                <GeneratedText id="m_108b41637f364f" />
-              </TableHead>
-              <TableHead>
-                <GeneratedText id="m_014ca61c68ab13" />
-              </TableHead>
-              <TableHead className="w-48" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((definition) => (
-                <TableRow key={definition.id}>
-                  <TableCell>
-                    <Link
-                      href={`/reports/definitions/${definition.id}`}
-                      className="font-medium text-teal-700 hover:underline dark:text-teal-400"
-                    >
-                      {definition.name}
-                    </Link>
-                    {definition.description ? (
-                      <p className="mt-1 max-w-3xl text-xs text-slate-500">
-                        {definition.description}
-                      </p>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{definition.query.entity.replaceAll('_', ' ')}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{definition.category.replaceAll('_', ' ')}</Badge>
-                  </TableCell>
-                  <TableCell>{definition.updatedAt.toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link href={`/reports/definitions/${definition.id}`}>
-                          <GeneratedText id="m_107ab58c3c38bc" />
-                          <ArrowRight size={14} />
-                        </Link>
-                      </Button>
-                      {canBuild ? (
-                        <DeleteReportButton id={definition.id} name={definition.name} />
+        {/* Desktop table */}
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  <GeneratedText id="m_0ab5a972fc80fd" />
+                </TableHead>
+                <TableHead>
+                  <GeneratedText id="m_1d05fa7a091a9b" />
+                </TableHead>
+                <TableHead>
+                  <GeneratedText id="m_108b41637f364f" />
+                </TableHead>
+                <TableHead>
+                  <GeneratedText id="m_014ca61c68ab13" />
+                </TableHead>
+                <TableHead className="w-48" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length ? (
+                rows.map((definition) => (
+                  <TableRow key={definition.id}>
+                    <TableCell>
+                      <Link
+                        href={`/reports/definitions/${definition.id}`}
+                        className="font-medium text-teal-700 hover:underline dark:text-teal-400"
+                      >
+                        {definition.name}
+                      </Link>
+                      {definition.description ? (
+                        <p className="mt-1 max-w-3xl text-xs text-slate-500">
+                          {definition.description}
+                        </p>
                       ) : null}
-                    </div>
+                    </TableCell>
+                    <TableCell>{definition.query.entity.replaceAll('_', ' ')}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{definition.category.replaceAll('_', ' ')}</Badge>
+                    </TableCell>
+                    <TableCell>{definition.updatedAt.toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button asChild variant="ghost" size="sm">
+                          <Link href={`/reports/definitions/${definition.id}`}>
+                            <GeneratedText id="m_107ab58c3c38bc" />
+                            <ArrowRight size={14} />
+                          </Link>
+                        </Button>
+                        {canBuild ? (
+                          <DeleteReportButton id={definition.id} name={definition.name} />
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-32 text-center text-slate-500">
+                    <GeneratedText id="m_1841d2703b10cc" />
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-slate-500">
-                  <GeneratedText id="m_1841d2703b10cc" />
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Mobile card list */}
+        <div className="md:hidden">
+          <div className="space-y-3">
+            {rows.map((definition) => (
+              <div
+                key={definition.id}
+                className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+              >
+                <Link
+                  href={`/reports/definitions/${definition.id}`}
+                  className="mb-2 block font-medium text-teal-700 hover:underline dark:text-teal-400"
+                >
+                  {definition.name}
+                </Link>
+                {definition.description ? (
+                  <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                    {definition.description}
+                  </p>
+                ) : null}
+                <div className="flex items-center justify-between">
+                  <Badge variant="outline">{definition.category.replaceAll('_', ' ')}</Badge>
+                  <div className="flex justify-end gap-1">
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/reports/definitions/${definition.id}`}>
+                        <GeneratedText id="m_107ab58c3c38bc" />
+                        <ArrowRight size={14} />
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <Pagination
           basePath="/reports"
           currentParams={params}

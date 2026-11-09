@@ -24,7 +24,7 @@ import {
 } from '@/lib/training-mutation-validation'
 import { sanitizeTrainingHtml } from '@/lib/training-rich-content'
 import { assertTrainingPptxAttachment } from '@/lib/training-pptx-policy'
-import { purgeDeckAssets } from '../pptx/_lib'
+import { purgeDeckAssetsTx } from '../pptx/_lib'
 
 export async function createContentItem(formData: FormData) {
   const ctx = await requireRequestContext()
@@ -163,6 +163,12 @@ export async function importContentItemPptx(id: string, attachmentId: string) {
       .limit(1)
     if (!attachment) throw new Error('PowerPoint attachment not found.')
     assertTrainingPptxAttachment(attachment)
+    // Same object-level lock as purge (ordered) so link creation is serialized.
+    await tx
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(and(eq(attachments.id, attachmentId), eq(attachments.tenantId, ctx.tenantId)))
+      .for('update')
     const [updated] = await tx
       .update(trainingContentItems)
       .set({ sourceAttachmentId: attachmentId })
@@ -190,7 +196,7 @@ export async function deleteContentItem(id: string) {
   const ctx = await requireRequestContext()
   assertCanManageModule(ctx, 'training')
   id = requireTrainingUuid(id, 'Library item')
-  const deck = await ctx.db(async (tx) => {
+  const { row: deck, purged } = await ctx.db(async (tx) => {
     const [row] = await tx
       .select({
         sourceAttachmentId: trainingContentItems.sourceAttachmentId,
@@ -210,9 +216,10 @@ export async function deleteContentItem(id: string) {
       .where(and(eq(trainingContentItems.id, id), isNull(trainingContentItems.deletedAt)))
       .returning({ id: trainingContentItems.id })
     if (!deleted) throw new Error('Library item changed while it was being deleted.')
-    return row
+    const purged = await purgeDeckAssetsTx(tx, [row], ctx.tenantId)
+    return { row, purged }
   })
-  const purged = await purgeDeckAssets(ctx.db, [deck])
+  // deck purge now atomic inside the delete tx
   await recordAudit(ctx, {
     entityType: 'training_content_item',
     entityId: id,

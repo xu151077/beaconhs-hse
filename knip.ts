@@ -28,6 +28,9 @@ const config: KnipConfig = {
         'scripts/ea66d3-0-setup-copy.mjs',
         // EA-66D.3.1: derives the storage-gateway catalogue keys the same way.
         'scripts/ea66d3-1-storage-i18n.mjs',
+        // EA-66D.29: derives the report-schedule form catalogue keys the same
+        // way (the prebuilt AppKit form was English-only). Invoked by hand.
+        'scripts/ea66d4-29-report-schedule-i18n.mjs',
         // EA-66D.3.1: builds the source context archive that
         // scripts/build-local-image-with-key-gate.sh consumes. Invoked by hand
         // and by the release runbook; knip cannot see a shell caller.
@@ -45,6 +48,10 @@ const config: KnipConfig = {
         'public/sw.js',
         'scripts/backfill-credential-outputs.ts',
         'scripts/cleanup-rassaun-credential-designs.ts',
+        // Attachment capability v2 cutover: re-mints caps embedded in persisted
+        // training/form values after the attachment:v1: -> attachment:v2:
+        // namespace bump (audit by default, --apply writes). Invoked by hand.
+        'scripts/backfill-attachment-capability-v2.ts',
         'scripts/backfill-private-attachment-urls.ts',
         'scripts/backfill-signatures-to-storage.ts',
         'scripts/backfill-tenant-storage-keys.ts',

@@ -24,7 +24,7 @@ import { Pagination } from '@/components/pagination'
 import { TableToolbar } from '@/components/table-toolbar'
 import { ConfirmButton } from '@/components/confirm-button'
 import { formatDateTime } from '@/lib/datetime'
-import { isUuid, parseListParams } from '@/lib/list-params'
+import { isUuid, parseListParams, escapeIlike } from '@/lib/list-params'
 import { completeOnlineCourseEnrollment } from './_actions'
 import { GeneratedText } from '@/i18n/generated'
 import { getGeneratedTranslations } from '@/i18n/generated.server'
@@ -74,9 +74,9 @@ export default async function OnlineCourseCompletionsPage({
           : undefined
     const searchWhere = list.q
       ? or(
-          ilike(people.firstName, `%${list.q}%`),
-          ilike(people.lastName, `%${list.q}%`),
-          ilike(people.employeeNo, `%${list.q}%`),
+          ilike(people.firstName, `%${escapeIlike(list.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(list.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(list.q)}%`),
         )
       : undefined
     const where = and(base, statusWhere, searchWhere)

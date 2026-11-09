@@ -43,9 +43,18 @@ function getPepperKey(): Buffer {
   return pepperKey
 }
 
+/**
+ * Kiosk PIN policy: a newly set or presented PIN must be 6–12 digits.
+ *
+ * Old 4–5 digit PINs are deliberately not grandfathered. Verification is
+ * hash-based, so legacy hashes are indistinguishable from new ones; the
+ * non-compatibility is enforced here, at the one choke point every set and
+ * verify path runs through. A 4–5 digit candidate therefore stops verifying,
+ * and tenants must re-set their PIN. Do not special-case legacy lengths.
+ */
 export function normalizeKioskPin(value: string | null | undefined): string | null {
   const pin = value?.trim() ?? ''
-  if (!/^\d{4,12}$/.test(pin)) return null
+  if (!/^\d{6,12}$/.test(pin)) return null
   return pin
 }
 

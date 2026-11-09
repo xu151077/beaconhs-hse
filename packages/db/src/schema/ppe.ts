@@ -19,6 +19,7 @@ import {
 import { id, softDelete, timestamps } from './_helpers'
 import { tenants, tenantUsers } from './core'
 import { orgUnits, people } from './org'
+import { attachments } from './attachments'
 
 export const ppeTypes = pgTable(
   'ppe_types',
@@ -337,6 +338,11 @@ export const ppeInspectionAttachments = pgTable(
       name: 'ppe_inspection_attachments_tenant_criterion_fk',
       columns: [t.tenantId, t.criterionResultId],
       foreignColumns: [ppeInspectionCriteria.tenantId, ppeInspectionCriteria.id],
+    }).onDelete('cascade'),
+    attachmentFk: foreignKey({
+      name: 'att_tenant_ppe_inspection_attachments_attachment_id_3b75c366',
+      columns: [t.tenantId, t.attachmentId],
+      foreignColumns: [attachments.tenantId, attachments.id],
     }).onDelete('cascade'),
     exactlyOneOwnerCk: check(
       'ppe_inspection_attachments_exactly_one_owner_ck',

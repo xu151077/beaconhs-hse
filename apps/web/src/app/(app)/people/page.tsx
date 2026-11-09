@@ -11,7 +11,14 @@ import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { canManageModule } from '@/lib/module-admin/guard'
 import { DownloadLink } from '@/components/download-link'
-import { buildExportHref, mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import {
+  buildExportHref,
+  mergeHref,
+  parseListParams,
+  pickString,
+  pickUuid,
+  escapeIlike,
+} from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -54,8 +61,8 @@ export default async function PeoplePage({
   const statusFilter: StatusFilter = (STATUS_FILTERS as readonly string[]).includes(rawStatus)
     ? (rawStatus as StatusFilter)
     : 'active'
-  const departmentFilter = pickString(sp.department) ?? null
-  const companyFilter = pickString(sp.company) ?? null
+  const departmentFilter = pickUuid(sp.department) ?? null
+  const companyFilter = pickUuid(sp.company) ?? null
   const ctx = await requireRequestContext()
   // The workforce directory is master data, and `people` has no location or
   // owner column, so there is no row scope to fall back on: every record in
@@ -78,7 +85,7 @@ export default async function PeoplePage({
     // native tier to apply — the catalogue says so at the key itself.
     const baseFilters: SQL<unknown>[] = [isNull(people.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(people.firstName, term),
         ilike(people.lastName, term),

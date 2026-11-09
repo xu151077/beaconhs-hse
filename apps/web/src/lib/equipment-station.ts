@@ -17,7 +17,7 @@ import {
   orgUnits,
   people,
 } from '@beaconhs/db/schema'
-import { isUuid } from './list-params'
+import { isUuid, escapeIlike } from './list-params'
 import { refreshEquipmentAvailability } from './equipment-custody'
 
 const RETURN_CONDITIONS = ['good', 'fair', 'damaged', 'unusable'] as const
@@ -149,7 +149,7 @@ export async function searchStationCore(
 ): Promise<StationSearchResults> {
   const q = cleanCode(rawQuery)
   if (q.length < 1) return { equipment: [], people: [] }
-  const like = `%${q}%`
+  const like = `%${escapeIlike(q)}%`
 
   const equipmentRows = await tx
     .select({

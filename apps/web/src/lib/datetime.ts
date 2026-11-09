@@ -86,6 +86,25 @@ export function datetimeLocalValue(d: Date, timeZone: string): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
 }
 
+/**
+ * True only for a real `YYYY-MM-DD` calendar date. Server actions receive
+ * free-form form values, so date-only columns need this check before the
+ * string reaches Postgres; a malformed value would otherwise fail as a 500.
+ */
+export function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  if (!match) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() + 1 === month &&
+    parsed.getUTCDate() === day
+  )
+}
+
 /** Format an instant as an ISO calendar date in the given IANA timezone. */
 export function dateIsoInTimeZone(d: Date, timeZone: string): string {
   const parts = wallClockParts(timeZone, d)

@@ -17,7 +17,9 @@ export function PageContainer({
 }) {
   return (
     <div className="app-scroll flex-1 overflow-y-auto">
-      <FadeInBody className={cn('mx-auto w-full max-w-screen-2xl p-4 sm:p-6', className)}>
+      <FadeInBody
+        className={cn('mx-auto w-full max-w-full p-4 sm:max-w-screen-2xl sm:p-6', className)}
+      >
         <GeneratedValue value={children} />
       </FadeInBody>
     </div>
@@ -50,12 +52,12 @@ export function ListPageLayout({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-slate-200 bg-white px-3 pt-3 pb-2.5 sm:px-6 sm:pt-4 sm:pb-3 dark:border-slate-800 dark:bg-slate-900">
-        <FadeInHeader className="mx-auto max-w-screen-2xl space-y-2 sm:space-y-2.5">
+        <FadeInHeader className="mx-auto max-w-full space-y-2 sm:max-w-screen-2xl sm:space-y-2.5">
           <GeneratedValue value={header} />
         </FadeInHeader>
       </div>
       <div className="app-scroll min-h-0 flex-1 overflow-y-auto">
-        <FadeInBody className={cn('mx-auto max-w-screen-2xl p-3 sm:p-6', className)}>
+        <FadeInBody className={cn('mx-auto max-w-full p-3 sm:max-w-screen-2xl sm:p-6', className)}>
           <GeneratedValue value={children} />
         </FadeInBody>
       </div>
@@ -102,7 +104,7 @@ export function DetailPageLayout({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <FadeInHeader className="mx-auto max-w-screen-2xl px-3 pt-3 sm:px-6 sm:pt-5">
+        <FadeInHeader className="mx-auto max-w-full px-3 pt-3 sm:max-w-screen-2xl sm:px-6 sm:pt-5">
           <GeneratedValue value={header} />
           <GeneratedValue
             value={

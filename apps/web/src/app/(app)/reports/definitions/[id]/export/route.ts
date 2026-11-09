@@ -8,7 +8,7 @@ import {
 } from '@beaconhs/reports'
 import { assertCan } from '@beaconhs/tenant'
 import { renderReportPdf } from '@beaconhs/forms-pdf'
-import { requireRequestContext } from '@/lib/auth'
+import { requireExportContext, requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
 import { isUuid } from '@/lib/list-params'
 import { loadDefinitionById } from '../../../_definitions'
@@ -27,7 +27,9 @@ async function getHandler(
   if (isRouterPrefetch(request)) return new Response(null, { status: 204 })
   const { id } = await params
   if (!isUuid(id)) notFound()
-  const ctx = await requireRequestContext()
+  // Exports are governed like every other export route: admin.data.export
+  // plus impersonation block, in addition to reports.read.
+  const ctx = await requireExportContext()
   assertCan(ctx, 'reports.read')
   const definition = await loadDefinitionById(ctx.tenantId!, id)
   if (!definition) notFound()

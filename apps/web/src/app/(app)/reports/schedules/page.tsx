@@ -1,4 +1,5 @@
 import { and, asc, count, eq, ilike, or } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import { reportSchedules } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import type { ReportSchedule } from '@beaconhs/reports'
@@ -28,7 +29,10 @@ export default async function ReportSchedulesPage({
     eq(reportSchedules.tenantId, ctx.tenantId!),
     status === 'all' ? undefined : eq(reportSchedules.active, status === 'active'),
     query
-      ? or(ilike(reportSchedules.name, `%${query}%`), ilike(reportSchedules.timezone, `%${query}%`))
+      ? or(
+          ilike(reportSchedules.name, `%${escapeIlike(query)}%`),
+          ilike(reportSchedules.timezone, `%${escapeIlike(query)}%`),
+        )
       : undefined,
   ].filter(Boolean)
   const where = and(...predicates)

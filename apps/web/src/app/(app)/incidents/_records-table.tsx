@@ -53,8 +53,8 @@ export function IncidentsRecordsTable({
 
   return (
     <>
-      {/* Phones: tappable cards (bulk-select via the leading checkbox). */}
-      <MobileCardList>
+      {/* Phones + portrait tablets: tappable cards (bulk-select via the leading checkbox). */}
+      <MobileCardList breakpoint="md">
         <GeneratedValue
           value={rows.map((r) => (
             <ListCard
@@ -88,7 +88,7 @@ export function IncidentsRecordsTable({
       </MobileCardList>
 
       {/* Tablet/desktop: full sortable table. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white sm:block dark:border-slate-800 dark:bg-slate-900">
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/60 text-left text-xs tracking-wide text-slate-500 uppercase dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">

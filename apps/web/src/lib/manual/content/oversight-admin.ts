@@ -750,6 +750,11 @@ Give a tenant administrator a company-wide role scope, or they cannot administer
 the workspace. Narrow a supervisor's role scope to their own sites and that is
 exactly what they will see.
 
+Picking a person while you fill a form needs the **Pick people** permission
+as well as the permission for that form. A role without it cannot open the
+person search in a form, even when the rest of the form works. It is listed
+with the role's other permissions under **Roles**.
+
 A platform-level workspace suspension blocks normal member access, pending invitations, API keys, public kiosks, live badge pages, and in-browser Word or PowerPoint editing and playback. Printed individual certificate links remain available so issued credentials can still be verified.
 
 ## Account security
@@ -869,6 +874,8 @@ Members choose their own language under **Account settings**. Their choice appli
 ## Build People groups
 
 People groups are the one reusable group list across BeaconHS. The same groups are available in notification rules, Flows, role-based record access, and **Send email** dialogs.
+
+For **Send email**, the People-group picker appears only for members who have the **People: read all** permission, because group e-mail addresses are workforce data. Other senders can still type recipient addresses manually.
 
 1. Open **People**, then **Groups**.
 2. Search by group name or description, or click **Add group**.

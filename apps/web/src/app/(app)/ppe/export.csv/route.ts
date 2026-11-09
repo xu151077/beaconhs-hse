@@ -12,7 +12,7 @@ import {
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { withRouteErrors } from '@/lib/api/errors'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 import { moduleScopeWhere } from '@/lib/visibility'
 
@@ -68,7 +68,7 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     })
     if (scope) filters.push(scope)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(ppeItems.serialNumber, term), ilike(ppeTypes.name, term))
       if (cond) filters.push(cond)
     }

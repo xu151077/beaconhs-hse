@@ -233,7 +233,7 @@ Because the kiosk is shared and no member is signed in, it uses the workspace's 
 
 ## If the kiosk will not unlock
 
-- Check that the PIN has 4–12 digits.
+- Check that the PIN has 6–12 digits.
 - Ask an administrator whether the people kiosk is enabled for this workspace.
 - A suspended or archived workspace cannot use the public kiosk.`,
   },

@@ -28,7 +28,7 @@ import { ListCard, MobileCardList } from '@/components/list-card'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -120,15 +120,18 @@ export default async function PlatformUsersPage({
       const membershipCount = sql<number>`coalesce(${membershipTotals.total}, 0)`
       const search: SQL<unknown> | undefined = listParams.q
         ? or(
-            ilike(users.name, `%${listParams.q}%`),
-            ilike(users.email, `%${listParams.q}%`),
+            ilike(users.name, `%${escapeIlike(listParams.q)}%`),
+            ilike(users.email, `%${escapeIlike(listParams.q)}%`),
             exists(
               tx
                 .select({ id: tenantUsers.id })
                 .from(tenantUsers)
                 .innerJoin(tenants, eq(tenants.id, tenantUsers.tenantId))
                 .where(
-                  and(eq(tenantUsers.userId, users.id), ilike(tenants.name, `%${listParams.q}%`)),
+                  and(
+                    eq(tenantUsers.userId, users.id),
+                    ilike(tenants.name, `%${escapeIlike(listParams.q)}%`),
+                  ),
                 ),
             ),
           )

@@ -58,7 +58,7 @@ export function parseStationSettingsInput(value: unknown): StationSettingsInput 
   const rawPin = input.stationPin
   if (rawPin !== null && typeof rawPin !== 'string') throw new Error('Kiosk PIN is invalid.')
   const pin = typeof rawPin === 'string' ? rawPin.trim() : null
-  if (pin && !/^\d{4,12}$/.test(pin)) throw new Error('Kiosk PIN must be 4–12 digits.')
+  if (pin && !/^\d{6,12}$/.test(pin)) throw new Error('Kiosk PIN must be 6–12 digits.')
 
   const clearStationPin = bool(input.clearStationPin, 'Clear kiosk PIN setting')
   if (clearStationPin && pin) {

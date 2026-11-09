@@ -290,7 +290,7 @@ export default async function AdminSettingsPage() {
                   name="kioskPin"
                   type="password"
                   inputMode="numeric"
-                  pattern="[0-9]{4,12}"
+                  pattern="[0-9]{6,12}"
                   maxLength={12}
                   placeholder={tGeneratedValue(
                     tenant.kioskPin ? t('keepKioskPin') : t('kioskPinExample'),

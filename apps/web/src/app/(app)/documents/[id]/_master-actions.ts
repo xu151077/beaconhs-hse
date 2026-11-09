@@ -251,10 +251,17 @@ export async function importDocumentMaster(documentId: string, attachmentId: str
 
   await ctx.db(async (tx) => {
     const [doc] = await tx
-      .select({ id: documents.id })
+      .select({ id: documents.id, sourceAttachmentId: documents.sourceAttachmentId })
       .from(documents)
-      .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+      .where(
+        and(
+          eq(documents.id, documentId),
+          eq(documents.tenantId, ctx.tenantId),
+          isNull(documents.deletedAt),
+        ),
+      )
       .limit(1)
+      .for('update')
     if (!doc) throw new Error('Document not found')
     const [att] = await tx
       .select({
@@ -273,7 +280,15 @@ export async function importDocumentMaster(documentId: string, attachmentId: str
     await tx
       .update(documents)
       .set({ sourceAttachmentId: attachmentId })
-      .where(eq(documents.id, documentId))
+      .where(and(eq(documents.id, documentId), eq(documents.tenantId, ctx.tenantId)))
+    // 1:1 master: reclaim the replaced master attachment in the same tx.
+    if (doc.sourceAttachmentId && doc.sourceAttachmentId !== attachmentId) {
+      await tx
+        .delete(attachments)
+        .where(
+          and(eq(attachments.id, doc.sourceAttachmentId), eq(attachments.tenantId, ctx.tenantId)),
+        )
+    }
   })
   await recordAudit(ctx, {
     entityType: 'document',

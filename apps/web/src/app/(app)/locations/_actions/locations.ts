@@ -14,6 +14,7 @@ import { customerContacts, orgUnits } from '@beaconhs/db/schema'
 import { assertCan } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit } from '@/lib/audit'
+import { isUuid } from '@/lib/list-params'
 
 // Address sub-fields live inside the org_units.address JSON column; they post
 // as flat field names from the Overview LiveFields and are folded into the
@@ -51,7 +52,7 @@ export async function updateLocationField(formData: FormData): Promise<void> {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const value = typeof raw === 'string' ? raw : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
 
   const isAddress = field in ADDRESS_FIELDS
   const allowed = TEXT_FIELDS.has(field) || NUMBER_FIELDS.has(field) || isAddress

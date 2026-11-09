@@ -1,4 +1,5 @@
 import { GeneratedText, GeneratedValue } from '@/i18n/generated'
+import { escapeIlike } from '@/lib/list-params'
 import { useGeneratedTranslations } from '@/i18n/generated'
 // The Compliance tab body: which compliance obligations this document is part
 // of. Mirrors the hub's rollup query (_compliance/_hub.ts obligationRollup) but
@@ -53,7 +54,7 @@ export async function loadDocumentObligations(
     )
     const filteredWhere = and(
       baseWhere,
-      options.q ? ilike(complianceObligations.title, `%${options.q}%`) : undefined,
+      options.q ? ilike(complianceObligations.title, `%${escapeIlike(options.q)}%`) : undefined,
       options.status ? eq(complianceObligations.status, options.status) : undefined,
     )
     const [totalRows, filteredRows, rows] = await Promise.all([

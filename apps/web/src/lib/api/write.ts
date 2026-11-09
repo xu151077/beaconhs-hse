@@ -310,24 +310,26 @@ async function createIncident(ctx: RequestContext, raw: unknown): Promise<WriteR
           }),
         },
       })
+      // Atomic audit in the mutation tx (a separate recordAudit tx would leave
+      // a crash window with a change but no trail).
+      await recordAuditInTransaction(tx, ctx, {
+        entityType: 'incident',
+        entityId: created.id,
+        action: 'create',
+        summary: `Reported ${created.reference}: ${created.title}`,
+        after: {
+          reference: created.reference,
+          type: created.type,
+          severity: created.severity,
+          occurredAt: created.occurredAt,
+          siteOrgUnitId: created.siteOrgUnitId,
+        },
+      })
     }
     return created
   })
 
   if (!row) throw new ApiError(500, 'internal', 'Failed to create incident')
-  await recordAudit(ctx, {
-    entityType: 'incident',
-    entityId: row.id,
-    action: 'create',
-    summary: `Reported ${row.reference}: ${row.title}`,
-    after: {
-      reference: row.reference,
-      type: row.type,
-      severity: row.severity,
-      occurredAt: row.occurredAt,
-      siteOrgUnitId: row.siteOrgUnitId,
-    },
-  })
   revalidatePath('/incidents')
 
   return incidentResult(row)
@@ -360,7 +362,12 @@ async function updateIncident(ctx: RequestContext, id: string, raw: unknown): Pr
   const b = parsed.data
 
   const result = await ctx.db(async (tx) => {
-    const [before] = await tx.select().from(incidents).where(eq(incidents.id, id)).limit(1)
+    const [before] = await tx
+      .select()
+      .from(incidents)
+      .where(and(eq(incidents.id, id), eq(incidents.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No incidents with id ${id}`)
     if (before.locked) throw ApiError.invalid('Incident is locked and cannot be updated')
 
@@ -415,27 +422,32 @@ async function updateIncident(ctx: RequestContext, id: string, raw: unknown): Pr
     if (hasOwn(b, 'severityRating')) patch.severityRating = b.severityRating ?? null
     assertPatchNotEmpty(patch)
 
-    const [updated] = await tx.update(incidents).set(patch).where(eq(incidents.id, id)).returning()
+    const [updated] = await tx
+      .update(incidents)
+      .set(patch)
+      .where(and(eq(incidents.id, id), eq(incidents.tenantId, ctx.tenantId)))
+      .returning()
+    // Audit in the same tx so a crash cannot leave a change without a trail.
+    await recordAuditInTransaction(tx, ctx, {
+      entityType: 'incident',
+      entityId: id,
+      action: 'update',
+      summary: `Updated ${updated?.reference ?? before.reference}: ${updated?.title ?? before.title}`,
+      before: {
+        title: before.title,
+        status: before.status,
+        severity: before.severity,
+      },
+      after: {
+        title: updated?.title ?? undefined,
+        status: updated?.status ?? undefined,
+        severity: updated?.severity ?? undefined,
+      },
+    })
     return { before, updated }
   })
 
   if (!result.updated) throw new ApiError(500, 'internal', 'Failed to update incident')
-  await recordAudit(ctx, {
-    entityType: 'incident',
-    entityId: id,
-    action: 'update',
-    summary: `Updated ${result.updated.reference}: ${result.updated.title}`,
-    before: {
-      title: result.before.title,
-      status: result.before.status,
-      severity: result.before.severity,
-    },
-    after: {
-      title: result.updated.title,
-      status: result.updated.status,
-      severity: result.updated.severity,
-    },
-  })
   revalidatePath('/incidents')
   revalidatePath(`/incidents/${id}`)
   return incidentResult(result.updated)
@@ -443,24 +455,32 @@ async function updateIncident(ctx: RequestContext, id: string, raw: unknown): Pr
 
 async function deleteIncident(ctx: RequestContext, id: string): Promise<WriteResult> {
   const result = await ctx.db(async (tx) => {
-    const [before] = await tx.select().from(incidents).where(eq(incidents.id, id)).limit(1)
+    const [before] = await tx
+      .select()
+      .from(incidents)
+      .where(and(eq(incidents.id, id), eq(incidents.tenantId, ctx.tenantId)))
+      .limit(1)
+      .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No incidents with id ${id}`)
     if (before.locked) throw ApiError.invalid('Incident is locked and cannot be archived')
     const deletedAt = new Date()
-    await tx.update(incidents).set({ deletedAt }).where(eq(incidents.id, id))
+    await tx
+      .update(incidents)
+      .set({ deletedAt })
+      .where(and(eq(incidents.id, id), eq(incidents.tenantId, ctx.tenantId)))
+    await recordAuditInTransaction(tx, ctx, {
+      entityType: 'incident',
+      entityId: id,
+      action: 'delete',
+      summary: `Archived ${before.reference}: ${before.title}`,
+      before: {
+        reference: before.reference,
+        title: before.title,
+        status: before.status,
+      },
+      after: { deletedAt },
+    })
     return { before, deletedAt }
-  })
-  await recordAudit(ctx, {
-    entityType: 'incident',
-    entityId: id,
-    action: 'delete',
-    summary: `Archived ${result.before.reference}: ${result.before.title}`,
-    before: {
-      reference: result.before.reference,
-      title: result.before.title,
-      status: result.before.status,
-    },
-    after: { deletedAt: result.deletedAt },
   })
   revalidatePath('/incidents')
   revalidatePath(`/incidents/${id}`)
@@ -665,7 +685,7 @@ async function updateCorrectiveAction(
     const [before] = await tx
       .select()
       .from(correctiveActions)
-      .where(eq(correctiveActions.id, id))
+      .where(and(eq(correctiveActions.id, id), eq(correctiveActions.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) {
@@ -717,7 +737,7 @@ async function updateCorrectiveAction(
     const [updated] = await tx
       .update(correctiveActions)
       .set(patch)
-      .where(eq(correctiveActions.id, id))
+      .where(and(eq(correctiveActions.id, id), eq(correctiveActions.tenantId, ctx.tenantId)))
       .returning()
     if (updated && before.status !== updated.status) {
       await recordModuleFlowEvent(tx, ctx, {
@@ -766,7 +786,7 @@ async function deleteCorrectiveAction(ctx: RequestContext, id: string): Promise<
     const [before] = await tx
       .select()
       .from(correctiveActions)
-      .where(eq(correctiveActions.id, id))
+      .where(and(eq(correctiveActions.id, id), eq(correctiveActions.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) {
@@ -774,7 +794,10 @@ async function deleteCorrectiveAction(ctx: RequestContext, id: string): Promise<
     }
     if (before.locked) throw ApiError.invalid('Corrective action is locked and cannot be archived')
     const deletedAt = new Date()
-    await tx.update(correctiveActions).set({ deletedAt }).where(eq(correctiveActions.id, id))
+    await tx
+      .update(correctiveActions)
+      .set({ deletedAt })
+      .where(and(eq(correctiveActions.id, id), eq(correctiveActions.tenantId, ctx.tenantId)))
     await recordAuditInTransaction(tx, ctx, {
       entityType: 'corrective_action',
       entityId: id,
@@ -1318,7 +1341,11 @@ async function updateDocument(ctx: RequestContext, id: string, raw: unknown): Pr
   let updated: typeof documents.$inferSelect | undefined
   try {
     updated = await ctx.db(async (tx) => {
-      const [before] = await tx.select().from(documents).where(eq(documents.id, id)).limit(1)
+      const [before] = await tx
+        .select()
+        .from(documents)
+        .where(and(eq(documents.id, id), eq(documents.tenantId, ctx.tenantId)))
+        .limit(1)
       if (!before || before.deletedAt) throw ApiError.notFound(`No documents with id ${id}`)
 
       await ensureDocumentType(tx, b.typeId)
@@ -1342,7 +1369,11 @@ async function updateDocument(ctx: RequestContext, id: string, raw: unknown): Pr
       if (hasOwn(b, 'nextReviewOn')) patch.nextReviewOn = optionalDate(b.nextReviewOn)
       assertPatchNotEmpty(patch)
 
-      const [row] = await tx.update(documents).set(patch).where(eq(documents.id, id)).returning()
+      const [row] = await tx
+        .update(documents)
+        .set(patch)
+        .where(and(eq(documents.id, id), eq(documents.tenantId, ctx.tenantId)))
+        .returning()
       if (row) {
         await recordAuditInTransaction(tx, ctx, {
           entityType: 'document',
@@ -1381,7 +1412,7 @@ async function deleteDocument(ctx: RequestContext, id: string): Promise<WriteRes
     const [before] = await tx
       .select()
       .from(documents)
-      .where(eq(documents.id, id))
+      .where(and(eq(documents.id, id), eq(documents.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No documents with id ${id}`)
@@ -1616,7 +1647,7 @@ async function updateEquipment(
     const [before] = await tx
       .select()
       .from(equipmentItems)
-      .where(eq(equipmentItems.id, id))
+      .where(and(eq(equipmentItems.id, id), eq(equipmentItems.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No equipment with id ${id}`)
@@ -1695,7 +1726,10 @@ async function updateEquipment(
     }
     assertPatchNotEmpty(patch)
 
-    await tx.update(equipmentItems).set(patch).where(eq(equipmentItems.id, id))
+    await tx
+      .update(equipmentItems)
+      .set(patch)
+      .where(and(eq(equipmentItems.id, id), eq(equipmentItems.tenantId, ctx.tenantId)))
     if (hasOwn(b, 'currentHolderPersonId') || hasOwn(b, 'status') || custodyChanged) {
       await refreshEquipmentAvailability(tx, [id])
     }
@@ -1724,7 +1758,7 @@ async function updateEquipment(
     const [updated] = await tx
       .select()
       .from(equipmentItems)
-      .where(eq(equipmentItems.id, id))
+      .where(and(eq(equipmentItems.id, id), eq(equipmentItems.tenantId, ctx.tenantId)))
       .limit(1)
 
     if (updated) {
@@ -1767,7 +1801,7 @@ async function deleteEquipment(ctx: RequestContext, id: string): Promise<WriteRe
     const [before] = await tx
       .select()
       .from(equipmentItems)
-      .where(eq(equipmentItems.id, id))
+      .where(and(eq(equipmentItems.id, id), eq(equipmentItems.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No equipment with id ${id}`)
@@ -1779,7 +1813,10 @@ async function deleteEquipment(ctx: RequestContext, id: string): Promise<WriteRe
       throw ApiError.invalid('Clear this equipment item’s holder before archiving it')
     }
     const deletedAt = new Date()
-    await tx.update(equipmentItems).set({ deletedAt }).where(eq(equipmentItems.id, id))
+    await tx
+      .update(equipmentItems)
+      .set({ deletedAt })
+      .where(and(eq(equipmentItems.id, id), eq(equipmentItems.tenantId, ctx.tenantId)))
     await recordAuditInTransaction(tx, ctx, {
       entityType: 'equipment',
       entityId: id,
@@ -1944,7 +1981,7 @@ async function updatePpe(ctx: RequestContext, id: string, raw: unknown): Promise
     const [before] = await tx
       .select()
       .from(ppeItems)
-      .where(eq(ppeItems.id, id))
+      .where(and(eq(ppeItems.id, id), eq(ppeItems.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No ppe with id ${id}`)
@@ -1999,7 +2036,11 @@ async function updatePpe(ctx: RequestContext, id: string, raw: unknown): Promise
     if (hasOwn(b, 'metadata')) patch.metadata = b.metadata
     assertPatchNotEmpty(patch)
 
-    const [updated] = await tx.update(ppeItems).set(patch).where(eq(ppeItems.id, id)).returning()
+    const [updated] = await tx
+      .update(ppeItems)
+      .set(patch)
+      .where(and(eq(ppeItems.id, id), eq(ppeItems.tenantId, ctx.tenantId)))
+      .returning()
     if (updated) {
       await recordAuditInTransaction(tx, ctx, {
         entityType: 'ppe_item',
@@ -2035,12 +2076,15 @@ async function deletePpe(ctx: RequestContext, id: string): Promise<WriteResult> 
     const [before] = await tx
       .select()
       .from(ppeItems)
-      .where(eq(ppeItems.id, id))
+      .where(and(eq(ppeItems.id, id), eq(ppeItems.tenantId, ctx.tenantId)))
       .limit(1)
       .for('update')
     if (!before || before.deletedAt) throw ApiError.notFound(`No ppe with id ${id}`)
     const deletedAt = new Date()
-    await tx.update(ppeItems).set({ deletedAt }).where(eq(ppeItems.id, id))
+    await tx
+      .update(ppeItems)
+      .set({ deletedAt })
+      .where(and(eq(ppeItems.id, id), eq(ppeItems.tenantId, ctx.tenantId)))
     await recordAuditInTransaction(tx, ctx, {
       entityType: 'ppe_item',
       entityId: id,
@@ -2204,7 +2248,7 @@ async function updateTrainingRecord(
     const [before] = await tx
       .select()
       .from(trainingRecords)
-      .where(eq(trainingRecords.id, id))
+      .where(and(eq(trainingRecords.id, id), eq(trainingRecords.tenantId, ctx.tenantId)))
       .for('update')
       .limit(1)
     if (!before || before.deletedAt) {
@@ -2247,7 +2291,7 @@ async function updateTrainingRecord(
     const [updated] = await tx
       .update(trainingRecords)
       .set(patch)
-      .where(eq(trainingRecords.id, id))
+      .where(and(eq(trainingRecords.id, id), eq(trainingRecords.tenantId, ctx.tenantId)))
       .returning()
     if (!updated) throw new ApiError(500, 'internal', 'Failed to update training record')
     await recordAuditInTransaction(tx, ctx, {
@@ -2289,7 +2333,7 @@ async function deleteTrainingRecord(ctx: RequestContext, id: string): Promise<Wr
     const [before] = await tx
       .select()
       .from(trainingRecords)
-      .where(eq(trainingRecords.id, id))
+      .where(and(eq(trainingRecords.id, id), eq(trainingRecords.tenantId, ctx.tenantId)))
       .for('update')
       .limit(1)
     if (!before || before.deletedAt) {

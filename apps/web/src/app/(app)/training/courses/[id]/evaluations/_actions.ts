@@ -161,6 +161,7 @@ export async function evaluatePractical(args: {
             .where(
               and(
                 eq(attachments.id, existing.evaluationSignatureAttachmentId),
+                eq(attachments.tenantId, tenantId),
                 eq(attachments.kind, 'signature'),
               ),
             )

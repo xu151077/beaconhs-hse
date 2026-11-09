@@ -27,7 +27,7 @@ import { smsLog, tenants } from '@beaconhs/db/schema'
 import { db, withSuperAdmin, type Database } from '@beaconhs/db'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDateTime } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -99,7 +99,7 @@ export async function SmsLogListView({
       filters.push(eq(smsLog.tenantId, ctx.tenantId))
     }
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(smsLog.recipient, term),
         ilike(smsLog.body, term),
@@ -114,7 +114,7 @@ export async function SmsLogListView({
       filters.push(eq(smsLog.categoryKey, categoryFilter))
     }
     if (recipientFilter) {
-      filters.push(ilike(smsLog.recipient, `%${recipientFilter}%`))
+      filters.push(ilike(smsLog.recipient, `%${escapeIlike(recipientFilter)}%`))
     }
     // Ignore malformed date params — new Date('garbage') doesn't throw, it
     // returns an Invalid Date that blows up during query serialization.

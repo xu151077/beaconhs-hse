@@ -28,6 +28,7 @@ import { storageUploadUrl } from './storage-upload-url'
 import {
   hashUploadToken,
   normalizedContentType,
+  uploadTokenMatches,
   validateReservedUpload,
 } from './upload-verification'
 import {
@@ -566,6 +567,13 @@ export async function requestMultipartPartUrl(input: {
 
   // Security: ensure caller is the reservation owner
   if (reservation.requestedBy !== ctx.userId) {
+    return { ok: false, error: 'Upload reservation not found' }
+  }
+
+  // The `token` parameter is part of the reservation credential, not a decorative
+  // input: the upload route checks the same token before writing a part, so a
+  // part URL must never be issued against a different token either.
+  if (!uploadTokenMatches(token, reservation.verificationTokenHash)) {
     return { ok: false, error: 'Upload reservation not found' }
   }
 

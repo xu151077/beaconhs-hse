@@ -16,7 +16,14 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import {
+  buildExportHref,
+  parseListParams,
+  pickEnum,
+  pickString,
+  pickUuid,
+  escapeIlike,
+} from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -70,12 +77,19 @@ export default async function EquipmentPage({
     allowedSorts: SORTS,
   })
   // Default the register to in-service assets; the "All statuses" chip
-  // (status=all) clears the default so every status shows.
-  const statusRaw = pickString(sp.status) ?? 'in_service'
-  const statusFilter = statusRaw === 'all' ? undefined : statusRaw
-  const availabilityFilter = pickString(sp.availability)
-  const typeFilter = pickString(sp.type)
-  const categoryFilter = pickString(sp.category)
+  // (status=all) clears the default so every status shows. An unknown value is
+  // ignored instead of reaching Postgres as invalid enum input.
+  const statusRaw = pickString(sp.status)
+  const statusFilter =
+    statusRaw === 'all'
+      ? undefined
+      : (pickEnum(statusRaw, equipmentItems.status.enumValues) ?? 'in_service')
+  const availabilityFilter = pickEnum(pickString(sp.availability), [
+    'available',
+    'checked_out',
+  ] as const)
+  const typeFilter = pickUuid(sp.type)
+  const categoryFilter = pickUuid(sp.category)
   const ctx = await requireRequestContext()
   const canManageEquipment = can(ctx, 'equipment.manage')
   const canExport = can(ctx, 'admin.data.export') && can(ctx, 'equipment.read.site')
@@ -102,7 +116,7 @@ export default async function EquipmentPage({
       const filters: SQL<unknown>[] = [isNull(equipmentItems.deletedAt)]
       if (vis) filters.push(vis)
       if (params.q) {
-        const term = `%${params.q}%`
+        const term = `%${escapeIlike(params.q)}%`
         const cond = or(
           ilike(equipmentItems.assetTag, term),
           ilike(equipmentItems.name, term),

@@ -3,6 +3,7 @@
 // RLS-scoped db executor.
 
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import { customFieldDefinitions, equipmentTypes, ppeTypes } from '@beaconhs/db/schema'
 import type {
   CustomFieldConfig,
@@ -120,7 +121,7 @@ export async function loadCustomFieldDefPage(
     isNull(customFieldDefinitions.deletedAt),
   ]
   if (options.q) {
-    const term = `%${options.q}%`
+    const term = `%${escapeIlike(options.q)}%`
     const search = or(
       ilike(customFieldDefinitions.label, term),
       ilike(customFieldDefinitions.key, term),

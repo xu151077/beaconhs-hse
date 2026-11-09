@@ -144,6 +144,22 @@ async function entityVisibilitySql(ctx: RequestContext, entity: ReportEntity): P
   return filter ?? null
 }
 
+/**
+ * Postgres data-exception codes produced by an uncastable filter value:
+ * `invalid_text_representation` (uuid/enum/integer/boolean),
+ * `invalid_datetime_format`, and `datetime_field_overflow`.
+ */
+const INVALID_FILTER_SQLSTATES = new Set(['22P02', '22007', '22008'])
+
+function isInvalidTextRepresentation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    INVALID_FILTER_SQLSTATES.has(String((error as { code?: unknown }).code))
+  )
+}
+
 /** JSON-friendly value: timestamps → ISO, numerics → number, else as-is. */
 function formatValue(value: unknown, kind: ReportColumnKind | undefined): unknown {
   if (value === null || typeof value === 'undefined') return null
@@ -220,12 +236,25 @@ export async function readEntityRows(
     sql.raw(' '),
   )
 
-  const { rows, total } = await ctx.db(async (tx) => {
-    const dataResult = (await tx.execute(dataQuery)) as unknown
-    const countResult = (await tx.execute(countQuery)) as unknown
-    const totalRow = extractRows(countResult)[0] as { n?: number } | undefined
-    return { rows: extractRows(dataResult), total: Number(totalRow?.n ?? 0) }
-  })
+  let result: { rows: Record<string, unknown>[]; total: number }
+  try {
+    result = await ctx.db(async (tx) => {
+      const dataResult = (await tx.execute(dataQuery)) as unknown
+      const countResult = (await tx.execute(countQuery)) as unknown
+      const totalRow = extractRows(countResult)[0] as { n?: number } | undefined
+      return { rows: extractRows(dataResult), total: Number(totalRow?.n ?? 0) }
+    })
+  } catch (error) {
+    // A filter value that cannot be cast to its column type (a non-UUID id, an
+    // unknown enum member, a malformed date) is a client error, not a server
+    // fault. Postgres reports 22P02; without this the endpoint answers 500 and
+    // logs a stack for what is just a bad query string.
+    if (isInvalidTextRepresentation(error)) {
+      throw ApiError.invalid('A filter value is not valid for its column type')
+    }
+    throw error
+  }
+  const { rows, total } = result
 
   const kinds = KIND_BY_KEY(entity)
   const data = rows.map((row) => {

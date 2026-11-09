@@ -58,8 +58,10 @@ export function parseRemoteSearchInput(
   return { query, selected: selected || null }
 }
 
-/** Escape user text before wrapping it in a parameterised ILIKE pattern. */
+import { escapeIlike } from './list-params'
+
+/** The wildcard-escaped search pattern for a remote search box. */
 export function remoteSearchTerm(query: string): string | null {
   if (!query) return null
-  return `%${query.replace(/[%_\\]/g, (match) => `\\${match}`)}%`
+  return `%${escapeIlike(query)}%`
 }

@@ -39,7 +39,7 @@ import { primaryPersonTitleName } from '@beaconhs/db'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { datetimeLocalValue, formatDateTime } from '@/lib/datetime'
-import { clamp, isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { clamp, isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -112,18 +112,24 @@ export default async function TrainingClassPage({
     const attendeeBase = eq(trainingClassAttendees.classId, id)
     const rosterSearch = rosterParams.q
       ? or(
-          ilike(people.firstName, `%${rosterParams.q}%`),
-          ilike(people.lastName, `%${rosterParams.q}%`),
-          ilike(people.employeeNo, `%${rosterParams.q}%`),
-          ilike(primaryPersonTitleName(people.id, people.tenantId), `%${rosterParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(rosterParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(rosterParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(rosterParams.q)}%`),
+          ilike(
+            primaryPersonTitleName(people.id, people.tenantId),
+            `%${escapeIlike(rosterParams.q)}%`,
+          ),
         )
       : undefined
     const completionSearch = completionQ
       ? or(
-          ilike(people.firstName, `%${completionQ}%`),
-          ilike(people.lastName, `%${completionQ}%`),
-          ilike(people.employeeNo, `%${completionQ}%`),
-          ilike(primaryPersonTitleName(people.id, people.tenantId), `%${completionQ}%`),
+          ilike(people.firstName, `%${escapeIlike(completionQ)}%`),
+          ilike(people.lastName, `%${escapeIlike(completionQ)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(completionQ)}%`),
+          ilike(
+            primaryPersonTitleName(people.id, people.tenantId),
+            `%${escapeIlike(completionQ)}%`,
+          ),
         )
       : undefined
     const rosterWhere = and(attendeeBase, rosterSearch)

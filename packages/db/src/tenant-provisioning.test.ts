@@ -276,13 +276,48 @@ async function query<T = Record<string, unknown>>(
  * Deliberately loud if the credential is missing: silently falling back to the runtime
  * role would fail with "permission denied" far from the real cause, and a skipped
  * teardown would leave every later scenario measuring stale rows.
+ *
+ * Audit rows are append-only for every role except `beaconhs_owner` (the
+ * immutable trigger, migration 0056) and the tenant FK is RESTRICT, so a
+ * hard tenant delete cannot cascade them away. The teardown therefore
+ * removes audit rows FIRST as the owner — via `MIGRATION_DATABASE_URL`
+ * (the migrator login, which reaches the owner by `SET ROLE`, exactly
+ * as `migrate.ts` does) — and only then deletes tenants with the
+ * superadmin credential. If the migrator credential is missing this
+ * fails loudly rather than falling back.
  */
 async function wipeTenants(_runtimeUrl: string): Promise<void> {
+  // Enumerate tenants with the superadmin credential first, then remove
+  // their audit rows as the owner per-tenant (RLS needs the tenant GUC).
+  // The audit delete is owner-only by design (trigger, migration 0056), so
+  // it cannot run as the superadmin the teardown otherwise uses.
   const adminUrl = process.env.SEED_TEST_SCRATCH_SUPERADMIN_URL
   if (!adminUrl) {
     throw new Error(
       'SEED_TEST_SCRATCH_SUPERADMIN_URL is not set — the teardown needs the superadmin credential.',
     )
+  }
+  const migratorUrl = process.env.MIGRATION_DATABASE_URL
+  if (!migratorUrl) {
+    throw new Error(
+      'MIGRATION_DATABASE_URL is not set — the teardown needs the owner credential to clear audit rows.',
+    )
+  }
+  const admin = postgres(adminUrl, { max: 1 })
+  try {
+    const rows = (await admin`select id::text as id from tenants`) as Array<{ id: string }>
+    const owner = postgres(migratorUrl, { max: 1 })
+    try {
+      await owner.unsafe('SET ROLE beaconhs_owner')
+      for (const row of rows) {
+        await owner.unsafe(`SET app.tenant_id='${row.id}'`)
+        await owner.unsafe(`DELETE FROM audit_log WHERE tenant_id='${row.id}'::uuid`)
+      }
+    } finally {
+      await owner.end({ timeout: 0 }).catch(() => {})
+    }
+  } finally {
+    await admin.end({ timeout: 0 }).catch(() => {})
   }
   const sql = postgres(adminUrl, { max: 1 })
   try {

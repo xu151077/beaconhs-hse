@@ -1,7 +1,15 @@
 type AttachmentTenantReference = {
   table: string
   column: string
-  onDelete: 'cascade' | 'set null'
+  /** Delivery behaviour when the referenced attachment row is deleted. */
+  onDelete: 'cascade' | 'set null' | 'no action'
+  /**
+   * Constraint actually present in the database, when it is not the generated
+   * `att_tenant_*` name. Two entries are enforced by schema-declared tenant FKs
+   * under their own names (from the 0005 squashed cutover); the generated name
+   * alone would misdescribe the physical object.
+   */
+  physicalName?: string
 }
 
 /**
@@ -55,7 +63,9 @@ export const ATTACHMENT_TENANT_REFERENCES = [
   {
     table: 'job_title_task_acknowledgments',
     column: 'signature_attachment_id',
-    onDelete: 'set null',
+    // Physical FK is NO ACTION (schema-declared, 0005 squashed cutover).
+    onDelete: 'no action',
+    physicalName: 'job_title_task_acks_tenant_signature_attachment_fk',
   },
   { table: 'journal_entry_photos', column: 'attachment_id', onDelete: 'cascade' },
   { table: 'people', column: 'photo_attachment_id', onDelete: 'set null' },
@@ -76,7 +86,12 @@ export const ATTACHMENT_TENANT_REFERENCES = [
   },
   { table: 'training_lessons', column: 'attachment_id', onDelete: 'set null' },
   { table: 'training_lessons', column: 'source_attachment_id', onDelete: 'set null' },
-  { table: 'training_record_files', column: 'attachment_id', onDelete: 'cascade' },
+  {
+    table: 'training_record_files',
+    column: 'attachment_id',
+    onDelete: 'cascade',
+    physicalName: 'training_record_files_tenant_attachment_fk',
+  },
   { table: 'training_records', column: 'certificate_attachment_id', onDelete: 'set null' },
   { table: 'training_skill_assignment_files', column: 'attachment_id', onDelete: 'set null' },
   { table: 'training_skill_assignments', column: 'evidence_attachment_id', onDelete: 'set null' },
@@ -92,6 +107,7 @@ function stableHash(value: string): string {
 }
 
 export function attachmentTenantConstraintName(reference: AttachmentTenantReference): string {
+  if (reference.physicalName) return reference.physicalName
   const stem = `${reference.table}_${reference.column}`
   return `att_tenant_${stem.slice(0, 40)}_${stableHash(stem)}`
 }
@@ -107,7 +123,11 @@ export function attachmentTenantConstraintSql(reference: AttachmentTenantReferen
   const column = sqlIdentifier(reference.column)
   const name = sqlIdentifier(attachmentTenantConstraintName(reference))
   const onDelete =
-    reference.onDelete === 'cascade' ? 'ON DELETE CASCADE' : `ON DELETE SET NULL (${column})`
+    reference.onDelete === 'cascade'
+      ? 'ON DELETE CASCADE'
+      : reference.onDelete === 'no action'
+        ? 'ON DELETE NO ACTION'
+        : `ON DELETE SET NULL (${column})`
   return `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = ${name.replaceAll('"', "'")}) THEN
