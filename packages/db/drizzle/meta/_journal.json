@@ -393,6 +393,13 @@
       "when": 1794211734486,
       "tag": "0056_audit_log_and_fk_replay_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": 7,
+      "when": 1794212734486,
+      "tag": "0057_audit_immutable_trigger_owner_fix",
+      "breakpoints": true
     }
   ]
 }

@@ -74,7 +74,7 @@ beforeAll(async () => {
     CREATE TABLE ppe_inspection_attachments (tenant_id uuid NOT NULL, attachment_id uuid NOT NULL);
     CREATE TABLE audit_log (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
       actor_user_id text REFERENCES users(id) ON DELETE SET NULL,
       entity_type text NOT NULL, entity_id uuid, action text NOT NULL,
       summary text, before jsonb, after jsonb, metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -94,11 +94,23 @@ beforeAll(async () => {
     .map((s) => s.replace(/--[^\n]*\n/g, '').trim())
     .filter((s) => s && !s.startsWith('--'))
   // Apply as owner (mirrors migrate.ts SET ROLE) so trigger function is owned.
+  // 0057 also replaces the trigger function (correct owner return values);
+  // apply it when present so this harness tests the full final chain.
+  const stmts0057 = readFileSync(
+    new URL('../drizzle/0057_audit_immutable_trigger_owner_fix.sql', import.meta.url),
+    'utf8',
+  )
+    .split('--> statement-breakpoint')
+    .map((s) => s.replace(/--[^\n]*\n/g, '').trim())
+    .filter((s) => s && !s.startsWith('--'))
   await superSql.unsafe('SET ROLE beaconhs_owner')
   for (const stmt of stmts) {
     if (stmt.includes('ppe_inspection') || stmt.includes('audit_log')) {
       await superSql.unsafe(stmt)
     }
+  }
+  for (const stmt of stmts0057) {
+    if (stmt.includes('audit_log')) await superSql.unsafe(stmt)
   }
   await superSql.unsafe('RESET ROLE')
   migrated = true
@@ -179,12 +191,17 @@ describe('audit_log immutable + FK replay safety (real PG)', () => {
       /append-only/i,
     )
     await writer.end()
-    // 9) owner via SET ROLE (migrator path) allowed
+    // 9) owner via SET ROLE (migrator path) allowed — and actually mutates.
+    // Asserting the changed row matters: the original trigger returned NULL
+    // from the BEFORE branch for the owner, which silently suppresses the
+    // row instead of raising; "no error" alone would pass with zero effect.
     const mig = postgres(`postgresql://beaconhs_migrator:migpw@127.0.0.1:${port()}/beaconhs`, {
       max: 1,
     })
     await mig`set role beaconhs_owner`
     await mig`update audit_log set summary='owner-repair' where id = ${auditId}::uuid`
+    const [repaired] = await mig`select summary from audit_log where id = ${auditId}::uuid`
+    expect(repaired?.summary).toBe('owner-repair')
     await mig.end()
   })
 
@@ -224,16 +241,20 @@ describe('audit_log immutable + FK replay safety (real PG)', () => {
     await expect(s.unsafe(doBlock)).rejects.toThrowError(/wrong/i)
   })
 
-  it('journal/snapshot chain includes 0056 and 0055 untouched', () => {
+  it('journal/snapshot chain includes 0057 (with 0056 and 0055 untouched)', () => {
     // 15/16 static parts: full migrate chain length + file presence (live full migrate left to CI)
     const journal = JSON.parse(
       readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8'),
     )
     expect(journal.entries.at(-1)).toMatchObject({
+      idx: 57,
+      tag: '0057_audit_immutable_trigger_owner_fix',
+    })
+    expect(journal.entries.at(-2)).toMatchObject({
       idx: 56,
       tag: '0056_audit_log_and_fk_replay_safety',
     })
-    expect(journal.entries.at(-2)).toMatchObject({
+    expect(journal.entries.at(-3)).toMatchObject({
       idx: 55,
       tag: '0055_drop_redundant_single_col_fks',
     })

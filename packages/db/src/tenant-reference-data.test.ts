@@ -165,8 +165,34 @@ async function query<T = Record<string, unknown>>(
  * tenant was frozen (migration 0046). Its rows are therefore deleted explicitly first —
  * this teardown really does mean "gone", and it says so in two statements rather than
  * relying on a cascade that a future migration could change the meaning of.
+ *
+ * Audit rows are append-only for every role except `beaconhs_owner` (the
+ * immutable trigger, migration 0056) and the tenant FK is RESTRICT, so the
+ * teardown removes them FIRST as the owner — via `MIGRATION_DATABASE_URL`
+ * (the migrator login reaching the owner by `SET ROLE`, as `migrate.ts`
+ * does) — then deletes tenants with the superadmin credential.
  */
 async function wipeTenants(): Promise<void> {
+  const migratorUrl = process.env.MIGRATION_DATABASE_URL
+  if (!migratorUrl) throw new Error('MIGRATION_DATABASE_URL is not set for teardown.')
+  const adminUrl = process.env.SEED_TEST_SCRATCH_SUPERADMIN_URL
+  if (!adminUrl) throw new Error('SEED_TEST_SCRATCH_SUPERADMIN_URL is not set for teardown.')
+  const admin = postgres(adminUrl, { max: 1 })
+  try {
+    const rows = (await admin`select id::text as id from tenants`) as Array<{ id: string }>
+    const owner = postgres(migratorUrl, { max: 1 })
+    try {
+      await owner.unsafe('SET ROLE beaconhs_owner')
+      for (const row of rows) {
+        await owner.unsafe(`SET app.tenant_id='${row.id}'`)
+        await owner.unsafe(`DELETE FROM audit_log WHERE tenant_id='${row.id}'::uuid`)
+      }
+    } finally {
+      await owner.end({ timeout: 0 }).catch(() => {})
+    }
+  } finally {
+    await admin.end({ timeout: 0 }).catch(() => {})
+  }
   await query('DELETE FROM storage_object_deletion_outbox')
   await query('DELETE FROM storage_write_arms')
   await query('DELETE FROM in_flight_writes')
