@@ -815,7 +815,13 @@ export async function acknowledgeTitleTask(formData: FormData): Promise<void> {
         if (attachmentId) {
           await tx
             .delete(attachments)
-            .where(and(eq(attachments.id, attachmentId), eq(attachments.kind, 'signature')))
+            .where(
+              and(
+                eq(attachments.id, attachmentId),
+                eq(attachments.tenantId, ctx.tenantId),
+                eq(attachments.kind, 'signature'),
+              ),
+            )
         }
         return currentTask
       }
@@ -893,6 +899,7 @@ export async function revokeTitleTaskAck(formData: FormData): Promise<void> {
         .where(
           and(
             eq(attachments.id, acknowledgment.signatureAttachmentId),
+            eq(attachments.tenantId, ctx.tenantId),
             eq(attachments.kind, 'signature'),
           ),
         )

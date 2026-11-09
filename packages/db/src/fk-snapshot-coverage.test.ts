@@ -46,7 +46,7 @@ function foreignKeySignatures(table: TableConfig): Map<string, string> {
 }
 
 function snapshotForeignKeyNames(): Set<string> {
-  const snapshot = JSON.parse(readFileSync(new URL('0055_snapshot.json', metaFolder), 'utf8')) as {
+  const snapshot = JSON.parse(readFileSync(new URL('0056_snapshot.json', metaFolder), 'utf8')) as {
     tables: Record<string, { foreignKeys?: Record<string, { name: string }> }>
   }
   const names = new Set<string>()
@@ -253,7 +253,8 @@ describe('foreign key snapshot coverage (D8)', () => {
   it('installs the never-installed ppe_inspection_attachments tenant-attachment key', () => {
     const manifestNames = new Set(ATTACHMENT_TENANT_REFERENCES.map(attachmentTenantConstraintName))
     expect(manifestNames).toContain(ppeInspectionAttachmentsFk)
-    expect(snapshotForeignKeyNames().has(ppeInspectionAttachmentsFk)).toBe(false)
+    // 0056 snapshot now records it (Schema ↔ Snapshot converged).
+    expect(snapshotForeignKeyNames().has(ppeInspectionAttachmentsFk)).toBe(true)
     expect(dropMigrationSql).toContain(
       `ADD CONSTRAINT "${ppeInspectionAttachmentsFk}" FOREIGN KEY ("tenant_id", "attachment_id") REFERENCES "attachments" ("tenant_id", "id") ON DELETE CASCADE NOT VALID`,
     )

@@ -148,7 +148,16 @@ export async function deleteDashboard(id: string): Promise<Ok | Err> {
   // Soft delete — insight_dashboards carries deletedAt and every reader filters
   // on it, matching the cards' delete model.
   await ctx.db((tx) =>
-    tx.update(insightDashboards).set({ deletedAt: new Date() }).where(eq(insightDashboards.id, id)),
+    tx
+      .update(insightDashboards)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(insightDashboards.id, id),
+          eq(insightDashboards.userId, ctx.userId),
+          isNull(insightDashboards.deletedAt),
+        ),
+      ),
   )
   await recordAudit(ctx, {
     entityType: 'insight_dashboard',
@@ -174,7 +183,13 @@ export async function saveDashboardLayout(input: {
     tx
       .update(insightDashboards)
       .set({ layout: { widgets } })
-      .where(eq(insightDashboards.id, input.id)),
+      .where(
+        and(
+          eq(insightDashboards.id, input.id),
+          eq(insightDashboards.userId, ctx.userId),
+          isNull(insightDashboards.deletedAt),
+        ),
+      ),
   )
   revalidatePath('/insights')
   return { ok: true }
@@ -231,7 +246,13 @@ export async function saveDashboardParams(input: {
     tx
       .update(insightDashboards)
       .set({ params: parsed.data.params as DashboardParam[], paramMap })
-      .where(eq(insightDashboards.id, input.id)),
+      .where(
+        and(
+          eq(insightDashboards.id, input.id),
+          eq(insightDashboards.userId, ctx.userId),
+          isNull(insightDashboards.deletedAt),
+        ),
+      ),
   )
   revalidatePath('/insights')
   return { ok: true }
@@ -283,7 +304,13 @@ export async function publishDashboard(input: {
         publishedBy: ctx.userId,
         publishedAt: new Date(),
       })
-      .where(eq(insightDashboards.id, input.id)),
+      .where(
+        and(
+          eq(insightDashboards.id, input.id),
+          eq(insightDashboards.userId, ctx.userId),
+          isNull(insightDashboards.deletedAt),
+        ),
+      ),
   )
   await recordAudit(ctx, {
     entityType: 'insight_dashboard',
@@ -305,7 +332,13 @@ export async function unpublishDashboard(id: string): Promise<Ok | Err> {
     tx
       .update(insightDashboards)
       .set({ status: 'draft', publishedAt: null })
-      .where(eq(insightDashboards.id, id)),
+      .where(
+        and(
+          eq(insightDashboards.id, id),
+          eq(insightDashboards.userId, ctx.userId),
+          isNull(insightDashboards.deletedAt),
+        ),
+      ),
   )
   await recordAudit(ctx, {
     entityType: 'insight_dashboard',

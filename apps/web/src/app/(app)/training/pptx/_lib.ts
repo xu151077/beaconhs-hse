@@ -1,7 +1,7 @@
 // Shared helpers for the PowerPoint-master surfaces: deck-target resolution
 // (editor session, download route) and deck-file purge on deletion.
 
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { Database } from '@beaconhs/db'
 import { attachments, trainingContentItems, trainingLessons } from '@beaconhs/db/schema'
 import type { WopiDeckTarget } from '@/lib/wopi'
@@ -82,34 +82,73 @@ export async function loadDeckMaster(
 }
 
 /**
- * Purge a deck's PPTX master when its lesson / library item is deleted.
+ * Purge in the caller's transaction (same atomic boundary as entity delete).
+ * Keeps shared attachments: an id is only deleted when no remaining live
+ * lesson/library item still references it (reference-counted orphan check).
+ * Attachment-row deletion enqueues storage outbox via trigger (no direct I/O).
  */
-export async function purgeDeckAssets(
-  db: <T>(fn: (tx: Database) => Promise<T>) => Promise<T>,
+export async function purgeDeckAssetsTx(
+  tx: Database,
   decks: { sourceAttachmentId: string | null }[],
+  tenantId: string,
 ): Promise<number> {
   const ids = new Set<string>()
   for (const deck of decks) {
     if (deck.sourceAttachmentId) ids.add(deck.sourceAttachmentId)
   }
   if (ids.size === 0) return 0
-
-  return db(async (tx) => {
-    const found = await tx
-      .select({ id: attachments.id })
-      .from(attachments)
-      .where(inArray(attachments.id, [...ids]))
-    if (found.length > 0) {
-      await tx.delete(attachments).where(
+  const idList = [...ids].sort()
+  // Object-level serialization: lock candidates (stable order) before
+  // reference counting so concurrent delete/replace cannot interleave.
+  await tx
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(and(inArray(attachments.id, idList), eq(attachments.tenantId, tenantId)))
+    .orderBy(attachments.id)
+    .for('update')
+  // Shared-reference guard: skip ids still used by any live deck.
+  const sharedLessons = await tx
+    .select({ sourceAttachmentId: trainingLessons.sourceAttachmentId })
+    .from(trainingLessons)
+    .where(
+      and(
+        inArray(trainingLessons.sourceAttachmentId, idList),
+        eq(trainingLessons.tenantId, tenantId),
+        isNull(trainingLessons.deletedAt),
+      ),
+    )
+  const sharedItems = await tx
+    .select({ sourceAttachmentId: trainingContentItems.sourceAttachmentId })
+    .from(trainingContentItems)
+    .where(
+      and(
+        inArray(trainingContentItems.sourceAttachmentId, idList),
+        eq(trainingContentItems.tenantId, tenantId),
+        isNull(trainingContentItems.deletedAt),
+      ),
+    )
+  const shared = new Set(
+    [...sharedLessons, ...sharedItems].map((r) => r.sourceAttachmentId).filter(Boolean) as string[],
+  )
+  const deletable = idList.filter((id) => !shared.has(id))
+  if (deletable.length === 0) return 0
+  const found = await tx
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(and(inArray(attachments.id, deletable), eq(attachments.tenantId, tenantId)))
+  if (found.length > 0) {
+    await tx.delete(attachments).where(
+      and(
         inArray(
           attachments.id,
           found.map((r) => r.id),
         ),
-      )
-    }
-    // The attachment-delete trigger records a durable object-deletion intent
-    // in this transaction. The worker retries the idempotent storage removal;
-    // no best-effort second path can silently strand a PowerPoint object.
-    return found.length
-  })
+        eq(attachments.tenantId, tenantId),
+      ),
+    )
+  }
+  // The attachment-delete trigger records a durable object-deletion intent
+  // in this transaction. The worker retries the idempotent storage removal;
+  // no best-effort second path can silently strand a PowerPoint object.
+  return found.length
 }

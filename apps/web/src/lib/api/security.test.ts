@@ -39,6 +39,15 @@ describe('public API security policy', () => {
     expect(hasBuilderAppGrant([templateId], templateId)).toBe(true)
   })
 
+  it('requires payload ownership before an API PATCH rewrites a response', () => {
+    const fs = require('node:fs') as typeof import('node:fs')
+    const source = fs.readFileSync(new URL('./builder-apps.ts', import.meta.url), 'utf8')
+    // The route only checks the update.own permission; the handler must also
+    // enforce canEditResponsePayload (mirrors UI fill actions).
+    expect(source).toContain('canEditResponsePayload(ctx, row.response)')
+    expect(source).toContain('ApiError.forbidden')
+  })
+
   it('binds idempotency to method, path, and canonical JSON content', () => {
     const first = new Request('http://localhost/api/v1/incidents', { method: 'POST' })
     const same = new Request('http://localhost/api/v1/incidents', { method: 'POST' })

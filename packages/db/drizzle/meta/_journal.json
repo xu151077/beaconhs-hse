@@ -386,6 +386,13 @@
       "when": 1794177839709,
       "tag": "0055_drop_redundant_single_col_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": 7,
+      "when": 1794211734486,
+      "tag": "0056_audit_log_and_fk_replay_safety",
+      "breakpoints": true
     }
   ]
 }

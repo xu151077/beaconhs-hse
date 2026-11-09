@@ -11,6 +11,10 @@
  * `training_lessons` / `training_content_items` `content_html` and
  * `form_responses` `data` / `draft_data` / `workflow_state`.
  *
+ * Note: unlike the v1 cutover this script intentionally asserts no
+ * storage target — it mints HMACs and rewrites JSON/HTML only, performing
+ * no object-store I/O, so the bucket-private proof lives with v1.
+ *
  * Audit mode (default) inspects and reports without writing. Apply mode
  * repeats the preflight under a dedicated session advisory lock and then
  * atomically CAS-rewrites each changed row, followed by an idempotency

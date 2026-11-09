@@ -281,6 +281,8 @@ describe('Phase 11-F introduced no new architecture', () => {
       // ppe_inspection_attachments tenant-attachment FK; no new relation and no
       // report projection is touched.
       '0055_drop_redundant_single_col_fks',
+      // Compensating: idempotent FK convergence + audit trigger; no report relation.
+      '0056_audit_log_and_fk_replay_safety',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))
