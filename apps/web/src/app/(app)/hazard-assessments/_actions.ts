@@ -87,6 +87,10 @@ async function resolveAssessmentAccess(
   ctx: HazidCtx,
   assessmentId: string,
 ): Promise<{ locked: boolean }> {
+  // Funnel guard: every assessmentId reaching here came from FormData or
+  // request params. A non-UUID would turn a missing record into a Postgres
+  // uuid-cast 500; treat it exactly like a record that does not exist.
+  if (!isUuid(assessmentId)) throw new Error('Assessment not found')
   const row = await ctx.db(async (tx) => {
     const [found] = await tx
       .select({
@@ -122,6 +126,7 @@ async function lockVisibleAssessment(
   tx: HazidTx,
   assessmentId: string,
 ): Promise<{ locked: boolean }> {
+  if (!isUuid(assessmentId)) throw new Error('Assessment not found')
   const [row] = await tx
     .select({
       reportedByTenantUserId: hazidAssessments.reportedByTenantUserId,

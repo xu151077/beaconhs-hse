@@ -21,6 +21,7 @@ import { assertCan } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit, recordAuditInTransaction } from '@/lib/audit'
 import { isBulkActionId, newBulkActionBatchId, parseBulkActionIds } from '@/lib/bulk-actions'
+import { isUuid } from '@/lib/list-params'
 import { softDeleteDocumentsInTransaction } from '@/lib/document-deletion'
 import {
   livePublishedDocumentIds,
@@ -149,7 +150,7 @@ export async function deleteDocument(formData: FormData): Promise<void> {
   const ctx = await requireRequestContext()
   assertCan(ctx, 'documents.manage')
   const id = String(formData.get('id') ?? '')
-  if (!id) throw new Error('Missing document id')
+  if (!id || !isUuid(id)) throw new Error('Document not found.')
 
   const { deleted, protectedIds } = await softDeleteDocuments(ctx, [id])
   if (deleted.length === 0) {
