@@ -35,6 +35,7 @@ import {
 } from '@beaconhs/compliance'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit, recordAuditInTransaction } from '@/lib/audit'
+import { isUuid } from '@/lib/list-params'
 import { IMPERSONATION_TTL_MS } from '@/lib/impersonation'
 import { sendMembershipInviteEmail } from '@/lib/invite-email'
 import { upsertRoleAssignments } from '@/lib/role-assignment-upsert'
@@ -382,7 +383,8 @@ export async function setMemberStatus(formData: FormData): Promise<void> {
   const ctx = await requireUserAdmin('change membership status')
   const membershipId = String(formData.get('membershipId') ?? '')
   const status = String(formData.get('status') ?? '')
-  if (!membershipId || (status !== 'active' && status !== 'suspended')) return
+  if (!membershipId || !isUuid(membershipId) || (status !== 'active' && status !== 'suspended'))
+    return
 
   const result = await ctx.db(async (tx) => {
     const [member] = await tx
