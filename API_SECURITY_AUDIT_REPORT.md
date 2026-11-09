@@ -13,15 +13,15 @@ of them was found leaking beyond it.
 
 ## Coverage stats
 
-| Item | Count |
-|---|---|
-| Route handlers inventoried | 75 |
-| Routes with a real HTTP probe | 20 (search, picker, attachments × v1/v2/cross, v1 list, people export, domain-events, kiosk, verify) |
-| Routes covered by automated permission tests (route.test / contract suites) | 66+ route-level assertions incl. the denied-before-DB semantics |
-| Probes executed | 11 (E1–E14) |
-| PASS | 11 (+ 3 direct-DB RLS checks) |
-| FAIL / P0 / P1 / P2 | 0 / 0 / 0 / 0 |
-| P3 (informational) | 1 |
+| Item                                                                        | Count                                                                                                |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Route handlers inventoried                                                  | 75                                                                                                   |
+| Routes with a real HTTP probe                                               | 20 (search, picker, attachments × v1/v2/cross, v1 list, people export, domain-events, kiosk, verify) |
+| Routes covered by automated permission tests (route.test / contract suites) | 66+ route-level assertions incl. the denied-before-DB semantics                                      |
+| Probes executed                                                             | 11 (E1–E14)                                                                                          |
+| PASS                                                                        | 11 (+ 3 direct-DB RLS checks)                                                                        |
+| FAIL / P0 / P1 / P2                                                         | 0 / 0 / 0 / 0                                                                                        |
+| P3 (informational)                                                          | 1                                                                                                    |
 
 ## Findings
 

@@ -107,5 +107,5 @@ unset since the Round-1 E2E cleanup.
 See CONNECTION_POOL_ISOLATION_AUDIT.md.
 
 | run | requests | elapsed | Acme ok | leaks | phase ok | leaks | aborts | DB unchanged |
-|---|---|---|---|---|---|---|---|---|
-| C1 | 120 | 4.9s | 60 | 0 | 60 | 0 | 20 | yes |
+| --- | -------- | ------- | ------- | ----- | -------- | ----- | ------ | ------------ |
+| C1  | 120      | 4.9s    | 60      | 0     | 60       | 0     | 20     | yes          |

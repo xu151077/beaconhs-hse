@@ -15,12 +15,12 @@ pg_dump "$MIGRATION_DATABASE_URL" \
 
 ## 2. Rollback scenarios
 
-| Scenario | What breaks | Rollback |
-|---|---|---|
-| Apply fails midway | nothing | **auto-rollback**: one transaction; rerun the audit to see the same plan |
-| Apply commits, content surprises | images/signature refs look wrong | *(prefer)* leave it — the rewrite is deterministically re-runnable; the pre-apply dump is the byte-for-byte exit: restore the three tables from the dump **before any new writes land on them** (restore overwrites post-apply writes on touched rows — dangerous afterwards) |
-| Code deploy regresses | app error | redeploy previous build; v1 caps still 404 in stored text (backfill idempotency note below) |
-| 0055 migration needs reverting | (already safe) | 0055 is a data-truth alignment; **never re-add the 9 dropped duplicates or remove the installed FK as a "revert"** — the snapshots and the audit allowlist pin them. Reverting the *release* is the code rollback above, not a constraint rollback. |
+| Scenario                         | What breaks                      | Rollback                                                                                                                                                                                                                                                                      |
+| -------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apply fails midway               | nothing                          | **auto-rollback**: one transaction; rerun the audit to see the same plan                                                                                                                                                                                                      |
+| Apply commits, content surprises | images/signature refs look wrong | _(prefer)_ leave it — the rewrite is deterministically re-runnable; the pre-apply dump is the byte-for-byte exit: restore the three tables from the dump **before any new writes land on them** (restore overwrites post-apply writes on touched rows — dangerous afterwards) |
+| Code deploy regresses            | app error                        | redeploy previous build; v1 caps still 404 in stored text (backfill idempotency note below)                                                                                                                                                                                   |
+| 0055 migration needs reverting   | (already safe)                   | 0055 is a data-truth alignment; **never re-add the 9 dropped duplicates or remove the installed FK as a "revert"** — the snapshots and the audit allowlist pin them. Reverting the _release_ is the code rollback above, not a constraint rollback.                           |
 
 **Idempotency note:** after a completed apply, re-running the script's audit
 still shows `pending = 0` (caps are deterministic v2). Re-running `--apply`
@@ -46,6 +46,7 @@ rewrite against newer rows, not the dump.
 ## 5. Restore verification
 
 After any restore:
+
 1. `pnpm db:migrate` → `Migration ledger valid: N applied, 0 pending`.
 2. Re-run A3 audit → `pending = 0`, `changedRows = 0`.
 3. DB orphan scan: no `/api/attachments/` strings in the persisted cells that

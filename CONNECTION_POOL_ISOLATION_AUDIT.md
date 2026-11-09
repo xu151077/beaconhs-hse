@@ -19,9 +19,9 @@ all probe keys deleted (api_keys back to 0).
 
 ## Numbers
 
-| run | total | elapsed | Acme ok | Acme non-200 | Acme leaks | phase ok | phase non-200 | phase leaks | aborts absorbed | DB unchanged |
-|---|---|---|---|---|---|---|---|---|---|---|
-| C1 | **120** | **4.9s** | 60/60 | 0 | **0** | 60/60 | 0 | **0** | 20 | ✓ (4 incidents, 0 keys after cleanup) |
+| run | total   | elapsed  | Acme ok | Acme non-200 | Acme leaks | phase ok | phase non-200 | phase leaks | aborts absorbed | DB unchanged                          |
+| --- | ------- | -------- | ------- | ------------ | ---------- | -------- | ------------- | ----------- | --------------- | ------------------------------------- |
+| C1  | **120** | **4.9s** | 60/60   | 0            | **0**      | 60/60    | 0             | **0**       | 20              | ✓ (4 incidents, 0 keys after cleanup) |
 
 Each Acme response's row set was a subset of Acme's 4 incidents; each
 phase-bs response was empty. No request of either tenant ever contained a
@@ -34,9 +34,9 @@ pool cannot carry one tenant's visibility into another's request.
 
 ## Findings grade
 
-| P0 | P1 | P2 | P3 |
-|---|---|---|---|
-| 0 | 0 | 0 | 0 |
+| P0  | P1  | P2  | P3  |
+| --- | --- | --- | --- |
+| 0   | 0   | 0   | 0   |
 
 No P-level finding. Highest-sensitivity operational fact: pool pressure under
 30 lanes did not produce cross-tenant rows in a single one of 120 responses;
