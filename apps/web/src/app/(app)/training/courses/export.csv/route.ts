@@ -12,7 +12,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickEnum } from '@/lib/list-params'
+import { parseListParams, pickEnum, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -41,7 +41,7 @@ async function getHandler(req: NextRequest) {
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(trainingCourses.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(trainingCourses.name, term), ilike(trainingCourses.code, term))
       if (cond) filters.push(cond)
     }

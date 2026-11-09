@@ -40,7 +40,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
 import { createDraftResponse } from '@/app/(app)/apps/templates/[id]/fill/actions'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -241,7 +241,7 @@ export default async function AppRecordsPage({
     if (vis) filters.push(vis)
     if (statusFilter) filters.push(eq(formResponses.status, statusFilter))
     if (searchQuery) {
-      const term = `%${searchQuery}%`
+      const term = `%${escapeIlike(searchQuery)}%`
       filters.push(
         sql`concat_ws(' ', ${formResponses.id}::text, coalesce(${people.firstName}, ''), coalesce(${people.lastName}, ''), coalesce(${orgUnits.name}, ''), coalesce(${user.name}, '')) ilike ${term}`,
       )

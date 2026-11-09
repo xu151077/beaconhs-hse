@@ -18,7 +18,7 @@ import {
 } from '@beaconhs/ui'
 import { crews, kioskScans, orgUnits, people } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { Pagination } from '@/components/pagination'
 import { ListCard, MobileCardList } from '@/components/list-card'
 import { FilterChips } from '@/components/filter-bar'
@@ -87,7 +87,7 @@ export default async function KioskHistoryPage({
     if (kindFilter === 'in' || kindFilter === 'out')
       filters.push(eq(kioskScans.kind, kindFilter as 'in' | 'out'))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(people.firstName, term), ilike(people.lastName, term))
       if (cond) filters.push(cond)
     }

@@ -45,7 +45,13 @@ import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickString, pickUuid } from '@/lib/list-params'
+import {
+  buildExportHref,
+  parseListParams,
+  pickString,
+  pickUuid,
+  escapeIlike,
+} from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -119,7 +125,7 @@ export default async function InspectionRecordsPage({
     const filters: SQL<unknown>[] = [isNull(inspectionRecords.deletedAt)]
     if (vis) filters.push(vis)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const c = or(
         ilike(inspectionRecords.reference, term),
         ilike(inspectionTypes.name, term),

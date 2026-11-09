@@ -9,6 +9,7 @@
 // belt-and-braces, since these are tenant-wide bulk operations keyed by tag text.
 
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import { journalEntries, journalEntryTags, journalTags } from '@beaconhs/db/schema'
 import type { RequestContext } from '@beaconhs/tenant'
 
@@ -91,7 +92,7 @@ export async function listManagedTags(
   return ctx.db(async (tx) => {
     const conditions: SQL[] = []
     if (options.q) {
-      const term = `%${options.q}%`
+      const term = `%${escapeIlike(options.q)}%`
       conditions.push(sql`(name ilike ${term} or description ilike ${term})`)
     }
     if (options.status) conditions.push(sql`defined = ${options.status === 'defined'}`)

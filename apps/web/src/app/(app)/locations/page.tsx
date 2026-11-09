@@ -35,7 +35,7 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { getTenantHierarchy } from '@/lib/org-hierarchy'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { SortableTh } from '@/components/sortable-th'
@@ -89,7 +89,7 @@ export default async function LocationsPage({
   const { rows, total, activeCount, archivedCount } = await ctx.db(async (tx) => {
     const baseFilters: SQL<unknown>[] = [eq(orgUnits.level, 'customer')]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(orgUnits.name, term), ilike(orgUnits.code, term))
       if (cond) baseFilters.push(cond)
     }

@@ -11,7 +11,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SAFE_DISTANCE_PERMISSION, safeDistanceScopeWhere } from '@/lib/safe-distance-access'
 import {
   pressureUnitLabel,
@@ -60,7 +60,7 @@ async function getHandler(req: NextRequest) {
     const scopeWhere = await safeDistanceScopeWhere(ctx, tx)
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(safeDistanceRecords.reference, term),
         ilike(safeDistanceRecords.name, term),

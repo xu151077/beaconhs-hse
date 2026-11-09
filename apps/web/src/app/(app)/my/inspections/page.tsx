@@ -23,7 +23,7 @@ import {
 import { inspectionRecords, inspectionTypes, orgUnits } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -99,7 +99,7 @@ export default async function MyInspectionsPage({
       isNull(inspectionRecords.deletedAt),
     ]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(inspectionRecords.reference, term),
         ilike(inspectionRecords.notes, term),

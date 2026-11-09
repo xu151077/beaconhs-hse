@@ -18,7 +18,7 @@ import {
 } from '@beaconhs/ui'
 import { personGroupMemberships, personGroups } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { parseListParams } from '@/lib/list-params'
+import { parseListParams, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
@@ -59,7 +59,7 @@ export default async function GroupsPage({
 
     const filters: SQL<unknown>[] = [isNull(personGroups.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(personGroups.name, term), ilike(personGroups.description, term))
       if (cond) filters.push(cond)
     }

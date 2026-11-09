@@ -16,7 +16,14 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickEnum, pickString, pickUuid } from '@/lib/list-params'
+import {
+  buildExportHref,
+  parseListParams,
+  pickEnum,
+  pickString,
+  pickUuid,
+  escapeIlike,
+} from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -109,7 +116,7 @@ export default async function EquipmentPage({
       const filters: SQL<unknown>[] = [isNull(equipmentItems.deletedAt)]
       if (vis) filters.push(vis)
       if (params.q) {
-        const term = `%${params.q}%`
+        const term = `%${escapeIlike(params.q)}%`
         const cond = or(
           ilike(equipmentItems.assetTag, term),
           ilike(equipmentItems.name, term),

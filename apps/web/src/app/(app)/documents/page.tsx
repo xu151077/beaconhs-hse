@@ -10,7 +10,13 @@ import { documentCategories, documentTypes, documents } from '@beaconhs/db/schem
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { documentReadFilter } from '@/lib/assistant/doc-access'
-import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
+import {
+  buildExportHref,
+  isUuid,
+  parseListParams,
+  pickString,
+  escapeIlike,
+} from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -84,7 +90,7 @@ export default async function DocumentsPage({
       const visibility = documentReadFilter(ctx)
       if (visibility) filters.push(visibility)
       if (params.q) {
-        const term = `%${params.q}%`
+        const term = `%${escapeIlike(params.q)}%`
         const cond = or(ilike(documents.title, term), ilike(documents.description, term))
         if (cond) filters.push(cond)
       }

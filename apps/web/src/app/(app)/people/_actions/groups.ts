@@ -19,7 +19,7 @@ import {
 import { requireRequestContext } from '@/lib/auth'
 import { assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAuditInTransaction } from '@/lib/audit'
-import { isUuid } from '@/lib/list-params'
+import { isUuid, escapeIlike } from '@/lib/list-params'
 import {
   lockPersonGroupMembershipGraph,
   refreshPersonGroupCache,
@@ -145,7 +145,7 @@ export async function deleteGroup(formData: FormData): Promise<void> {
       .limit(1)
       .for('update')
     if (!before) return null
-    const referenceNeedle = `%${id}%`
+    const referenceNeedle = `%${escapeIlike(id)}%`
     const [notificationUse, flowUse, roleUse] = await Promise.all([
       tx
         .select({ count: count() })

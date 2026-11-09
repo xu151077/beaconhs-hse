@@ -26,7 +26,7 @@ import {
 import { assertCan, can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { isUuid, mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { formatDate } from '@/lib/datetime'
 import { ListPageLayout } from '@/components/page-layout'
 import { ListCard, MobileCardList } from '@/components/list-card'
@@ -104,7 +104,7 @@ export default async function EquipmentInspectionsPage({
     filters.push(eq(equipmentInspectionRecords.status, statusFilter as (typeof STATUSES)[number]))
   }
   if (params.q) {
-    const term = `%${params.q}%`
+    const term = `%${escapeIlike(params.q)}%`
     const cond = or(
       ilike(equipmentInspectionRecords.reference, term),
       ilike(equipmentItems.name, term),

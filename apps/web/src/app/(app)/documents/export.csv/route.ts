@@ -11,7 +11,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -52,7 +52,7 @@ async function getHandler(req: NextRequest) {
     // q/status/category/type filters the Export button forwards.
     const filters: SQL<unknown>[] = [isNull(documents.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(documents.title, term), ilike(documents.description, term))
       if (cond) filters.push(cond)
     }

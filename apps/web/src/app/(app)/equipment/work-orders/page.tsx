@@ -26,7 +26,7 @@ import {
 import { htmlToSnippet } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickEnum, pickString, pickUuid } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString, pickUuid, escapeIlike } from '@/lib/list-params'
 import { formatDate } from '@/lib/datetime'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -128,7 +128,7 @@ export default async function WorkOrdersPage({
     })
     const filters: SQL<unknown>[] = scope ? [scope] : []
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(equipmentWorkOrders.reference, term),
         ilike(equipmentWorkOrders.summary, term),

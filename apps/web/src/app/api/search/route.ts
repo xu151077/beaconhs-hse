@@ -63,7 +63,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   const escaped = escapeIlike(rawQ)
-  const term = `%${escaped}%`
+  const term = `%${escapeIlike(escaped)}%`
 
   // "Last year" cutoff applied only to high-volume entities (incidents). The
   // detail pages still allow searching deeper via the per-entity list.

@@ -36,7 +36,7 @@ import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { canManageModule } from '@/lib/module-admin/guard'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickString, pickUuid } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SearchFilter } from '@/components/search-filter'
 import { Pagination } from '@/components/pagination'
@@ -109,7 +109,7 @@ export default async function SkillsPage({
     const filters: SQL<unknown>[] = [isNull(trainingSkillAssignments.deletedAt)]
     if (vis) filters.push(vis)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(people.firstName, term),
         ilike(people.lastName, term),

@@ -20,7 +20,7 @@ import { equipmentItems, equipmentTypes } from '@beaconhs/db/schema'
 import { assertCan } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
 import { RemoteSearchFilter } from '@/components/remote-search-select'
@@ -70,7 +70,7 @@ export default async function BulkQrPage({
     })
     if (scope) filters.push(scope)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(equipmentItems.assetTag, term), ilike(equipmentItems.name, term))
       if (cond) filters.push(cond)
     }

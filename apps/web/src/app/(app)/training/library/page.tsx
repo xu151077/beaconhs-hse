@@ -20,7 +20,7 @@ import {
 import { Badge, Button, EmptyState, Input, PageHeader, Select } from '@beaconhs/ui'
 import { trainingContentItems, trainingLessons } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { ListPageLayout } from '@/components/page-layout'
@@ -79,7 +79,7 @@ export default async function ContentLibraryPage({
   const { items, itemCount, usageMap, kindCounts, tagVocab } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(trainingContentItems.deletedAt)]
     if (q) {
-      const term = `%${q}%`
+      const term = `%${escapeIlike(q)}%`
       const c = or(
         ilike(trainingContentItems.title, term),
         ilike(trainingContentItems.description, term),

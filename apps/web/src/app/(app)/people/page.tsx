@@ -17,6 +17,7 @@ import {
   parseListParams,
   pickString,
   pickUuid,
+  escapeIlike,
 } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
@@ -84,7 +85,7 @@ export default async function PeoplePage({
     // native tier to apply — the catalogue says so at the key itself.
     const baseFilters: SQL<unknown>[] = [isNull(people.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(people.firstName, term),
         ilike(people.lastName, term),

@@ -18,7 +18,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickEnum, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, pickString, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -59,7 +59,7 @@ async function getHandler(req: NextRequest) {
     })
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(equipmentItems.assetTag, term),
         ilike(equipmentItems.name, term),

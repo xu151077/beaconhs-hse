@@ -17,7 +17,7 @@ import {
 } from '@beaconhs/ui'
 import { trainingSkillAuthorities, trainingSkillTypes } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { parseListParams } from '@/lib/list-params'
+import { parseListParams, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { SearchInput } from '@/components/search-input'
 import { TrainingSubNav } from '../_components/training-sub-nav'
@@ -51,7 +51,7 @@ export default async function TrainingAuthoritiesPage({
   const { rows, total } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = []
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(trainingSkillAuthorities.name, term),
         ilike(trainingSkillAuthorities.code, term),

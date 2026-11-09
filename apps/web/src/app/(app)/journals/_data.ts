@@ -44,7 +44,7 @@ import {
   snippetOf,
   todayISO,
 } from './_lib'
-import { isUuid } from '@/lib/list-params'
+import { isUuid, escapeIlike } from '@/lib/list-params'
 import { CSV_EXPORT_QUERY_LIMIT } from '@/lib/csv'
 import type {
   AuthorRef,
@@ -145,7 +145,7 @@ async function entryWhere(
   if (scope) conds.push(scope)
 
   if (filters.q) {
-    const term = `%${filters.q}%`
+    const term = `%${escapeIlike(filters.q)}%`
     const ft = sql`${journalEntries.searchVector} @@ plainto_tsquery('english', ${filters.q})`
     conds.push(or(ft, ilike(journalEntries.title, term), ilike(journalEntries.bodyText, term))!)
   }

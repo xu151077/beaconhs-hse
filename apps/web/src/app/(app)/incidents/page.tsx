@@ -11,7 +11,7 @@ import { IncidentsSubNav } from './_sub-nav'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, parseListParams, pickEnum } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickEnum, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -82,7 +82,7 @@ export default async function IncidentsPage({
     const filters: SQL<unknown>[] = [isNull(incidents.deletedAt)]
     if (vis) filters.push(vis)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(incidents.reference, term),
         ilike(incidents.title, term),

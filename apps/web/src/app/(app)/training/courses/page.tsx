@@ -20,7 +20,7 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { canManageModule } from '@/lib/module-admin/guard'
-import { buildExportHref, parseListParams, pickEnum } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickEnum, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -65,7 +65,7 @@ export default async function TrainingCoursesPage({
   const { rows, total, deliveryCounts } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(trainingCourses.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(trainingCourses.name, term), ilike(trainingCourses.code, term))
       if (cond) filters.push(cond)
     }
