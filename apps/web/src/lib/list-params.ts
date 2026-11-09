@@ -18,6 +18,19 @@ type Search = Record<string, string | string[] | undefined>
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
+ * Escape a user-provided search string for use inside a Postgres ILIKE
+ * pattern. Without this, `%` and `_` in the search box act as wildcards
+ * (a lone `%` matches every row in scope), and a stray backslash can break
+ * the pattern. The escape character in Postgres LIKE is the backslash, so
+ * this pairs with plain `ilike(column, \`%${escapeIlike(q)}%\`)` with no
+ * `ESCAPE` clause. It must be applied to EVERY interpolated search term:
+ * parameterising the value alone does not prevent wildcard injection.
+ */
+export function escapeIlike(value: string): string {
+  return value.replace(/[%_\\]/g, (m) => `\\${m}`)
+}
+
+/**
  * True when `value` is a UUID. Use to guard `[id]` route params before querying
  * a uuid PK — a non-UUID segment (e.g. a stale `/new` path) otherwise throws a
  * Postgres "invalid input syntax for type uuid" error instead of a clean 404.

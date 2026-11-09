@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUuid, parsePrefixedListParams, pickEnum, pickUuid } from './list-params'
+import { escapeIlike, isUuid, parsePrefixedListParams, pickEnum, pickUuid } from './list-params'
 
 describe('isUuid', () => {
   it('accepts canonical UUIDs regardless of hexadecimal case', () => {
@@ -17,6 +17,14 @@ describe('isUuid', () => {
     'zzzzzzzz-e29b-41d4-a716-446655440000',
   ])('rejects malformed UUID input %j', (value) => {
     expect(isUuid(value)).toBe(false)
+  })
+})
+
+describe('escapeIlike', () => {
+  it('escapes wildcard characters so a search matches literally', () => {
+    expect(escapeIlike('alarm % 10_0 \\ done')).toBe('alarm \\% 10\\_0 \\\\ done')
+    expect(escapeIlike('plain words')).toBe('plain words')
+    expect(escapeIlike('100%')).toBe('100\\%')
   })
 })
 

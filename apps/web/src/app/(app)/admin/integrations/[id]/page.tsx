@@ -26,7 +26,7 @@ import { type SyncEntityStat, syncConnections, syncRuns } from '@beaconhs/db/sch
 import { getConnector, toConnectorSummary } from '@beaconhs/sync'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDateTime } from '@/lib/datetime'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { PageContainer } from '@/components/page-layout'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
@@ -121,9 +121,9 @@ export default async function ConnectionPage({
       baseWhere,
       runParams.q
         ? or(
-            ilike(syncRuns.trigger, `%${runParams.q}%`),
-            ilike(syncRuns.status, `%${runParams.q}%`),
-            ilike(syncRuns.error, `%${runParams.q}%`),
+            ilike(syncRuns.trigger, `%${escapeIlike(runParams.q)}%`),
+            ilike(syncRuns.status, `%${escapeIlike(runParams.q)}%`),
+            ilike(syncRuns.error, `%${escapeIlike(runParams.q)}%`),
           )
         : undefined,
       runStatus ? eq(syncRuns.status, runStatus) : undefined,

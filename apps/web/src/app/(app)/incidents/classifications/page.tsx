@@ -39,7 +39,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { getRegulatoryTerminology } from '@beaconhs/tenant'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { isUuid, mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -323,10 +323,10 @@ export default async function ClassificationsPage({
     const parent = alias(incidentClassifications, 'incident_classification_parent')
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(incidentClassifications.name, `%${params.q}%`),
-          ilike(incidentClassifications.code, `%${params.q}%`),
-          ilike(incidentClassifications.description, `%${params.q}%`),
-          ilike(parent.name, `%${params.q}%`),
+          ilike(incidentClassifications.name, `%${escapeIlike(params.q)}%`),
+          ilike(incidentClassifications.code, `%${escapeIlike(params.q)}%`),
+          ilike(incidentClassifications.description, `%${escapeIlike(params.q)}%`),
+          ilike(parent.name, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const status =

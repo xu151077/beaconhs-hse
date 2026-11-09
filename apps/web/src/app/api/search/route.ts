@@ -23,6 +23,7 @@ import {
 import { can } from '@beaconhs/tenant'
 import { getRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
+import { escapeIlike } from '@/lib/list-params'
 import { moduleScopeWhere } from '@/lib/visibility'
 import { documentReadFilter } from '@/lib/assistant/doc-access'
 
@@ -49,13 +50,6 @@ export type SearchResponse = {
 
 const PER_GROUP_LIMIT = 5
 const MAX_QUERY_LEN = 100
-
-function escapeIlike(q: string): string {
-  // postgres ILIKE treats _ and % as wildcards; escape so the user's typed
-  // value matches as a substring.
-  return q.replace(/[%_\\]/g, (m) => `\\${m}`)
-}
-
 export async function GET(req: Request): Promise<NextResponse> {
   const ctx = await getRequestContext()
   if (!ctx) {

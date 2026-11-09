@@ -42,7 +42,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -107,7 +107,10 @@ export default async function SeedTemplatesPage({
     db,
     async (tx) => {
       const search: SQL<unknown> | undefined = params.q
-        ? or(ilike(tenants.name, `%${params.q}%`), ilike(tenants.slug, `%${params.q}%`))
+        ? or(
+            ilike(tenants.name, `%${escapeIlike(params.q)}%`),
+            ilike(tenants.slug, `%${escapeIlike(params.q)}%`),
+          )
         : undefined
       const state =
         stateFilter === 'seeded'

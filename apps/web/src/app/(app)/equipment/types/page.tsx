@@ -28,7 +28,7 @@ import {
 import { requireRequestContext } from '@/lib/auth'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit, recordAuditInTransaction } from '@/lib/audit'
-import { mergeHref, parseListParams, pickUuid } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickUuid, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -169,8 +169,8 @@ export default async function EquipmentTypesPage({
     await ctx.db(async (tx) => {
       const search: SQL<unknown> | undefined = params.q
         ? or(
-            ilike(equipmentTypes.name, `%${params.q}%`),
-            ilike(equipmentTypes.description, `%${params.q}%`),
+            ilike(equipmentTypes.name, `%${escapeIlike(params.q)}%`),
+            ilike(equipmentTypes.description, `%${escapeIlike(params.q)}%`),
           )
         : undefined
 

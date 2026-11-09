@@ -35,7 +35,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { assertCanManageModule, requireModuleManage } from '@/lib/module-admin/guard'
 import { recordAuditInTransaction } from '@/lib/audit'
 import { deletePpeTypeInTransaction } from '@/lib/ppe-type-deletion'
-import { parseListParams } from '@/lib/list-params'
+import { parseListParams, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -88,7 +88,10 @@ export default async function PpeTypesPage({
 
   const { rows, total } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
-      ? or(ilike(ppeTypes.name, `%${params.q}%`), ilike(ppeTypes.category, `%${params.q}%`))
+      ? or(
+          ilike(ppeTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(ppeTypes.category, `%${escapeIlike(params.q)}%`),
+        )
       : undefined
 
     const itemCount = sql<number>`count(distinct ${ppeItems.id})`.mapWith(Number)

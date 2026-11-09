@@ -27,7 +27,7 @@ import { incidentHoursPeriods, orgUnits } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -197,10 +197,10 @@ export default async function HoursPage({
     const selectedSiteId = siteRows.some((site) => site.id === siteParam) ? siteParam : undefined
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(incidentHoursPeriods.periodLabel, `%${params.q}%`),
-          ilike(orgUnits.name, `%${params.q}%`),
-          sql`${incidentHoursPeriods.periodStart}::text ilike ${`%${params.q}%`}`,
-          sql`${incidentHoursPeriods.periodEnd}::text ilike ${`%${params.q}%`}`,
+          ilike(incidentHoursPeriods.periodLabel, `%${escapeIlike(params.q)}%`),
+          ilike(orgUnits.name, `%${escapeIlike(params.q)}%`),
+          sql`${incidentHoursPeriods.periodStart}::text ilike ${`%${escapeIlike(params.q)}%`}`,
+          sql`${incidentHoursPeriods.periodEnd}::text ilike ${`%${escapeIlike(params.q)}%`}`,
         )
       : undefined
     const siteFilter =

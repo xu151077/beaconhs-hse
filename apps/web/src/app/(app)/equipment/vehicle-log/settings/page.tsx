@@ -7,7 +7,7 @@ import { ListPageLayout } from '@/components/page-layout'
 import { EquipmentSubNav } from '@/components/equipment-sub-nav'
 import { driverVehicleLogMode } from '../_service'
 import { VehicleLogSettingsForm } from './_form.client'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -53,9 +53,9 @@ export default async function VehicleLogSettingsPage({
       baseWhere,
       params.q
         ? or(
-            ilike(people.firstName, `%${params.q}%`),
-            ilike(people.lastName, `%${params.q}%`),
-            ilike(people.employeeNo, `%${params.q}%`),
+            ilike(people.firstName, `%${escapeIlike(params.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(params.q)}%`),
+            ilike(people.employeeNo, `%${escapeIlike(params.q)}%`),
           )
         : undefined,
       overrideMode ? eq(modeExpression, overrideMode) : undefined,

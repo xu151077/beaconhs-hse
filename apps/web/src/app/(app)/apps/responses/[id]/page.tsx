@@ -60,7 +60,7 @@ import { Section } from '@/components/section'
 import { DetailPageLayout } from '@/components/page-layout'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
 import { computeFormScore } from '@/app/(app)/apps/_lib/score-router'
-import { isUuid, pickString } from '@/lib/list-params'
+import { isUuid, pickString, escapeIlike } from '@/lib/list-params'
 import { WorkflowPanel, type WorkflowStepProp } from './_workflow-panel'
 import { FlowApprovals } from '@/components/flows/flow-approvals'
 import { getPendingFlowGatesForSubject } from '@/lib/flows/gate-store'
@@ -264,9 +264,9 @@ export default async function FormResponsePage({
         eq(formResponseComments.responseId, id),
         listState.comments.q
           ? or(
-              ilike(formResponseComments.body, `%${listState.comments.q}%`),
-              ilike(tenantUsers.displayName, `%${listState.comments.q}%`),
-              ilike(user.name, `%${listState.comments.q}%`),
+              ilike(formResponseComments.body, `%${escapeIlike(listState.comments.q)}%`),
+              ilike(tenantUsers.displayName, `%${escapeIlike(listState.comments.q)}%`),
+              ilike(user.name, `%${escapeIlike(listState.comments.q)}%`),
             )
           : undefined,
       )
@@ -355,8 +355,8 @@ export default async function FormResponsePage({
         caBaseWhere,
         listState.correctiveActions.q
           ? or(
-              ilike(correctiveActions.reference, `%${listState.correctiveActions.q}%`),
-              ilike(correctiveActions.title, `%${listState.correctiveActions.q}%`),
+              ilike(correctiveActions.reference, `%${escapeIlike(listState.correctiveActions.q)}%`),
+              ilike(correctiveActions.title, `%${escapeIlike(listState.correctiveActions.q)}%`),
             )
           : undefined,
         listState.correctiveActions.status
@@ -373,8 +373,8 @@ export default async function FormResponsePage({
         incidentBaseWhere,
         listState.incidents.q
           ? or(
-              ilike(incidents.reference, `%${listState.incidents.q}%`),
-              ilike(incidents.title, `%${listState.incidents.q}%`),
+              ilike(incidents.reference, `%${escapeIlike(listState.incidents.q)}%`),
+              ilike(incidents.title, `%${escapeIlike(listState.incidents.q)}%`),
             )
           : undefined,
         listState.incidents.status ? eq(incidents.status, listState.incidents.status) : undefined,
@@ -383,7 +383,7 @@ export default async function FormResponsePage({
       const checkinWhere = and(
         checkinBaseWhere,
         listState.checkins.q
-          ? ilike(formResponseCheckins.note, `%${listState.checkins.q}%`)
+          ? ilike(formResponseCheckins.note, `%${escapeIlike(listState.checkins.q)}%`)
           : undefined,
         listState.checkins.kind
           ? eq(formResponseCheckins.kind, listState.checkins.kind)

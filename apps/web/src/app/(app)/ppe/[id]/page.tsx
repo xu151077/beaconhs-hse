@@ -84,7 +84,7 @@ import { CertificateDrawer, type CertificateInput } from './_certificate-drawer'
 import { deletePpeItem } from '../_actions'
 import { DeletePpeButton } from './_delete-button'
 import { PpeInspectionForm } from './_inspection-form'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { DetailGrid } from '@/components/detail-grid'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -1042,7 +1042,7 @@ export default async function PpeDetailPage({
   const listData = await ctx.db(async (tx) => {
     if (active === 'inspections') {
       const base = eq(ppeInspections.itemId, id)
-      const searchPattern = listParams.q ? `%${listParams.q}%` : null
+      const searchPattern = listParams.q ? `%${escapeIlike(listParams.q)}%` : null
       const search = listParams.q
         ? or(
             ilike(ppeInspections.notes, searchPattern!),
@@ -1110,12 +1110,12 @@ export default async function PpeDetailPage({
       const base = eq(ppeAnnualRecords.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeAnnualRecords.inspectorName, `%${listParams.q}%`),
-            ilike(ppeAnnualRecords.inspectorCompany, `%${listParams.q}%`),
-            ilike(ppeAnnualRecords.notes, `%${listParams.q}%`),
-            ilike(people.firstName, `%${listParams.q}%`),
-            ilike(people.lastName, `%${listParams.q}%`),
-            ilike(attachments.filename, `%${listParams.q}%`),
+            ilike(ppeAnnualRecords.inspectorName, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeAnnualRecords.inspectorCompany, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeAnnualRecords.notes, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
+            ilike(attachments.filename, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(
@@ -1153,10 +1153,10 @@ export default async function PpeDetailPage({
       const base = eq(ppeIssueReports.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeIssueReports.description, `%${listParams.q}%`),
-            ilike(ppeIssueReports.resolution, `%${listParams.q}%`),
-            ilike(ppeIssueReports.source, `%${listParams.q}%`),
-            ilike(ppeIssueReports.reportedByNameSnapshot, `%${listParams.q}%`),
+            ilike(ppeIssueReports.description, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.resolution, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.source, `%${escapeIlike(listParams.q)}%`),
+            ilike(ppeIssueReports.reportedByNameSnapshot, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(
@@ -1187,9 +1187,9 @@ export default async function PpeDetailPage({
       const base = eq(ppeIssues.itemId, id)
       const search = listParams.q
         ? or(
-            ilike(ppeIssues.note, `%${listParams.q}%`),
-            ilike(people.firstName, `%${listParams.q}%`),
-            ilike(people.lastName, `%${listParams.q}%`),
+            ilike(ppeIssues.note, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
           )
         : undefined
       const where = and(

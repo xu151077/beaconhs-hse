@@ -22,7 +22,7 @@ import {
   equipmentTypes,
 } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { formatInterval } from '@/lib/equipment/intervals'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
@@ -61,8 +61,8 @@ export default async function InspectionTypesPage({
   const { rows, total, types, counts } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(equipmentInspectionTypes.name, `%${params.q}%`),
-          ilike(equipmentInspectionTypes.description, `%${params.q}%`),
+          ilike(equipmentInspectionTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentInspectionTypes.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
 

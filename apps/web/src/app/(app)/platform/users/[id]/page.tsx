@@ -26,7 +26,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { AddMembershipForm } from '../_components/add-membership-form'
 import {
   openMembershipInTenant,
@@ -90,8 +90,8 @@ export default async function PlatformUserDetailPage({
     if (!account) return null
     const search: SQL<unknown> | undefined = membershipParams.q
       ? or(
-          ilike(tenants.name, `%${membershipParams.q}%`),
-          ilike(tenants.slug, `%${membershipParams.q}%`),
+          ilike(tenants.name, `%${escapeIlike(membershipParams.q)}%`),
+          ilike(tenants.slug, `%${escapeIlike(membershipParams.q)}%`),
           exists(
             tx
               .select({ id: roleAssignments.id })
@@ -100,7 +100,7 @@ export default async function PlatformUserDetailPage({
               .where(
                 and(
                   eq(roleAssignments.tenantUserId, tenantUsers.id),
-                  ilike(roles.name, `%${membershipParams.q}%`),
+                  ilike(roles.name, `%${escapeIlike(membershipParams.q)}%`),
                 ),
               ),
           ),

@@ -39,7 +39,7 @@ import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
 import { FilterChips } from '@/components/filter-bar'
 import { formatDate } from '@/lib/datetime'
-import { isUuid, mergeHref, parseListParams } from '@/lib/list-params'
+import { isUuid, mergeHref, parseListParams, escapeIlike } from '@/lib/list-params'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
 import {
@@ -123,17 +123,17 @@ export default async function TitleTasksPage({
     )
     const taskSearch = taskParams.q
       ? or(
-          ilike(jobTitleTasks.task, `%${taskParams.q}%`),
-          ilike(jobTitleTasks.description, `%${taskParams.q}%`),
+          ilike(jobTitleTasks.task, `%${escapeIlike(taskParams.q)}%`),
+          ilike(jobTitleTasks.description, `%${escapeIlike(taskParams.q)}%`),
         )
       : undefined
     const taskWhere = and(taskBase, taskSearch)
     const assignmentBase = and(eq(personTitleAssignments.titleId, id), isNull(people.deletedAt))
     const personSearch = personParams.q
       ? or(
-          ilike(people.firstName, `%${personParams.q}%`),
-          ilike(people.lastName, `%${personParams.q}%`),
-          ilike(people.employeeNo, `%${personParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(personParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(personParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(personParams.q)}%`),
         )
       : undefined
     const assignmentWhere = and(assignmentBase, personSearch)

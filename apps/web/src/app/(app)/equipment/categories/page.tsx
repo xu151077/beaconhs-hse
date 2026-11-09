@@ -22,7 +22,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { EQUIPMENT_FIELD_GROUPS } from '@/lib/equipment/field-groups'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { mergeHref, parseListParams, pickUuid } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickUuid, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -171,9 +171,9 @@ export default async function EquipmentCategoriesPage({
   const { categories, total, typeCounts, itemCounts, editingRow } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(equipmentCategories.name, `%${params.q}%`),
-          ilike(equipmentCategories.slug, `%${params.q}%`),
-          ilike(equipmentCategories.description, `%${params.q}%`),
+          ilike(equipmentCategories.name, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentCategories.slug, `%${escapeIlike(params.q)}%`),
+          ilike(equipmentCategories.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
 

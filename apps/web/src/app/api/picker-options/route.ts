@@ -65,7 +65,7 @@ import {
   type PickerLookup,
   type PickerOptionsResponse,
 } from '../../../lib/picker-options'
-import { isUuid } from '../../../lib/list-params'
+import { escapeIlike, isUuid } from '../../../lib/list-params'
 import { moduleScopeWhere } from '../../../lib/visibility'
 import { templateAccessWhere } from '../../(app)/apps/_lib/access'
 import { resolveVehicleEquipmentWhere } from '../../(app)/equipment/vehicle-log/_equipment-policy'
@@ -97,10 +97,6 @@ const PERSON_OPTION_SELECTION = {
   lastName: people.lastName,
   employeeNo: people.employeeNo,
   jobTitle: primaryPersonTitleName(people.id, people.tenantId),
-}
-
-function escapeIlike(value: string): string {
-  return value.replace(/[%_\\]/g, (match) => `\\${match}`)
 }
 
 function option(value: string, label: string, hint?: string | null, meta?: Option['meta']): Option {

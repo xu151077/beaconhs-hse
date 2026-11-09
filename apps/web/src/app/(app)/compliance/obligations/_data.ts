@@ -3,6 +3,7 @@
 // evaluation adapters. The old per-module UNION is gone.
 
 import { and, count, desc, eq, ilike, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import { complianceAudience, complianceObligations } from '@beaconhs/db/schema'
 import type { requireRequestContext } from '@/lib/auth'
 import { type AudienceItem, evaluateObligation, resolveComplianceClock } from '@beaconhs/compliance'
@@ -43,7 +44,7 @@ export async function listObligations(
       isNull(complianceObligations.deletedAt),
       ne(complianceObligations.status, 'archived'),
       opts.kind ? eq(complianceObligations.sourceModule, opts.kind) : undefined,
-      opts.q ? ilike(complianceObligations.title, `%${opts.q}%`) : undefined,
+      opts.q ? ilike(complianceObligations.title, `%${escapeIlike(opts.q)}%`) : undefined,
     )
 
     const [tot] = await tx.select({ c: count() }).from(complianceObligations).where(where)

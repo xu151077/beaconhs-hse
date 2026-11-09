@@ -47,7 +47,7 @@ import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { TableToolbar } from '@/components/table-toolbar'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { DocumentsSubNav } from '../_components/documents-sub-nav'
 import { createCategory, deleteCategory, updateCategory } from './_actions'
 import { CategoryParentPicker } from './_parent-picker'
@@ -89,9 +89,9 @@ export default async function DocumentCategoriesPage({
     const active = isNull(documentCategories.deletedAt)
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(documentCategories.name, `%${params.q}%`),
-          ilike(documentCategories.description, `%${params.q}%`),
-          ilike(parent.name, `%${params.q}%`),
+          ilike(documentCategories.name, `%${escapeIlike(params.q)}%`),
+          ilike(documentCategories.description, `%${escapeIlike(params.q)}%`),
+          ilike(parent.name, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const hasDocuments = exists(

@@ -1,4 +1,5 @@
 import { and, asc, count, ilike, or, type SQL } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import type { Database } from '@beaconhs/db'
 import { trainingExtraFields } from '@beaconhs/db/schema'
 
@@ -24,8 +25,8 @@ export async function loadTrainingExtraFieldPage(
 ): Promise<TrainingExtraFieldPage> {
   const search = params.q
     ? or(
-        ilike(trainingExtraFields.fieldKey, `%${params.q}%`),
-        ilike(trainingExtraFields.fieldValue, `%${params.q}%`),
+        ilike(trainingExtraFields.fieldKey, `%${escapeIlike(params.q)}%`),
+        ilike(trainingExtraFields.fieldValue, `%${escapeIlike(params.q)}%`),
       )
     : undefined
   const filteredWhere = and(ownerWhere, search)

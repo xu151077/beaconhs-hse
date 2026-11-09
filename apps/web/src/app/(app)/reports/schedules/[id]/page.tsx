@@ -7,7 +7,7 @@ import { PageContainer } from '@/components/page-layout'
 import { GeneratedText } from '@/i18n/generated'
 import { getGeneratedTranslations } from '@/i18n/generated.server'
 import { requireRequestContext } from '@/lib/auth'
-import { isUuid } from '@/lib/list-params'
+import { isUuid, escapeIlike } from '@/lib/list-params'
 import { loadScheduleFormData } from '../_data'
 import { BeaconScheduleForm } from '../_schedule-form'
 import { toSchedule } from '../page'
@@ -43,8 +43,8 @@ export default async function SchedulePage({
     status === 'all' ? undefined : eq(reportRuns.status, status),
     query
       ? or(
-          ilike(reportRuns.error, `%${query}%`),
-          sql`${reportRuns.trigger}::text ILIKE ${`%${query}%`}`,
+          ilike(reportRuns.error, `%${escapeIlike(query)}%`),
+          sql`${reportRuns.trigger}::text ILIKE ${`%${escapeIlike(query)}%`}`,
         )
       : undefined,
   )

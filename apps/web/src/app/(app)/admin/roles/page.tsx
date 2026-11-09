@@ -13,7 +13,7 @@ import { SortTh } from '@/components/sortable-th'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { loadScopeOptions } from '../users/_scope-data'
 import { BulkRoleAssignmentForm } from './_components/bulk-role-assignment-form'
 
@@ -51,7 +51,10 @@ export default async function AdminRolesPage({
 
   const data = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = listParams.q
-      ? or(ilike(roles.name, `%${listParams.q}%`), ilike(roles.description, `%${listParams.q}%`))
+      ? or(
+          ilike(roles.name, `%${escapeIlike(listParams.q)}%`),
+          ilike(roles.description, `%${escapeIlike(listParams.q)}%`),
+        )
       : undefined
     const type =
       typeFilter === 'built_in'

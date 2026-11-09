@@ -15,7 +15,7 @@ import { ListCard, MobileCardList } from '@/components/list-card'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 
 export async function generateMetadata() {
   const tGenerated = await getGeneratedTranslations()
@@ -72,9 +72,9 @@ export default async function AdminUsersPage({
   const { rows, total, activeCount, statusCounts } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = listParams.q
       ? or(
-          ilike(user.name, `%${listParams.q}%`),
-          ilike(user.email, `%${listParams.q}%`),
-          ilike(tenantUsers.displayName, `%${listParams.q}%`),
+          ilike(user.name, `%${escapeIlike(listParams.q)}%`),
+          ilike(user.email, `%${escapeIlike(listParams.q)}%`),
+          ilike(tenantUsers.displayName, `%${escapeIlike(listParams.q)}%`),
           exists(
             tx
               .select({ id: roleAssignments.id })
@@ -83,7 +83,7 @@ export default async function AdminUsersPage({
               .where(
                 and(
                   eq(roleAssignments.tenantUserId, tenantUsers.id),
-                  ilike(roles.name, `%${listParams.q}%`),
+                  ilike(roles.name, `%${escapeIlike(listParams.q)}%`),
                 ),
               ),
           ),

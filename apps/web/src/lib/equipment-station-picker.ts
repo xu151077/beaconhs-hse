@@ -6,7 +6,7 @@ import {
   PICKER_RESULT_LIMIT,
   type PickerOptionsResponse,
 } from './picker-options'
-import { isUuid } from './list-params'
+import { escapeIlike, isUuid } from './list-params'
 
 const EQUIPMENT_STATION_PICKER_QUERY_LIMIT = 100
 const EQUIPMENT_STATION_PICKER_KINDS = ['holder', 'location'] as const
@@ -20,10 +20,6 @@ type EquipmentStationPickerSearchInput = {
 type EquipmentStationPickerQuery = {
   term: string | null
   selected: string | null
-}
-
-function escapeIlike(value: string): string {
-  return value.replace(/[%_\\]/g, (match) => `\\${match}`)
 }
 
 function recordInput(value: unknown): Record<string, unknown> {

@@ -29,7 +29,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { getRegulatoryTerminology } from '@beaconhs/tenant'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -198,9 +198,9 @@ export default async function InjuryTypesPage({
   const { rows, total, usageById } = await ctx.db(async (tx) => {
     const search: SQL<unknown> | undefined = params.q
       ? or(
-          ilike(incidentInjuryTypes.name, `%${params.q}%`),
-          ilike(incidentInjuryTypes.oshaCode, `%${params.q}%`),
-          ilike(incidentInjuryTypes.description, `%${params.q}%`),
+          ilike(incidentInjuryTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(incidentInjuryTypes.oshaCode, `%${escapeIlike(params.q)}%`),
+          ilike(incidentInjuryTypes.description, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const status =

@@ -22,7 +22,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { assertCanManageModule, requireModuleManage } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -97,7 +97,7 @@ export default async function PpeBanksPage({
   const { rows, total, statusCounts } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = []
     if (params.q) {
-      const cond = ilike(ppeCriteriaBanks.name, `%${params.q}%`)
+      const cond = ilike(ppeCriteriaBanks.name, `%${escapeIlike(params.q)}%`)
       if (cond) filters.push(cond)
     }
     if (statusFilter === 'published') filters.push(eq(ppeCriteriaBanks.isPublished, true))

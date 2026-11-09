@@ -1,4 +1,4 @@
-import { isUuid } from './list-params'
+import { escapeIlike, isUuid } from './list-params'
 
 export const AI_CONVERSATION_PAGE_SIZE = 20
 export const AI_MESSAGE_PAGE_SIZE = 40
@@ -58,7 +58,7 @@ export function normalizeAiConversationSearch(query: unknown): string {
 }
 
 export function escapeAiConversationSearch(query: string): string {
-  return query.replace(/[\\%_]/g, '\\$&')
+  return escapeIlike(query)
 }
 
 export function encodeAiTimeCursor(at: Date, id: string): string {
