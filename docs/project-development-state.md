@@ -1673,6 +1673,72 @@ PIN policy, and purposeful candidate lists returned by module-authorized picker
 lookups. Those need separate product/security decisions rather than silent broad
 changes.
 
+## 8b. Execution addendum — 2026-11-09 follow-up (hse-platform)
+
+The four residual decisions above were then taken, in order, as separate atomic
+commits (`6feca20e` D8, `b3e65ef6` capability v2, `2d3355bf` kiosk PIN 6–12,
+`15cc7074` `people.pick`). This addendum records their execution against the
+live dev environment and what was proven where.
+
+**Dev environment repair (needed before anything could be driven).** The local
+`.env` (git-ignored) pointed its three `*_DATABASE_URL`s at `localhost:15437`,
+which does not exist: the repo's own `docker-compose.yml` publishes Postgres on
+`127.0.0.1:5433` and nothing maps 15437. The `.env` values were repointed to
+5433 and the container roles (`beaconhs_app` / `beaconhs_migrator` /
+`beaconhs_super`) were given the passwords already present in `.env`, so the
+`.env` stayed the single credential truth instead of acquiring new secrets.
+`pnpm db:migrate` then ran end-to-end (exit 0). Two stale stopped containers
+(`beaconhs-redis`, `beaconhs-mailpit`) were holding their names; they were
+removed and the services started. The dev app also needs `REDIS_URL` pointing at
+the published 6380 (the `packages/jobs` 6379 local default does not match
+compose) and env vars passed into the process (`set -a; source .env`); Turbo's
+`dev` task does not load the repo-root `.env` itself.
+
+**0055 ledger.** 0055 had been applied by hand with `psql`, leaving the
+drizzle ledger unaware of it. The ledger row was recorded with the file's
+content hash (`b63fd97d…`) and the journal `when` (1794177839709), and
+`pnpm db:migrate`'s own tracker validation confirmed it: 55 applied, 0 pending,
+0 historical (the journal has 55 entries — idx 42 was never used — and the
+ledger was one row short before the backfill). Physical state was re-verified:
+591 FKs, db-only set exactly the 74 pinned SQL-only keys.
+
+**people.pick.** `pnpm db:migrate` ran `convergeRolePermissions`; querying the
+Acme tenant's built-ins then showed `people.pick` present in worker, foreman,
+safety_manager and tenant_admin (tenant_admin = full 108-key catalogue).
+
+**Browser E2E (Playwright MCP against dev, super-admin session; numbers and
+screens observed, not assumed).**
+
+- Login → dashboard → Roles list shows Tenant Admin with 108 permissions;
+  Worker detail → Permissions tab shows **Pick people** checked; Playwright login
+  flow itself exercised the magic link.
+- `/admin/settings`: the kiosk field label renders "Kiosk PIN (6–12 digits)"
+  with a 6-digit example; entering 1234 and saving submits nothing (HTML
+  `pattern="[0-9]{6,12}"` blocks it, no network request fired); saving 482913
+  persisted a `bhs_pin_scrypt_v1$` hash (verified in Postgres), and I restored
+  the unset seed state afterwards.
+- `/kiosk?t=demo`: 4-digit PIN never reaches the server (pattern block); 6-digit
+  unlocks the directory search.
+- Attachment v1 URL → 404 in the browser; v2 URL passes cap validation and
+  reaches the storage step (275ms vs ~65ms for v1), then 404s because this
+  host's MinIO bucket (`beaconhs-dev`) does not match the app's configured
+  `R2_BUCKET=test` — a pre-existing environment mismatch, not a change in the
+  route. Positive-path byte streaming is therefore STATIC VERIFIED only.
+
+**Not runnable here.** `backfill-attachment-capability-v2.ts` needs the audited
+cutover environment (its `BEACONHS_CUTOVER_TARGET`, database and capability
+fingerprints are digest-bound); this container matches none of them. The
+script is ready for the deployment environment; the dev database holds zero
+persisted attachment-route references on all five rewrite surfaces.
+
+**PARKED for a product call:** user-identity picker lookups over `tenantUsers`
+(`safe-distance-supervisors/operators`, `corrective-action-owners`,
+`management-review-members`, `training-class-instructors`) return display
+names **and emails** in picker hints under only a purpose permission — the
+same enumeration problem `people.pick` solved for the workforce directory, one
+level more sensitive. Whether those hints should be redacted, or a `users.pick`
+equivalent added, needs an explicit decision rather than a silent patch.
+
 ## 9. Update protocol
 
 On completing a sizeable task, update in the same change:
