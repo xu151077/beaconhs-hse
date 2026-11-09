@@ -9,7 +9,9 @@
 import { execSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import postgres, { type Sql } from 'postgres'
+import postgres, { type Sql, type TransactionSql } from 'postgres'
+
+type TxDb = Sql<{}> | TransactionSql<{}>
 
 const NAME = `beaconhs-pptx-conc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 let sql: Sql | null = null
@@ -119,16 +121,16 @@ async function outsideConn<P>(fn: (c: Sql) => Promise<P>): Promise<P> {
   }
 }
 
-async function countRefs(c: Sql, tenantId: string, attId: string): Promise<number> {
+async function countRefs(c: TxDb, tenantId: string, attId: string): Promise<number> {
   const [r1] =
     await c`select count(*)::int as n from training_lessons where tenant_id=${tenantId}::uuid and source_attachment_id=${attId}::uuid and deleted_at is null`
   const [r2] =
     await c`select count(*)::int as n from training_content_items where tenant_id=${tenantId}::uuid and source_attachment_id=${attId}::uuid and deleted_at is null`
-  return r1.n + r2.n
+  return r1!.n + r2!.n
 }
 
 /** Purge protocol replica: lock ordered → recount → delete if zero. Runs inside caller's tx. */
-async function purge(tx: Sql, tenantId: string, attId: string) {
+async function purge(tx: TxDb, tenantId: string, attId: string) {
   await tx`select id from attachments where id = ${attId}::uuid and tenant_id = ${tenantId}::uuid order by id for update`
   const n = await countRefs(tx, tenantId, attId)
   if (n > 0) return 0
@@ -136,10 +138,10 @@ async function purge(tx: Sql, tenantId: string, attId: string) {
   return 1
 }
 
-async function outboxCount(c: Sql, attId: string): Promise<number> {
+async function outboxCount(c: TxDb, attId: string): Promise<number> {
   const [r] =
     await c`select count(*)::int as n from storage_object_deletion_outbox where attachment_id = ${attId}::uuid`
-  return r.n
+  return r!.n
 }
 
 describe('PPTX purge lock protocol (real PG concurrency)', () => {
@@ -156,13 +158,13 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
     // FOR UPDATE on the attachment serializes them; only the last sees 0 refs.
     const p1 = outsideConn(async (c) => {
       await c.begin(async (tx) => {
-        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l1.id}::uuid`
+        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l1!.id}::uuid`
         await purge(tx, tenantId, attId)
       })
     })
     const p2 = outsideConn(async (c) => {
       await c.begin(async (tx) => {
-        await tx`update training_content_items set deleted_at=now(), source_attachment_id=null where id=${c1.id}::uuid`
+        await tx`update training_content_items set deleted_at=now(), source_attachment_id=null where id=${c1!.id}::uuid`
         await purge(tx, tenantId, attId)
       })
     })
@@ -186,7 +188,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
     })
     await outsideConn(async (c) => {
       await c.begin(async (tx) => {
-        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l.id}::uuid`
+        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l!.id}::uuid`
         await purge(tx, tenantId, attId)
       })
     })
@@ -260,7 +262,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
     await expect(
       outsideConn(async (c) => {
         await c.begin(async (tx) => {
-          await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l.id}::uuid`
+          await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l!.id}::uuid`
           await purge(tx, tenantId, attId)
           throw new Error('boom')
         })
@@ -270,7 +272,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
     // retry succeeds
     await outsideConn(async (c) => {
       await c.begin(async (tx) => {
-        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l.id}::uuid`
+        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l!.id}::uuid`
         await purge(tx, tenantId, attId)
       })
     })
@@ -285,7 +287,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
       await s`select id from training_lessons where source_attachment_id=${attId}::uuid limit 1`
     await outsideConn(async (c) => {
       await c.begin(async (tx) => {
-        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l.id}::uuid`
+        await tx`update training_lessons set deleted_at=now(), source_attachment_id=null where id=${l!.id}::uuid`
         await purge(tx, tenantId, attId)
       })
     })
@@ -293,13 +295,13 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
     const [row] =
       await s`select id from storage_object_deletion_outbox where attachment_id=${attId}::uuid limit 1`
     expect(row).toBeDefined()
-    await s`delete from storage_object_deletion_outbox where id=${row.id}::uuid and status='pending'`
-    await s`delete from storage_object_deletion_outbox where id=${row.id}::uuid and status='pending'`
+    await s`delete from storage_object_deletion_outbox where id=${row!.id}::uuid and status='pending'`
+    await s`delete from storage_object_deletion_outbox where id=${row!.id}::uuid and status='pending'`
     expect(await outboxCount(s, attId)).toBe(0)
   })
 
   /** importLessonPptx replica: lock tenant-scoped FOR UPDATE, then link. */
-  async function importLesson(tx: Sql, tenantId: string, lessonId: string, attId: string) {
+  async function importLesson(tx: TxDb, tenantId: string, lessonId: string, attId: string) {
     const [row] =
       await tx`select id from attachments where id=${attId}::uuid and tenant_id=${tenantId}::uuid order by id for update limit 1`
     if (!row) throw new Error('PowerPoint attachment not found.')
@@ -382,7 +384,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
       }),
     ).rejects.toThrowError(/not found/)
     const [y] = await s`select source_attachment_id from training_lessons where id=${yId}::uuid`
-    expect(y.source_attachment_id).toBeNull()
+    expect(y!.source_attachment_id).toBeNull()
     expect(await outboxCount(s, attId)).toBe(0)
   })
 
@@ -400,7 +402,7 @@ describe('PPTX purge lock protocol (real PG concurrency)', () => {
       }),
     ).rejects.toThrowError(/boom-import/)
     const [y] = await s`select source_attachment_id from training_lessons where id=${yId}::uuid`
-    expect(y.source_attachment_id).toBeNull()
+    expect(y!.source_attachment_id).toBeNull()
     const [att] = await s`select id from attachments where id=${attId}::uuid`
     expect(att).toBeDefined()
     expect(await outboxCount(s, attId)).toBe(0)
