@@ -22,7 +22,7 @@ import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
 import { requireModuleManage, assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -118,7 +118,7 @@ export default async function InspectionTypesPage({
     // Types are soft-deleted; keep deleted rows out of the list and its counts.
     const filters: SQL<unknown>[] = [isNull(inspectionTypes.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const c = ilike(inspectionTypes.name, term)
       if (c) filters.push(c)
     }

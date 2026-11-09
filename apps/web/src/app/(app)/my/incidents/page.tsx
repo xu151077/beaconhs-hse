@@ -25,7 +25,7 @@ import { incidents, orgUnits } from '@beaconhs/db/schema'
 import { SeverityBadge, StatusBadge } from '../../incidents/_badges'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -116,7 +116,7 @@ export default async function MyIncidentsPage({
       isNull(incidents.deletedAt),
     ]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(incidents.reference, term),
         ilike(incidents.title, term),

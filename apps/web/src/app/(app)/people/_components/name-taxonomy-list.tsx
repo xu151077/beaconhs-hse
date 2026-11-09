@@ -25,7 +25,7 @@ import {
 } from '@beaconhs/ui'
 import { crews, people, trades } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
@@ -69,7 +69,7 @@ export async function NameTaxonomyList({
   const ctx = await requireModuleManage('people')
 
   const { rows, total } = await ctx.db(async (tx) => {
-    const whereClause = params.q ? ilike(table.name, `%${params.q}%`) : undefined
+    const whereClause = params.q ? ilike(table.name, `%${escapeIlike(params.q)}%`) : undefined
     const [tot] = await tx.select({ c: count() }).from(table).where(whereClause)
 
     const usage = await tx

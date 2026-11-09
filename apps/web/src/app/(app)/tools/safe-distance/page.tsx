@@ -22,7 +22,7 @@ import { can } from '@beaconhs/tenant'
 import { DownloadLink } from '@/components/download-link'
 import { requireRequestContext } from '@/lib/auth'
 import { canUseSafeDistance, safeDistanceScopeWhere } from '@/lib/safe-distance-access'
-import { buildExportHref, parseListParams, pickString } from '@/lib/list-params'
+import { buildExportHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -100,7 +100,7 @@ export default async function SafeDistanceListPage({
     const filters: SQL<unknown>[] = [isNull(safeDistanceRecords.deletedAt)]
     if (scopeWhere) filters.push(scopeWhere)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(safeDistanceRecords.reference, term),
         ilike(safeDistanceRecords.name, term),

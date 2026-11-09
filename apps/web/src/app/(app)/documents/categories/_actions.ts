@@ -8,7 +8,7 @@ import { documentCategories } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
 import { assertCanManageModule } from '@/lib/module-admin/guard'
 import { recordAudit } from '@/lib/audit'
-import { isUuid } from '@/lib/list-params'
+import { isUuid, escapeIlike } from '@/lib/list-params'
 import { assertValidCategoryParent } from './_category-parent-policy'
 import {
   CATEGORY_DELETE_CONFLICT_MESSAGE,
@@ -71,8 +71,8 @@ export async function searchCategoryParents(
           safeExcludeId ? ne(documentCategories.id, safeExcludeId) : undefined,
           q
             ? or(
-                ilike(documentCategories.name, `%${q}%`),
-                ilike(documentCategories.description, `%${q}%`),
+                ilike(documentCategories.name, `%${escapeIlike(q)}%`),
+                ilike(documentCategories.description, `%${escapeIlike(q)}%`),
               )
             : undefined,
         ),

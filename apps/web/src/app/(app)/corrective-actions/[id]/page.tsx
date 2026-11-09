@@ -31,7 +31,7 @@ import {
 } from '@beaconhs/db/schema'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
-import { formatDate } from '@/lib/datetime'
+import { formatDate, isCalendarDate } from '@/lib/datetime'
 import { assertCan, can } from '@beaconhs/tenant'
 import { canSeeRecord } from '@/lib/visibility'
 import { recentActivityForEntity, recordAuditInTransaction } from '@/lib/audit'
@@ -165,7 +165,7 @@ async function updateTextField(formData: FormData) {
   const field = String(formData.get('field') ?? '')
   const raw = formData.get('value')
   const value = typeof raw === 'string' ? raw : ''
-  if (!id || !field) throw new Error('Missing id/field')
+  if (!isUuid(id) || !field) throw new Error('Missing or invalid id/field')
 
   const ENUMS_NOTNULL: Record<string, readonly string[]> = { severity: SEVERITIES }
   const ENUMS_NULLABLE: Record<string, readonly string[]> = { source: SOURCES }
@@ -197,8 +197,10 @@ async function updateTextField(formData: FormData) {
       val = value
     }
   } else if (NULLABLE_IDS.has(field)) {
+    if (value && !isUuid(value)) throw new Error('Invalid ID')
     val = value || null
   } else if (DATE_ONLY.has(field)) {
+    if (value && !isCalendarDate(value)) throw new Error('Invalid date')
     val = value || null
   } else if (NUMERICS.has(field)) {
     if (value.trim() === '') val = null

@@ -57,7 +57,7 @@ import {
   assertComplianceTargetCanRetire,
   materializeEvidenceTargetObligations,
 } from '@beaconhs/compliance'
-import { isUuid, parsePrefixedListParams, pickString } from '@/lib/list-params'
+import { isUuid, parsePrefixedListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { ActivityFeed } from '@/components/activity-feed'
 import { DocumentOverview } from './_overview'
 import { TabNav, pickActiveTab } from '@/components/tab-nav'
@@ -519,8 +519,8 @@ export default async function DocumentDetailPage({
       eq(documentVersions.documentId, id),
       versionParams.q
         ? or(
-            ilike(documentVersions.changelog, `%${versionParams.q}%`),
-            sql`${documentVersions.version}::text ilike ${`%${versionParams.q}%`}`,
+            ilike(documentVersions.changelog, `%${escapeIlike(versionParams.q)}%`),
+            sql`${documentVersions.version}::text ilike ${`%${escapeIlike(versionParams.q)}%`}`,
           )
         : undefined,
       versionStatus === 'published'
@@ -552,10 +552,10 @@ export default async function DocumentDetailPage({
 
     const ackSearch = ackParams.q
       ? or(
-          ilike(people.firstName, `%${ackParams.q}%`),
-          ilike(people.lastName, `%${ackParams.q}%`),
-          ilike(people.employeeNo, `%${ackParams.q}%`),
-          ilike(documentAcknowledgmentSessions.title, `%${ackParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(ackParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(ackParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(ackParams.q)}%`),
+          ilike(documentAcknowledgmentSessions.title, `%${escapeIlike(ackParams.q)}%`),
         )
       : undefined
     const ackWhere = and(
@@ -624,10 +624,10 @@ export default async function DocumentDetailPage({
       eq(documentReviews.documentId, id),
       reviewParams.q
         ? or(
-            ilike(documentReviews.notes, `%${reviewParams.q}%`),
-            ilike(user.name, `%${reviewParams.q}%`),
-            ilike(tenantUsers.displayName, `%${reviewParams.q}%`),
-            ilike(documentReviews.outcome, `%${reviewParams.q}%`),
+            ilike(documentReviews.notes, `%${escapeIlike(reviewParams.q)}%`),
+            ilike(user.name, `%${escapeIlike(reviewParams.q)}%`),
+            ilike(tenantUsers.displayName, `%${escapeIlike(reviewParams.q)}%`),
+            ilike(documentReviews.outcome, `%${escapeIlike(reviewParams.q)}%`),
           )
         : undefined,
       reviewOutcome === 'not_recorded'

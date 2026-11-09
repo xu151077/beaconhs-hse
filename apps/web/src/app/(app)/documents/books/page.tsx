@@ -20,7 +20,7 @@ import { can } from '@beaconhs/tenant'
 import { documentBookItems, documentBooks, documentCategories } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -71,7 +71,7 @@ export default async function DocumentBooksPage({
     const filters: SQL<unknown>[] = []
     if (!canManage) filters.push(eq(documentBooks.status, 'published'))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(documentBooks.title, term), ilike(documentBooks.description, term))
       if (cond) filters.push(cond)
     }

@@ -27,7 +27,7 @@ import {
 import { hazidAssessmentHazards, hazidHazardTypes, hazidHazards } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TableToolbar } from '@/components/table-toolbar'
 import { SearchInput } from '@/components/search-input'
@@ -78,10 +78,10 @@ export default async function HazardsLibraryPage({
     perPage: 25,
     allowedSorts: SORTS,
   })
-  const typeFilter = pickString(sp.type)
+  const typeFilter = pickUuid(sp.type)
   const photoFilter = pickString(sp.photo) // 'with' | 'without'
   const drawer = pickString(sp.drawer)
-  const editId = pickString(sp.id)
+  const editId = pickUuid(sp.id)
   const ctx = await requireModuleManage('hazid')
 
   const { rows, total, typeOptions, typeCounts, editTarget } = await ctx.db(async (tx) => {
@@ -90,7 +90,7 @@ export default async function HazardsLibraryPage({
     if (photoFilter === 'with') filters.push(sql`${hazidHazards.photoAttachmentId} IS NOT NULL`)
     if (photoFilter === 'without') filters.push(sql`${hazidHazards.photoAttachmentId} IS NULL`)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(hazidHazards.name, term),
         ilike(hazidHazards.description, term),

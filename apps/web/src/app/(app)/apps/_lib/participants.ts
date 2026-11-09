@@ -4,6 +4,7 @@
 // the per-person transcript read used by the people page + /apps/transcripts.
 
 import { and, asc, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import type { Database } from '@beaconhs/db'
 import { formResponseParticipants, formResponses, formTemplates, people } from '@beaconhs/db/schema'
 import { extractParticipants, type FormSchemaV1 } from '@beaconhs/forms-core'
@@ -136,7 +137,7 @@ export async function loadPersonTranscript(
     const filteredConditions = [...baseConditions]
     if (options.status) filteredConditions.push(eq(formResponses.status, options.status))
     if (options.q?.trim()) {
-      const term = `%${options.q.trim()}%`
+      const term = `%${escapeIlike(options.q.trim())}%`
       filteredConditions.push(
         sql`concat_ws(' ', ${formTemplates.name}, coalesce(${formResponseParticipants.category}, ''), ${formResponses.status}::text, coalesce(${formResponseParticipants.occurredOn}::text, '')) ilike ${term}`,
       )
@@ -249,7 +250,7 @@ export async function listTranscriptPeople(
       templateAccessWhere(ctx, effectiveRoleKeys, 'browse-records'),
     ]
     if (options.q?.trim()) {
-      const term = `%${options.q.trim()}%`
+      const term = `%${escapeIlike(options.q.trim())}%`
       conditions.push(
         sql`concat_ws(' ', ${people.firstName}, ${people.lastName}, ${people.lastName}, ${people.firstName}) ilike ${term}`,
       )

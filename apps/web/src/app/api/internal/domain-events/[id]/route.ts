@@ -164,8 +164,6 @@ export async function POST(
       kind: command.kind,
       error,
     })
-    return new Response(error instanceof Error ? error.message : 'Web command failed', {
-      status: 500,
-    })
+    return new Response('Web command failed', { status: 500 })
   }
 }

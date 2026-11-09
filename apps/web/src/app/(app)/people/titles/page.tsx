@@ -18,7 +18,7 @@ import {
 } from '@beaconhs/ui'
 import { jobTitleTasks, personTitleAssignments, personTitles } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
-import { parseListParams } from '@/lib/list-params'
+import { parseListParams, escapeIlike } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
@@ -72,7 +72,7 @@ export default async function TitlesPage({
     if (status === 'active') filters.push(isNull(personTitles.deletedAt))
     else if (status === 'archived') filters.push(isNotNull(personTitles.deletedAt))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(personTitles.name, term), ilike(personTitles.description, term))
       if (cond) filters.push(cond)
     }

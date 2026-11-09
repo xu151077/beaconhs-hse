@@ -45,7 +45,7 @@ import {
 } from '@/lib/training-mutation-validation'
 import { sanitizeTrainingHtml } from '@/lib/training-rich-content'
 import { assertTrainingPptxAttachment } from '@/lib/training-pptx-policy'
-import { purgeDeckAssets } from '../../../pptx/_lib'
+import { purgeDeckAssetsTx } from '../../../pptx/_lib'
 import { DELIVERY_TYPES, type DeliveryType } from '../../../_lib/delivery'
 
 // The course page IS the builder now.
@@ -71,7 +71,14 @@ async function requireOwnedAttachment(tx: Database, attachmentId: string | null)
   if (!attachment) throw new Error('Attachment not found.')
 }
 
-async function requireOwnedPptxAttachment(tx: Database, attachmentId: string): Promise<void> {
+async function requireOwnedPptxAttachment(
+  tx: Database,
+  tenantId: string,
+  attachmentId: string,
+): Promise<void> {
+  // Unified attachment-row lock (same ORDER BY id FOR UPDATE protocol as
+  // purgeDeckAssetsTx and the other link writers): existence + tenantId are
+  // checked under the lock, in this transaction, before any reference write.
   const [attachment] = await tx
     .select({
       kind: attachments.kind,
@@ -79,7 +86,9 @@ async function requireOwnedPptxAttachment(tx: Database, attachmentId: string): P
       sizeBytes: attachments.sizeBytes,
     })
     .from(attachments)
-    .where(eq(attachments.id, attachmentId))
+    .where(and(eq(attachments.id, attachmentId), eq(attachments.tenantId, tenantId)))
+    .orderBy(attachments.id)
+    .for('update')
     .limit(1)
   if (!attachment) throw new Error('PowerPoint attachment not found.')
   assertTrainingPptxAttachment(attachment)
@@ -194,7 +203,7 @@ export async function deleteModule(moduleId: string, courseId: string) {
   assertCanManageModule(ctx, 'training')
   moduleId = requireTrainingUuid(moduleId, 'Module')
   courseId = requireTrainingUuid(courseId, 'Course')
-  const decks = await ctx.db(async (tx) => {
+  const { purged } = await ctx.db(async (tx) => {
     await requireActiveCourse(tx, courseId)
     const [module] = await tx
       .select({ id: trainingCourseModules.id })
@@ -243,9 +252,9 @@ export async function deleteModule(moduleId: string, courseId: string) {
       )
       .returning({ id: trainingCourseModules.id })
     if (!deleted) throw new Error('Module changed while it was being deleted.')
-    return rows
+    const purged = await purgeDeckAssetsTx(tx, rows, ctx.tenantId)
+    return { purged }
   })
-  const purged = await purgeDeckAssets(ctx.db, decks)
   await recordAudit(ctx, {
     entityType: 'training_course_module',
     entityId: moduleId,
@@ -677,7 +686,7 @@ export async function importLessonPptx(lessonId: string, courseId: string, attac
   attachmentId = requireTrainingUuid(attachmentId, 'PowerPoint attachment')
   await ctx.db(async (tx) => {
     await requireActiveCourse(tx, courseId)
-    await requireOwnedPptxAttachment(tx, attachmentId)
+    await requireOwnedPptxAttachment(tx, ctx.tenantId, attachmentId)
     const [updated] = await tx
       .update(trainingLessons)
       .set({ sourceAttachmentId: attachmentId })
@@ -815,7 +824,7 @@ export async function deleteLesson(lessonId: string, courseId: string) {
   assertCanManageModule(ctx, 'training')
   lessonId = requireTrainingUuid(lessonId, 'Lesson')
   courseId = requireTrainingUuid(courseId, 'Course')
-  const deck = await ctx.db(async (tx) => {
+  const { purged } = await ctx.db(async (tx) => {
     await requireActiveCourse(tx, courseId)
     const [row] = await tx
       .select({
@@ -830,6 +839,7 @@ export async function deleteLesson(lessonId: string, courseId: string) {
         ),
       )
       .limit(1)
+      .for('update')
     if (!row) throw new Error('Lesson not found.')
     const [deleted] = await tx
       .update(trainingLessons)
@@ -843,9 +853,9 @@ export async function deleteLesson(lessonId: string, courseId: string) {
       )
       .returning({ id: trainingLessons.id })
     if (!deleted) throw new Error('Lesson changed while it was being deleted.')
-    return row
+    const purged = await purgeDeckAssetsTx(tx, [row], ctx.tenantId)
+    return { purged }
   })
-  const purged = await purgeDeckAssets(ctx.db, [deck])
   await recordAudit(ctx, {
     entityType: 'training_lesson',
     entityId: lessonId,

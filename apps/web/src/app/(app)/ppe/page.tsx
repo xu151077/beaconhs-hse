@@ -17,7 +17,13 @@ import {
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
+import {
+  buildExportHref,
+  isUuid,
+  parseListParams,
+  pickString,
+  escapeIlike,
+} from '@/lib/list-params'
 import { resolvePpeInspectionDue } from '@/lib/ppe-inspection-due'
 import { DownloadLink } from '@/components/download-link'
 import { SearchInput } from '@/components/search-input'
@@ -137,7 +143,7 @@ export default async function PpePage({
     })
     if (scope) filters.push(scope)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(ppeItems.serialNumber, term),
         ilike(ppeTypes.name, term),

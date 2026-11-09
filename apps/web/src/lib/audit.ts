@@ -1,4 +1,5 @@
 import { auditLog, users as user } from '@beaconhs/db/schema'
+import { escapeIlike } from '@/lib/list-params'
 import type { Database } from '@beaconhs/db'
 import { and, asc, count, desc, eq, ilike, or } from 'drizzle-orm'
 import type { RequestContext } from '@beaconhs/tenant'
@@ -134,9 +135,9 @@ export async function activityPageForEntity(
     const baseWhere = and(eq(auditLog.entityType, entityType), eq(auditLog.entityId, entityId))
     const searchWhere = options.q
       ? or(
-          ilike(auditLog.summary, `%${options.q}%`),
-          ilike(auditLog.action, `%${options.q}%`),
-          ilike(user.name, `%${options.q}%`),
+          ilike(auditLog.summary, `%${escapeIlike(options.q)}%`),
+          ilike(auditLog.action, `%${escapeIlike(options.q)}%`),
+          ilike(user.name, `%${escapeIlike(options.q)}%`),
         )
       : undefined
     const filteredWhere = and(

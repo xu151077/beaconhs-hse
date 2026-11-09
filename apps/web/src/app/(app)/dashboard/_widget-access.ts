@@ -8,6 +8,7 @@
 // of _widget-registry.ts so that registry stays serialisable for the client.
 
 import { can, type RequestContext } from '@beaconhs/tenant'
+import { isUuid } from '@/lib/list-params'
 import { canViewInsights } from '../insights/_access'
 import { WIDGETS } from './_widget-registry'
 
@@ -105,20 +106,29 @@ export function canPermissionSetSeeWidget(permissions: Iterable<string>, id: str
   const set = permissions instanceof Set ? permissions : new Set(permissions)
   const required = WIDGET_PERMISSIONS[id]
   if (required) return hasAnyPermission(set, required)
-  if (id in WIDGETS) return true
-  return canPermissionSetViewInsights(set)
+  // Only the `personal-*` widgets are ungated. A registry widget that is missing
+  // from WIDGET_PERMISSIONS is a mapping defect: hide it (fail closed) instead of
+  // treating an org aggregate as personal. Unknown non-UUID ids are likewise not
+  // Insight cards and are denied.
+  if (id in WIDGETS) return id.startsWith('personal-')
+  return isUuid(id) && canPermissionSetViewInsights(set)
 }
 
 /**
  * Can the viewer see this dashboard widget? Personal → always; org → ANY-of its
  * required permissions; a library-card UUID (a placed Insights card that isn't a
  * registry widget) → analytics access (`canViewInsights`).
+ *
+ * A registered org widget missing from `WIDGET_PERMISSIONS` fails closed: it is
+ * not shown to anyone until its permission is mapped. The previous fall-through
+ * to "visible to everyone" turned every forgotten map entry into a tenant-wide
+ * data leak for self-tier workers.
  */
 export function canSeeWidget(ctx: RequestContext, id: string): boolean {
   const required = WIDGET_PERMISSIONS[id]
   if (required) return ctx.isSuperAdmin || required.some((p) => can(ctx, p))
-  if (id in WIDGETS) return true // known personal widget → everyone
-  return canViewInsights(ctx) // unknown id = placed Insights library card
+  if (id in WIDGETS) return id.startsWith('personal-')
+  return isUuid(id) && canViewInsights(ctx) // a placed Insights library card
 }
 
 /** Does the viewer see ANY org aggregate? Drives the header tenant summary. */

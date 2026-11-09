@@ -101,13 +101,41 @@ export async function setPersonPhoto(args: {
     if (att.kind !== 'image') return { ok: false, error: 'The portrait must be an image file.' }
   }
 
-  const updated = await ctx.db((tx) =>
-    tx
+  const updated = await ctx.db(async (tx) => {
+    const [old] = await tx
+      .select({ photoAttachmentId: people.photoAttachmentId })
+      .from(people)
+      .where(
+        and(
+          eq(people.id, args.personId),
+          eq(people.tenantId, ctx.tenantId),
+          isNull(people.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update')
+    if (!old) return []
+    const rows = await tx
       .update(people)
       .set({ photoAttachmentId: args.attachmentId })
-      .where(and(eq(people.id, args.personId), isNull(people.deletedAt)))
-      .returning({ id: people.id }),
-  )
+      .where(
+        and(
+          eq(people.id, args.personId),
+          eq(people.tenantId, ctx.tenantId),
+          isNull(people.deletedAt),
+        ),
+      )
+      .returning({ id: people.id })
+    // 1:1 portrait: reclaim the now-unreferenced attachment in the same tx.
+    if (old.photoAttachmentId && old.photoAttachmentId !== args.attachmentId) {
+      await tx
+        .delete(attachments)
+        .where(
+          and(eq(attachments.id, old.photoAttachmentId), eq(attachments.tenantId, ctx.tenantId)),
+        )
+    }
+    return rows
+  })
   if (!updated[0]) return { ok: false, error: 'Person not found.' }
 
   await recordAudit(ctx, {
@@ -139,7 +167,15 @@ export async function deletePersonFile(formData: FormData): Promise<void> {
   })
   if (!before) return
 
-  await ctx.db((tx) => tx.delete(personFiles).where(eq(personFiles.id, id)))
+  // Delete link + attachment atomically (1:1 person file).
+  await ctx.db(async (tx) => {
+    await tx.delete(personFiles).where(eq(personFiles.id, id))
+    if (before.attachmentId) {
+      await tx
+        .delete(attachments)
+        .where(and(eq(attachments.id, before.attachmentId), eq(attachments.tenantId, ctx.tenantId)))
+    }
+  })
 
   await recordAudit(ctx, {
     entityType: 'person',

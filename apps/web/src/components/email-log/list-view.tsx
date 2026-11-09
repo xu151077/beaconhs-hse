@@ -28,7 +28,7 @@ import { emailLog, tenants } from '@beaconhs/db/schema'
 import { db, withSuperAdmin, type Database } from '@beaconhs/db'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDateTime } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -103,7 +103,7 @@ export async function EmailLogListView({
       filters.push(eq(emailLog.tenantId, ctx.tenantId))
     }
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(emailLog.subject, term),
         ilike(emailLog.recipientPrimary, term),
@@ -118,7 +118,7 @@ export async function EmailLogListView({
       filters.push(eq(emailLog.categoryKey, categoryFilter))
     }
     if (recipientFilter) {
-      filters.push(ilike(emailLog.recipientPrimary, `%${recipientFilter}%`))
+      filters.push(ilike(emailLog.recipientPrimary, `%${escapeIlike(recipientFilter)}%`))
     }
     // Ignore malformed date params — new Date('garbage') doesn't throw, it
     // returns an Invalid Date that blows up during query serialization.

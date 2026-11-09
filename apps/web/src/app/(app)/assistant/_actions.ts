@@ -5,6 +5,7 @@
 // share-dialog data loader (active people + roles as share targets).
 
 import { revalidatePath } from 'next/cache'
+import { escapeIlike } from '@/lib/list-params'
 import { and, asc, desc, eq, ilike, inArray, ne, notExists, or, sql } from 'drizzle-orm'
 import { aiConversationShares, roles, tenantUsers, users } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
@@ -120,7 +121,7 @@ export async function loadAssistantShareTargets(input: unknown): Promise<PickerO
     throw new Error('Conversation sharing is unavailable.')
   }
   const ctx = await requireRequestContext()
-  const term = parsed.query ? `%${escapeShareTargetSearch(parsed.query)}%` : null
+  const term = parsed.query ? `%${escapeIlike(escapeShareTargetSearch(parsed.query))}%` : null
   return ctx.db(async (tx) => {
     if (parsed.targetType === 'user') {
       const match = term

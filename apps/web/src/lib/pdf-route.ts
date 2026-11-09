@@ -18,8 +18,10 @@ function errorStatus(error: unknown): number {
   return 500
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'PDF render failed'
+function errorMessage(): string {
+  // Worker/render errors are logged server-side. The client only needs to know
+  // that rendering failed, not the internal exception text.
+  return 'PDF render failed'
 }
 
 export function pdfBufferResponse(pdf: Buffer, filename: string): Response {
@@ -53,7 +55,7 @@ export async function renderOnDemandPdfResponse(data: OnDemandPdfJobData): Promi
     artifact = await renderPdfOnDemand(data, { timeoutMs: 90_000 })
   } catch (error) {
     console.error('[pdf] on-demand render failed', error)
-    return NextResponse.json({ error: errorMessage(error) }, { status: errorStatus(error) })
+    return NextResponse.json({ error: errorMessage() }, { status: errorStatus(error) })
   }
 
   try {

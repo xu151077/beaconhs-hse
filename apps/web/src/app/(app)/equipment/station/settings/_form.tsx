@@ -148,7 +148,7 @@ export function StationSettingsForm({
         </p>
         <div className="max-w-xs">
           <Label>
-            <GeneratedText id="m_0e96149e81856f" />
+            <GeneratedText id="m_133e0e0c6413d6" />
           </Label>
           <Input
             type="password"
@@ -160,7 +160,7 @@ export function StationSettingsForm({
             placeholder={tGeneratedValue(
               initial.stationPinConfigured
                 ? tGenerated('m_12dd8958f18f7a')
-                : tGenerated('m_1de6858bd89c4a'),
+                : tGenerated('m_1cf89a59c3fcc6'),
             )}
             className="mt-1 font-mono tracking-widest"
           />

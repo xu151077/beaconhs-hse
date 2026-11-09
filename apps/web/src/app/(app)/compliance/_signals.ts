@@ -13,6 +13,7 @@
 // single query over `compliance_status`.
 
 import { sql, type SQL } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import {
   correctiveActions,
   documents,
@@ -125,7 +126,7 @@ export async function listDueSignals(
   if (options.status) filteredConditions.push(sql`status = ${options.status}`)
   const searchQuery = options.q?.trim()
   if (searchQuery) {
-    const query = `%${searchQuery}%`
+    const query = `%${escapeIlike(searchQuery)}%`
     filteredConditions.push(
       sql`concat_ws(' ', module, family, subject, coalesce(person_name, ''), coalesce(due_on::text, ''), status) ilike ${query}`,
     )

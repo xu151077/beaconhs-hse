@@ -41,6 +41,7 @@ import {
   parseListParams,
   parsePrefixedListParams,
   pickString,
+  escapeIlike,
 } from '@/lib/list-params'
 import { DetailPageLayout } from '@/components/page-layout'
 import { DetailGrid } from '@/components/detail-grid'
@@ -135,9 +136,9 @@ export default async function AuthorityDetailPage({
     if (!authority) return null
     const search: SQL<unknown> | undefined = listParams.q
       ? or(
-          ilike(trainingSkillTypes.name, `%${listParams.q}%`),
-          ilike(trainingSkillTypes.code, `%${listParams.q}%`),
-          ilike(trainingSkillTypes.description, `%${listParams.q}%`),
+          ilike(trainingSkillTypes.name, `%${escapeIlike(listParams.q)}%`),
+          ilike(trainingSkillTypes.code, `%${escapeIlike(listParams.q)}%`),
+          ilike(trainingSkillTypes.description, `%${escapeIlike(listParams.q)}%`),
         )
       : undefined
     const typeWhere = and(eq(trainingSkillTypes.authorityId, id), search)

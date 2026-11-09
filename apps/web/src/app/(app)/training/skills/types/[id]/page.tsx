@@ -49,6 +49,7 @@ import {
   parseListParams,
   parsePrefixedListParams,
   pickString,
+  escapeIlike,
 } from '@/lib/list-params'
 import { DetailPageLayout } from '@/components/page-layout'
 import { DetailGrid } from '@/components/detail-grid'
@@ -124,9 +125,9 @@ export default async function SkillTypeDetailPage({
     if (!row) return null
     const search: SQL<unknown> | undefined = listParams.q
       ? or(
-          ilike(people.firstName, `%${listParams.q}%`),
-          ilike(people.lastName, `%${listParams.q}%`),
-          ilike(people.employeeNo, `%${listParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(listParams.q)}%`),
         )
       : undefined
     const status =

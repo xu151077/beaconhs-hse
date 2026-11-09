@@ -25,7 +25,7 @@ import {
 } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -75,7 +75,7 @@ export default async function AssessmentTypesPage({
       filters.push(sql`${trainingAssessmentTypes.courseId} IS NOT NULL`)
     if (courseLinkedFilter === 'no') filters.push(sql`${trainingAssessmentTypes.courseId} IS NULL`)
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(trainingAssessmentTypes.name, term),
         ilike(trainingAssessmentTypes.description, term),

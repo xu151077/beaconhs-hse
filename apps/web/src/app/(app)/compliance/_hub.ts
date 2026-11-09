@@ -4,6 +4,7 @@
 // per-module legacy breakdowns entirely.
 
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
+import { escapeIlike } from '@/lib/list-params'
 import {
   type ComplianceTargetRef,
   complianceObligations,
@@ -55,7 +56,7 @@ export async function obligationOverview(
     const filtered = and(
       eq(complianceObligations.tenantId, ctx.tenantId),
       ...liveFilter(),
-      opts.q ? ilike(complianceObligations.title, `%${opts.q}%`) : undefined,
+      opts.q ? ilike(complianceObligations.title, `%${escapeIlike(opts.q)}%`) : undefined,
       opts.kind ? eq(complianceObligations.sourceModule, opts.kind) : undefined,
     )
     const [summaryRows, totalRows] = await Promise.all([

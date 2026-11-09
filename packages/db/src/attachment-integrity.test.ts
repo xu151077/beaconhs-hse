@@ -83,7 +83,9 @@ describe('attachment tenant integrity manifest', () => {
       expect(ddl).toContain(
         reference.onDelete === 'cascade'
           ? 'ON DELETE CASCADE'
-          : `ON DELETE SET NULL ("${reference.column}")`,
+          : reference.onDelete === 'no action'
+            ? 'ON DELETE NO ACTION'
+            : `ON DELETE SET NULL ("${reference.column}")`,
       )
     }
   })

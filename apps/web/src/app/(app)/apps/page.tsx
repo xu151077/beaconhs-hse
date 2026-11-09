@@ -15,7 +15,7 @@ import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
 import { NavIcon } from '@/components/sidebar-nav'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { FormsKindNav } from './_nav'
 import { AiGenerateButton } from './_ai-generate-button'
 import { canAccessTemplate, isTemplateBuilder, templateAccessWhere } from './_lib/access'
@@ -92,8 +92,8 @@ export default async function FormsPage({
     if (kindFilter) filters.push(eq(formTemplates.kind, kindFilter))
     if (q) {
       const search = or(
-        ilike(formTemplates.name, `%${q}%`),
-        ilike(formTemplates.description, `%${q}%`),
+        ilike(formTemplates.name, `%${escapeIlike(q)}%`),
+        ilike(formTemplates.description, `%${escapeIlike(q)}%`),
       )
       if (search) filters.push(search)
     }

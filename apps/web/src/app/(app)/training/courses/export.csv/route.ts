@@ -12,7 +12,7 @@ import {
   csvResponse,
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickEnum, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 import { withRouteErrors } from '@/lib/api/errors'
@@ -32,7 +32,7 @@ async function getHandler(req: NextRequest) {
     perPage: 25,
     allowedSorts: SORTS,
   })
-  const deliveryFilter = pickString(sp.delivery)
+  const deliveryFilter = pickEnum(sp.delivery, trainingCourses.deliveryType.enumValues)
   const ctx = await requireExportContext()
   if (!can(ctx, 'training.read.all') && !can(ctx, 'training.course.manage')) {
     return Response.json({ error: 'Not found' }, { status: 404 })
@@ -41,11 +41,11 @@ async function getHandler(req: NextRequest) {
   const rows = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [isNull(trainingCourses.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(trainingCourses.name, term), ilike(trainingCourses.code, term))
       if (cond) filters.push(cond)
     }
-    if (deliveryFilter) filters.push(eq(trainingCourses.deliveryType, deliveryFilter as any))
+    if (deliveryFilter) filters.push(eq(trainingCourses.deliveryType, deliveryFilter))
     const whereClause = and(...filters)
 
     const orderBy =

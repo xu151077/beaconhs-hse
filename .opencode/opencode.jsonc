@@ -9,25 +9,6 @@
   // `permissions`, and the LAST matching rule wins. Every deny below is
   // therefore placed AFTER the broad allow it is meant to carve out.
 
-  "provider": {
-    "custom-gpt": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Custom GPT Server",
-      "options": {
-        "baseURL": "http://80.47.238.204/v1",
-        "apiKey": "nx_9141be3ae959f661ec4cb49e4ae41c436b36954f9fef3d9c"
-      },
-      "models": {
-        "gpt-6.1-sol": {
-          "name": "GPT-6.1-SOL",
-          "modelID": "gpt-6.1-sol",
-          "maxTokens": 100000000
-        }
-      }
-    }
-  },
-  "model": "custom-gpt/gpt-6.1-sol",
-
   "permissions": [
     // ---------------------------------------------------------------------
     // 1. Read-only discovery — always allowed.

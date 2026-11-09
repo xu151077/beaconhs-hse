@@ -11,6 +11,7 @@ import {
 } from '@beaconhs/db/schema'
 import { assertCan } from '@beaconhs/tenant'
 import { recordModuleFlowEvent } from '@beaconhs/events'
+import { isCalendarDate } from '@/lib/datetime'
 import { requireRequestContext } from '@/lib/auth'
 import { recordAudit, recordAuditInTransaction } from '@/lib/audit'
 import { isUuid } from '@/lib/list-params'
@@ -25,8 +26,9 @@ export async function createManagementReview(formData: FormData): Promise<void> 
   const ctx = await requireRequestContext()
   assertCan(ctx, 'documents.manage')
   const title = String(formData.get('title') ?? '').trim() || 'Untitled review'
-  const periodEnd =
-    String(formData.get('periodEnd') ?? '').trim() || new Date().toISOString().slice(0, 10)
+  const periodEndRaw = String(formData.get('periodEnd') ?? '').trim()
+  const periodEnd = periodEndRaw || new Date().toISOString().slice(0, 10)
+  if (!isCalendarDate(periodEnd)) throw new Error('Invalid period end date.')
   const id = await ctx.db(async (tx) => {
     const [row] = await tx
       .insert(documentManagementReviews)

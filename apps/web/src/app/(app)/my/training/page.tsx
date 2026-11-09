@@ -58,7 +58,7 @@ import { htmlToSnippet } from '@beaconhs/forms-core'
 import { requireRequestContext } from '@/lib/auth'
 import { deliveryLabel, deliveryMeta } from '@/app/(app)/training/_lib/delivery'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
-import { parseListParams } from '@/lib/list-params'
+import { parseListParams, escapeIlike } from '@/lib/list-params'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
@@ -290,9 +290,9 @@ export default async function MyTrainingPage({
     if (tab === 'courses') {
       const search = params.q
         ? or(
-            ilike(trainingCourses.name, `%${params.q}%`),
-            ilike(trainingCourses.code, `%${params.q}%`),
-            ilike(trainingCourses.description, `%${params.q}%`),
+            ilike(trainingCourses.name, `%${escapeIlike(params.q)}%`),
+            ilike(trainingCourses.code, `%${escapeIlike(params.q)}%`),
+            ilike(trainingCourses.description, `%${escapeIlike(params.q)}%`),
           )
         : undefined
       const courseWhere = and(availableCourseWhere, search)
@@ -329,11 +329,11 @@ export default async function MyTrainingPage({
     if (tab === 'records') {
       const search = params.q
         ? or(
-            ilike(trainingCourses.name, `%${params.q}%`),
-            ilike(trainingCourses.code, `%${params.q}%`),
-            ilike(trainingRecords.instructor, `%${params.q}%`),
-            ilike(trainingRecords.details, `%${params.q}%`),
-            ilike(trainingRecords.notes, `%${params.q}%`),
+            ilike(trainingCourses.name, `%${escapeIlike(params.q)}%`),
+            ilike(trainingCourses.code, `%${escapeIlike(params.q)}%`),
+            ilike(trainingRecords.instructor, `%${escapeIlike(params.q)}%`),
+            ilike(trainingRecords.details, `%${escapeIlike(params.q)}%`),
+            ilike(trainingRecords.notes, `%${escapeIlike(params.q)}%`),
           )
         : undefined
       const recordWhere = and(
@@ -382,9 +382,9 @@ export default async function MyTrainingPage({
     if (tab === 'expiring') {
       const search = params.q
         ? or(
-            ilike(trainingCourses.name, `%${params.q}%`),
-            ilike(trainingCourses.code, `%${params.q}%`),
-            ilike(trainingRecords.instructor, `%${params.q}%`),
+            ilike(trainingCourses.name, `%${escapeIlike(params.q)}%`),
+            ilike(trainingCourses.code, `%${escapeIlike(params.q)}%`),
+            ilike(trainingRecords.instructor, `%${escapeIlike(params.q)}%`),
           )
         : undefined
       const expiringWhere = and(
@@ -415,12 +415,12 @@ export default async function MyTrainingPage({
     // tab === 'assigned'
     const search = params.q
       ? or(
-          ilike(complianceObligations.title, `%${params.q}%`),
-          ilike(complianceObligations.notes, `%${params.q}%`),
-          ilike(trainingCourses.name, `%${params.q}%`),
-          ilike(trainingCourses.code, `%${params.q}%`),
-          ilike(trainingAssessmentTypes.name, `%${params.q}%`),
-          ilike(trainingSkillTypes.name, `%${params.q}%`),
+          ilike(complianceObligations.title, `%${escapeIlike(params.q)}%`),
+          ilike(complianceObligations.notes, `%${escapeIlike(params.q)}%`),
+          ilike(trainingCourses.name, `%${escapeIlike(params.q)}%`),
+          ilike(trainingCourses.code, `%${escapeIlike(params.q)}%`),
+          ilike(trainingAssessmentTypes.name, `%${escapeIlike(params.q)}%`),
+          ilike(trainingSkillTypes.name, `%${escapeIlike(params.q)}%`),
         )
       : undefined
     const assignedWhere = and(assignedScope, search)

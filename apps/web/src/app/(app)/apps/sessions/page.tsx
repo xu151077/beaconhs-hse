@@ -19,7 +19,7 @@ import { permitWindowEndedExpr, permitWindowOpen } from '@beaconhs/db/work-permi
 import { requireRequestContext } from '@/lib/auth'
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
 import { moduleScopeWhere } from '@/lib/visibility'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SortableTh } from '@/components/sortable-th'
 import { ListPageLayout } from '@/components/page-layout'
 import { SearchInput } from '@/components/search-input'
@@ -107,7 +107,7 @@ export default async function MonitoredSessionsPage({
       if (statusFilter === 'active') filters.push(permitWindowOpen(new Date()))
     }
     if (searchQuery) {
-      const term = `%${searchQuery}%`
+      const term = `%${escapeIlike(searchQuery)}%`
       const search = or(
         ilike(formTemplates.name, term),
         ilike(tenantUsers.displayName, term),

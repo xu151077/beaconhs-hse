@@ -25,13 +25,14 @@ import {
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDate } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
 import { ListPageLayout } from '@/components/page-layout'
+import { ListCard, MobileCardList } from '@/components/list-card'
 import { TrainingSubNav } from '../_components/training-sub-nav'
 import { startClass } from './_actions'
 
@@ -74,7 +75,7 @@ export default async function TrainingClassesPage({
   const { rows, total, attendeeCounts, whenCounts } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = []
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const search = or(
         ilike(trainingClasses.title, term),
         ilike(trainingCourses.name, term),
@@ -220,114 +221,177 @@ export default async function TrainingClassesPage({
             />
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <SortableTh
-                      {...sortProps}
-                      column="starts_at"
-                      active={params.sort === 'starts_at'}
-                    >
-                      <GeneratedText id="m_13cc128f69897c" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="title" active={params.sort === 'title'}>
-                      <GeneratedText id="m_0decefd558c355" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="course" active={params.sort === 'course'}>
-                      <GeneratedText id="m_14fc1e0739b60e" />
-                    </SortableTh>
-                    <TableHead>
-                      <GeneratedText id="m_020146dd3d3d5a" />
-                    </TableHead>
-                    <TableHead>
-                      <GeneratedText id="m_10ba268d95c8fb" />
-                    </TableHead>
-                    <TableHead>
-                      <GeneratedText id="m_0b9da892d6faf0" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <GeneratedValue
-                    value={rows.map((row) => {
-                      const startedAt = new Date(row.cls.startsAt)
-                      const endsAt = new Date(row.cls.endsAt)
-                      const inPast = endsAt < now
-                      const attCount = attendeeCounts[row.cls.id] ?? 0
-                      return (
-                        <TableRow key={row.cls.id}>
-                          <TableCell className="text-slate-600 dark:text-slate-400">
-                            <div className="text-sm">
-                              <GeneratedValue
-                                value={formatDate(startedAt, ctx.timezone, ctx.locale)}
-                              />
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              <GeneratedValue
-                                value={startedAt.toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  timeZone: ctx.timezone,
-                                })}
-                              />
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/training/classes/${row.cls.id}`}
-                              className="font-medium text-slate-900 hover:underline dark:text-slate-100"
-                            >
-                              <GeneratedValue value={row.cls.title} />
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/training/courses/${row.course.id}`}
-                              className="text-sm text-teal-700 hover:underline dark:text-teal-400"
-                            >
-                              <GeneratedValue value={row.course.name} />
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-slate-600 dark:text-slate-400">
-                            <GeneratedValue value={row.site?.name ?? '—'} />
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              <GeneratedValue value={attCount} />
-                              <GeneratedValue
-                                value={row.cls.capacity ? ` / ${row.cls.capacity}` : ''}
-                              />
+              {/* Phones: tappable cards. */}
+              <MobileCardList breakpoint="md">
+                <GeneratedValue
+                  value={rows.map((row) => {
+                    const startedAt = new Date(row.cls.startsAt)
+                    const endsAt = new Date(row.cls.endsAt)
+                    const inPast = endsAt < now
+                    const attCount = attendeeCounts[row.cls.id] ?? 0
+                    return (
+                      <ListCard
+                        key={row.cls.id}
+                        href={`/training/classes/${row.cls.id}`}
+                        title={row.cls.title}
+                        meta={
+                          [
+                            formatDate(startedAt, ctx.timezone, ctx.locale),
+                            startedAt.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              timeZone: ctx.timezone,
+                            }),
+                            row.course.name,
+                            row.site?.name,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || undefined
+                        }
+                        status={
+                          row.cls.cancelledAt ? (
+                            <Badge variant="destructive">
+                              <GeneratedText id="m_1a7e1cf2be443e" />
                             </Badge>
-                          </TableCell>
-                          <TableCell>
+                          ) : row.cls.completedAt ? (
+                            <Badge variant="success">
+                              <GeneratedText id="m_0ba7a5e1b2fa32" />
+                            </Badge>
+                          ) : inPast ? (
+                            <Badge variant="warning">
+                              <GeneratedText id="m_1ea7f550466859" />
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">
+                              <GeneratedText id="m_14ad4ca1d87e79" />
+                            </Badge>
+                          )
+                        }
+                        footer={
+                          <Badge variant="outline">
+                            <GeneratedValue value={attCount} />
                             <GeneratedValue
-                              value={
-                                row.cls.cancelledAt ? (
-                                  <Badge variant="destructive">
-                                    <GeneratedText id="m_1a7e1cf2be443e" />
-                                  </Badge>
-                                ) : row.cls.completedAt ? (
-                                  <Badge variant="success">
-                                    <GeneratedText id="m_0ba7a5e1b2fa32" />
-                                  </Badge>
-                                ) : inPast ? (
-                                  <Badge variant="warning">
-                                    <GeneratedText id="m_1ea7f550466859" />
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="secondary">
-                                    <GeneratedText id="m_14ad4ca1d87e79" />
-                                  </Badge>
-                                )
-                              }
+                              value={row.cls.capacity ? ` / ${row.cls.capacity}` : ''}
                             />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  />
-                </TableBody>
-              </Table>
+                          </Badge>
+                        }
+                      />
+                    )
+                  })}
+                />
+              </MobileCardList>
+
+              {/* Tablet/desktop: full sortable table. */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortableTh
+                        {...sortProps}
+                        column="starts_at"
+                        active={params.sort === 'starts_at'}
+                      >
+                        <GeneratedText id="m_13cc128f69897c" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="title" active={params.sort === 'title'}>
+                        <GeneratedText id="m_0decefd558c355" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="course" active={params.sort === 'course'}>
+                        <GeneratedText id="m_14fc1e0739b60e" />
+                      </SortableTh>
+                      <TableHead>
+                        <GeneratedText id="m_020146dd3d3d5a" />
+                      </TableHead>
+                      <TableHead>
+                        <GeneratedText id="m_10ba268d95c8fb" />
+                      </TableHead>
+                      <TableHead>
+                        <GeneratedText id="m_0b9da892d6faf0" />
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <GeneratedValue
+                      value={rows.map((row) => {
+                        const startedAt = new Date(row.cls.startsAt)
+                        const endsAt = new Date(row.cls.endsAt)
+                        const inPast = endsAt < now
+                        const attCount = attendeeCounts[row.cls.id] ?? 0
+                        return (
+                          <TableRow key={row.cls.id}>
+                            <TableCell className="text-slate-600 dark:text-slate-400">
+                              <div className="text-sm">
+                                <GeneratedValue
+                                  value={formatDate(startedAt, ctx.timezone, ctx.locale)}
+                                />
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                <GeneratedValue
+                                  value={startedAt.toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    timeZone: ctx.timezone,
+                                  })}
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/training/classes/${row.cls.id}`}
+                                className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                              >
+                                <GeneratedValue value={row.cls.title} />
+                              </Link>
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/training/courses/${row.course.id}`}
+                                className="text-sm text-teal-700 hover:underline dark:text-teal-400"
+                              >
+                                <GeneratedValue value={row.course.name} />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-slate-600 dark:text-slate-400">
+                              <GeneratedValue value={row.site?.name ?? '—'} />
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                <GeneratedValue value={attCount} />
+                                <GeneratedValue
+                                  value={row.cls.capacity ? ` / ${row.cls.capacity}` : ''}
+                                />
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <GeneratedValue
+                                value={
+                                  row.cls.cancelledAt ? (
+                                    <Badge variant="destructive">
+                                      <GeneratedText id="m_1a7e1cf2be443e" />
+                                    </Badge>
+                                  ) : row.cls.completedAt ? (
+                                    <Badge variant="success">
+                                      <GeneratedText id="m_0ba7a5e1b2fa32" />
+                                    </Badge>
+                                  ) : inPast ? (
+                                    <Badge variant="warning">
+                                      <GeneratedText id="m_1ea7f550466859" />
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary">
+                                      <GeneratedText id="m_14ad4ca1d87e79" />
+                                    </Badge>
+                                  )
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    />
+                  </TableBody>
+                </Table>
+              </div>
               <Pagination
                 basePath="/training/classes"
                 currentParams={sp}

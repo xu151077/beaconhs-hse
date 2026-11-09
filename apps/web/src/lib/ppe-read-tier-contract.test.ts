@@ -89,8 +89,9 @@ describe('ppe read-tier catalogue', () => {
     // Seven separate keys, not one `manage`, so a role can be granted "freeze if you
     // must" without also being able to unfreeze, and the emergency `recover` path is
     // never implied by any other key.
-    expect(PERMISSION_CATALOGUE.length).toBe(107)
-    expect(new Set(PERMISSION_CATALOGUE).size).toBe(107)
+    // 107 → 108 when the picker convergence added the flat `people.pick` gate.
+    expect(PERMISSION_CATALOGUE.length).toBe(108)
+    expect(new Set(PERMISSION_CATALOGUE).size).toBe(108)
   })
 
   it('grants a worker own-PPE read', () => {
@@ -115,8 +116,9 @@ describe('ppe read-tier catalogue', () => {
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.site')
     // tenant_admin holds the whole catalogue, so this tracks PERMISSION_CATALOGUE.
-    // 100 → 107 when Phase 6Q stage E1 added the storage write-freeze permissions.
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(107)
+    // 100 → 107 when Phase 6Q stage E1 added the storage write-freeze permissions,
+    // and 108 when the picker convergence added `people.pick`.
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(108)
   })
 
   it('widens through readTierCovers so higher tiers satisfy lower ones', () => {

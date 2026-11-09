@@ -3,7 +3,7 @@ import { getGeneratedTranslations } from '@/i18n/generated.server'
 import { Badge, PageHeader, Table, TableBody, TableCell, TableHeader, TableRow } from '@beaconhs/ui'
 import { assertCan } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
@@ -40,7 +40,7 @@ export default async function ByPersonPage({
   const sp = await searchParams
   const ctx = await requireRequestContext()
   assertCan(ctx, 'compliance.read')
-  const personId = pickString(sp.person)
+  const personId = pickUuid(sp.person)
   const statusParam = pickString(sp.status)
   const statusFilter = isPersonStatusFilter(statusParam) ? statusParam : undefined
   const kindParam = pickString(sp.kind)

@@ -13,7 +13,7 @@ import {
 } from '@/lib/csv'
 import { csvColumns, selectCsvColumns } from '@/lib/export-columns'
 import { withRouteErrors } from '@/lib/api/errors'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, pickUuid, escapeIlike } from '@/lib/list-params'
 import { isRouterPrefetch } from '@/lib/router-prefetch'
 
 export const dynamic = 'force-dynamic'
@@ -44,8 +44,8 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
   const statusFilter: StatusFilter = (STATUS_FILTERS as readonly string[]).includes(rawStatus)
     ? (rawStatus as StatusFilter)
     : 'active'
-  const departmentFilter = pickString(sp.department) ?? null
-  const companyFilter = pickString(sp.company) ?? null
+  const departmentFilter = pickUuid(sp.department) ?? null
+  const companyFilter = pickUuid(sp.company) ?? null
   const ctx = await requireExportContext()
   // Two independent capabilities, both required.
   //
@@ -67,7 +67,7 @@ export const GET = withRouteErrors(async (req: NextRequest) => {
     const primaryTitleName = primaryPersonTitleName(people.id, people.tenantId)
     const filters: SQL<unknown>[] = [isNull(people.deletedAt)]
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(
         ilike(people.firstName, term),
         ilike(people.lastName, term),

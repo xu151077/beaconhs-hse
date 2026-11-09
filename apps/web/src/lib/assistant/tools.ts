@@ -9,6 +9,7 @@
 // answer "how many" and tell the user to narrow rather than paging blindly.
 
 import { z } from 'zod'
+import { escapeIlike } from '@/lib/list-params'
 import { and, count, desc, eq, gte, ilike, inArray, isNull, lt, or, type SQL } from 'drizzle-orm'
 import { primaryPersonTitleName } from '@beaconhs/db'
 import {
@@ -34,7 +35,7 @@ function escLike(q: string): string {
   return q.replace(/[%_\\]/g, (m) => `\\${m}`)
 }
 function like(q: string): string {
-  return `%${escLike(q.slice(0, 100))}%`
+  return `%${escapeIlike(escLike(q.slice(0, 100)))}%`
 }
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)

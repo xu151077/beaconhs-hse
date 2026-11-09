@@ -41,7 +41,7 @@ import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
-import { isUuid, mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { deriveColumnsFromSchema, slugify } from '../_shared'
 import { collectDataSourceUsage } from '../_usage'
 import { deleteDataSource } from '../_actions'
@@ -358,7 +358,7 @@ export default async function DataSourceDetailPage({
     const [src] = await tx.select().from(dataSources).where(eq(dataSources.id, id)).limit(1)
     if (!src || src.deletedAt) return null
     const rowSearch: SQL<unknown> | undefined = rowParams.q
-      ? sql`${dataSourceRows.data}::text ilike ${`%${rowParams.q}%`}`
+      ? sql`${dataSourceRows.data}::text ilike ${`%${escapeIlike(rowParams.q)}%`}`
       : undefined
     const rowWhere = and(
       eq(dataSourceRows.dataSourceId, id),

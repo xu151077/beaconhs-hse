@@ -342,6 +342,13 @@ export async function createBlankDeckMaster(targetRaw: string, targetId: string)
         })
         .returning({ id: attachments.id })
       if (!att) throw new Error('Failed to create the presentation file')
+      // Serialize with concurrent purge: hold the attachment row lock
+      // before linking it into a deck.
+      await tx
+        .select({ id: attachments.id })
+        .from(attachments)
+        .where(and(eq(attachments.id, att.id), eq(attachments.tenantId, tenantId)))
+        .for('update')
 
       const table = target === 'lesson' ? trainingLessons : trainingContentItems
       const [updated] = await tx

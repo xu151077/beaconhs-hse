@@ -26,7 +26,7 @@ import { orgUnits } from '@beaconhs/db/schema'
 import { requireModuleManage } from '@/lib/module-admin/guard'
 import { getOrgUnitSyncOrigins } from '@/lib/org-sync'
 import { levelLabel } from '@/lib/org-hierarchy'
-import { mergeHref, parseListParams, pickString } from '@/lib/list-params'
+import { mergeHref, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { FilterChips } from '@/components/filter-bar'
 import { SortableTh } from '@/components/sortable-th'
@@ -75,7 +75,7 @@ export default async function OrgUnitsPage({
     async (tx) => {
       const searchFilters: SQL<unknown>[] = []
       if (params.q) {
-        const term = `%${params.q}%`
+        const term = `%${escapeIlike(params.q)}%`
         const cond = or(ilike(orgUnits.name, term), ilike(orgUnits.code, term))
         if (cond) searchFilters.push(cond)
       }

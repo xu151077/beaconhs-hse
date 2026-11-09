@@ -33,7 +33,13 @@ import { formatDate } from '@/lib/datetime'
 import { moduleScopeWhere } from '@/lib/visibility'
 import { ConfirmButton } from '@/components/confirm-button'
 import { deleteFormResponseAction } from './_actions'
-import { buildExportHref, isUuid, parseListParams, pickString } from '@/lib/list-params'
+import {
+  buildExportHref,
+  isUuid,
+  parseListParams,
+  pickString,
+  escapeIlike,
+} from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
 import { Pagination } from '@/components/pagination'
@@ -108,7 +114,7 @@ export default async function FormResponsesPage({
     if (templateFilter) filters.push(eq(formResponses.templateId, templateFilter))
     if (categoryFilter) filters.push(eq(formTemplates.category, categoryFilter))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = ilike(formTemplates.name, term)
       if (cond) filters.push(cond)
     }

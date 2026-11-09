@@ -10,15 +10,28 @@ import { htmlToText } from '@beaconhs/forms-core'
 // tappable cards and tablet/desktop keep the sortable table — one data source,
 // two presentations. Canonical reference: hazard-assessments/_list.tsx.
 
+const MOBILE_LIST_BREAKPOINT: Record<'sm' | 'md' | 'lg', string> = {
+  sm: 'sm:hidden',
+  md: 'md:hidden',
+  lg: 'lg:hidden',
+}
+
 export function MobileCardList({
   children,
   className,
+  breakpoint = 'sm',
 }: {
   children: ReactNode
   className?: string
+  /**
+   * Which breakpoint replaces the card list with the full table. Default `sm`
+   * (phone-only cards). Wide tables — 7+ columns — pass `md` so portrait
+   * tablets also get cards instead of a horizontally scrolling grid.
+   */
+  breakpoint?: 'sm' | 'md' | 'lg'
 }) {
   return (
-    <ul className={cn('space-y-2.5 sm:hidden', className)}>
+    <ul className={cn('space-y-2.5', MOBILE_LIST_BREAKPOINT[breakpoint], className)}>
       <GeneratedValue value={children} />
     </ul>
   )

@@ -33,7 +33,7 @@ import {
   type FormSchemaV1,
 } from '@beaconhs/db/schema'
 import { extractScores, normalizeFormResponseData, validateResponse } from '@beaconhs/forms-core'
-import type { RequestContext } from '@beaconhs/tenant'
+import { canEditResponsePayload, type RequestContext } from '@beaconhs/tenant'
 import { DEFAULT_LOCALE, localizeText, type AppLocale } from '@beaconhs/i18n'
 import { computeFormScore } from '@/app/(app)/apps/_lib/score-router'
 import { repopulateParticipants } from '@/app/(app)/apps/_lib/participants'
@@ -658,6 +658,12 @@ export async function updateBuilderAppResponse(
       )
       .limit(1)
     if (!row) throw ApiError.notFound(`No response with id ${id}`)
+    // The route gates on forms.response.update.own; the payload check mirrors
+    // the UI fill actions (access-policy) so an API key with only that grant
+    // cannot rewrite another tenant member's response.
+    if (!canEditResponsePayload(ctx, row.response)) {
+      throw ApiError.forbidden('You do not have permission to update this response')
+    }
     if (row.response.locked) throw ApiError.invalid('Response is locked and cannot be updated')
 
     const rawNextData = body.data

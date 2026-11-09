@@ -42,7 +42,7 @@ import { FilterChips } from '@/components/filter-bar'
 import { Pagination } from '@/components/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { resolveCourseCredentialOutput, resolveCredentialOutput } from '@/lib/credential-designs'
 import { WorkspaceNoIdentity } from '../_no-identity'
 import { WalletStack, type WalletCard, type WalletDesign } from './_wallet-stack'
@@ -176,7 +176,7 @@ export default async function MyWalletPage({
     `
     const filters: SQL[] = []
     if (listParams.q) {
-      const term = `%${listParams.q}%`
+      const term = `%${escapeIlike(listParams.q)}%`
       filters.push(sql`(title ilike ${term} or code ilike ${term} or authority_name ilike ${term})`)
     }
     if (kind) filters.push(sql`kind = ${kind}`)

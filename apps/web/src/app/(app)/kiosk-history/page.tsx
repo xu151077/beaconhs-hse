@@ -18,8 +18,9 @@ import {
 } from '@beaconhs/ui'
 import { crews, kioskScans, orgUnits, people } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { Pagination } from '@/components/pagination'
+import { ListCard, MobileCardList } from '@/components/list-card'
 import { FilterChips } from '@/components/filter-bar'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -86,7 +87,7 @@ export default async function KioskHistoryPage({
     if (kindFilter === 'in' || kindFilter === 'out')
       filters.push(eq(kioskScans.kind, kindFilter as 'in' | 'out'))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(people.firstName, term), ilike(people.lastName, term))
       if (cond) filters.push(cond)
     }
@@ -165,84 +166,127 @@ export default async function KioskHistoryPage({
             />
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <SortableTh
-                      {...sortProps}
-                      column="scanned_at"
-                      active={params.sort === 'scanned_at'}
-                    >
-                      <GeneratedText id="m_13cc128f69897c" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="person" active={params.sort === 'person'}>
-                      <GeneratedText id="m_12e926c9216094" />
-                    </SortableTh>
-                    <SortableTh {...sortProps} column="kind" active={params.sort === 'kind'}>
-                      <GeneratedText id="m_1e578efe1574cd" />
-                    </SortableTh>
-                    <TableHead>
-                      <GeneratedText id="m_020146dd3d3d5a" />
-                    </TableHead>
-                    <TableHead>
-                      <GeneratedText id="m_13fc63a82a07d0" />
-                    </TableHead>
-                    <TableHead>
-                      <GeneratedText id="m_0fec61376a2da2" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <GeneratedValue
-                    value={rows.map((row) => (
-                      <TableRow key={row.scan.id}>
-                        <TableCell className="text-slate-600 dark:text-slate-300">
-                          <GeneratedValue
-                            value={new Date(row.scan.scannedAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              timeZone: tz,
-                            })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/people/${row.person.id}`}
-                            className="font-medium hover:underline"
-                          >
-                            <GeneratedValue value={row.person.lastName} />,{' '}
-                            <GeneratedValue value={row.person.firstName} />
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <GeneratedValue
-                            value={
-                              row.scan.kind === 'in' ? (
-                                <Badge variant="success">
-                                  <GeneratedText id="m_020d16509a2e09" />
-                                </Badge>
-                              ) : (
-                                <Badge variant="warning">
-                                  <GeneratedText id="m_0e5e4d921070a1" />
-                                </Badge>
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-300">
-                          <GeneratedValue value={row.site?.name ?? '—'} />
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-300">
-                          <GeneratedValue value={row.crew?.name ?? '—'} />
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate text-xs text-slate-400 dark:text-slate-500">
-                          <GeneratedValue value={row.scan.deviceLabel ?? '—'} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  />
-                </TableBody>
-              </Table>
+              {/* Phones: tappable cards. */}
+              <MobileCardList breakpoint="md">
+                <GeneratedValue
+                  value={rows.map((row) => (
+                    <ListCard
+                      key={row.scan.id}
+                      href={`/people/${row.person.id}`}
+                      avatarName={`${row.person.firstName} ${row.person.lastName}`}
+                      status={
+                        row.scan.kind === 'in' ? (
+                          <Badge variant="success">
+                            <GeneratedText id="m_020d16509a2e09" />
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning">
+                            <GeneratedText id="m_0e5e4d921070a1" />
+                          </Badge>
+                        )
+                      }
+                      title={
+                        <GeneratedValue value={`${row.person.lastName}, ${row.person.firstName}`} />
+                      }
+                      meta={
+                        [
+                          new Date(row.scan.scannedAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZone: tz,
+                          }),
+                          row.site?.name,
+                          row.crew?.name,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || undefined
+                      }
+                    />
+                  ))}
+                />
+              </MobileCardList>
+
+              {/* Tablet/desktop: full sortable table. */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortableTh
+                        {...sortProps}
+                        column="scanned_at"
+                        active={params.sort === 'scanned_at'}
+                      >
+                        <GeneratedText id="m_13cc128f69897c" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="person" active={params.sort === 'person'}>
+                        <GeneratedText id="m_12e926c9216094" />
+                      </SortableTh>
+                      <SortableTh {...sortProps} column="kind" active={params.sort === 'kind'}>
+                        <GeneratedText id="m_1e578efe1574cd" />
+                      </SortableTh>
+                      <TableHead>
+                        <GeneratedText id="m_020146dd3d3d5a" />
+                      </TableHead>
+                      <TableHead>
+                        <GeneratedText id="m_13fc63a82a07d0" />
+                      </TableHead>
+                      <TableHead>
+                        <GeneratedText id="m_0fec61376a2da2" />
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <GeneratedValue
+                      value={rows.map((row) => (
+                        <TableRow key={row.scan.id}>
+                          <TableCell className="text-slate-600 dark:text-slate-300">
+                            <GeneratedValue
+                              value={new Date(row.scan.scannedAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                timeZone: tz,
+                              })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/people/${row.person.id}`}
+                              className="font-medium hover:underline"
+                            >
+                              <GeneratedValue value={row.person.lastName} />,{' '}
+                              <GeneratedValue value={row.person.firstName} />
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            <GeneratedValue
+                              value={
+                                row.scan.kind === 'in' ? (
+                                  <Badge variant="success">
+                                    <GeneratedText id="m_020d16509a2e09" />
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="warning">
+                                    <GeneratedText id="m_0e5e4d921070a1" />
+                                  </Badge>
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-300">
+                            <GeneratedValue value={row.site?.name ?? '—'} />
+                          </TableCell>
+                          <TableCell className="text-slate-600 dark:text-slate-300">
+                            <GeneratedValue value={row.crew?.name ?? '—'} />
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate text-xs text-slate-400 dark:text-slate-500">
+                            <GeneratedValue value={row.scan.deviceLabel ?? '—'} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    />
+                  </TableBody>
+                </Table>
+              </div>
               <Pagination
                 basePath="/kiosk-history"
                 currentParams={sp}

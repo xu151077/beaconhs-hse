@@ -273,6 +273,16 @@ describe('Phase 11-F introduced no new architecture', () => {
       // EA-66D.23 adds scope-filter indexes and a terminal outbox enum value;
       // no report relation or projection is touched.
       '0053_bent_the_spike',
+      // EA-66D.29 repairs the seed-owned monitored-sessions report definition's
+      // column projection (no schema change, no new relation).
+      '0054_repair_monitored_sessions_report',
+      // D8 part 1 drops nine redundant single-column FKs that composite tenant
+      // keys already subsume and installs the never-installed
+      // ppe_inspection_attachments tenant-attachment FK; no new relation and no
+      // report projection is touched.
+      '0055_drop_redundant_single_col_fks',
+      // Compensating: idempotent FK convergence + audit trigger; no report relation.
+      '0056_audit_log_and_fk_replay_safety',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))

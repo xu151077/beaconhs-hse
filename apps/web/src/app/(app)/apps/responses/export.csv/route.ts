@@ -23,7 +23,7 @@ import {
   csvFilename,
   csvResponse,
 } from '@/lib/csv'
-import { isUuid, parseListParams, pickString } from '@/lib/list-params'
+import { isUuid, parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { selectCsvColumns } from '@/lib/export-columns'
 import { getEffectiveRoleKeys } from '@/lib/effective-roles'
 import { templateAccessWhere } from '../../_lib/access'
@@ -93,7 +93,7 @@ async function getHandler(req: NextRequest) {
     if (statusFilter) filters.push(eq(formResponses.status, statusFilter))
     if (templateFilter) filters.push(eq(formResponses.templateId, templateFilter))
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = ilike(formTemplates.name, term)
       if (cond) filters.push(cond)
     }

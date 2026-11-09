@@ -17,7 +17,7 @@ import { auditLog, users as user } from '@beaconhs/db/schema'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
 import { formatDateTime } from '@/lib/datetime'
-import { parseListParams, pickString } from '@/lib/list-params'
+import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
@@ -62,7 +62,7 @@ export default async function AuditLogPage({
   const { rows, total, entityTypes } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = []
     if (params.q) {
-      const term = `%${params.q}%`
+      const term = `%${escapeIlike(params.q)}%`
       const cond = or(ilike(auditLog.entityType, term), ilike(auditLog.summary, term))
       if (cond) filters.push(cond)
     }

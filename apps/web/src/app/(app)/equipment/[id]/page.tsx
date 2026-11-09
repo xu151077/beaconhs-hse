@@ -55,7 +55,7 @@ import {
   Textarea,
   UrlDrawer,
 } from '@beaconhs/ui'
-import { clamp, isUuid, mergeHref, pickString } from '@/lib/list-params'
+import { clamp, isUuid, mergeHref, pickString, escapeIlike } from '@/lib/list-params'
 import { EquipmentInspectionDrawer } from '../inspections/_inspection-panel'
 import { NewEquipmentInspectionDrawer } from '../inspections/_new-drawer'
 import { StartInspectionButton } from '../inspections/_start-button'
@@ -878,9 +878,9 @@ export default async function EquipmentDetailPage({
       eq(equipmentWorkOrders.itemId, id),
       woP.q
         ? or(
-            ilike(equipmentWorkOrders.reference, `%${woP.q}%`),
-            ilike(equipmentWorkOrders.summary, `%${woP.q}%`),
-            ilike(equipmentWorkOrders.description, `%${woP.q}%`),
+            ilike(equipmentWorkOrders.reference, `%${escapeIlike(woP.q)}%`),
+            ilike(equipmentWorkOrders.summary, `%${escapeIlike(woP.q)}%`),
+            ilike(equipmentWorkOrders.description, `%${escapeIlike(woP.q)}%`),
           )
         : undefined,
     )
@@ -888,11 +888,11 @@ export default async function EquipmentDetailPage({
       eq(equipmentCheckouts.equipmentItemId, id),
       coP.q
         ? or(
-            ilike(people.firstName, `%${coP.q}%`),
-            ilike(people.lastName, `%${coP.q}%`),
-            ilike(orgUnits.name, `%${coP.q}%`),
-            ilike(equipmentCheckouts.notes, `%${coP.q}%`),
-            ilike(equipmentCheckouts.returnedNotes, `%${coP.q}%`),
+            ilike(people.firstName, `%${escapeIlike(coP.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(coP.q)}%`),
+            ilike(orgUnits.name, `%${escapeIlike(coP.q)}%`),
+            ilike(equipmentCheckouts.notes, `%${escapeIlike(coP.q)}%`),
+            ilike(equipmentCheckouts.returnedNotes, `%${escapeIlike(coP.q)}%`),
           )
         : undefined,
     )
@@ -900,10 +900,10 @@ export default async function EquipmentDetailPage({
       eq(equipmentLocationHistory.itemId, id),
       lhP.q
         ? or(
-            ilike(orgUnits.name, `%${lhP.q}%`),
-            ilike(people.firstName, `%${lhP.q}%`),
-            ilike(people.lastName, `%${lhP.q}%`),
-            ilike(equipmentLocationHistory.note, `%${lhP.q}%`),
+            ilike(orgUnits.name, `%${escapeIlike(lhP.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(lhP.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(lhP.q)}%`),
+            ilike(equipmentLocationHistory.note, `%${escapeIlike(lhP.q)}%`),
           )
         : undefined,
     )
@@ -913,9 +913,9 @@ export default async function EquipmentDetailPage({
       isNull(equipmentInspectionRecords.deletedAt),
       insP.q
         ? or(
-            ilike(equipmentInspectionRecords.reference, `%${insP.q}%`),
-            ilike(equipmentInspectionTypes.name, `%${insP.q}%`),
-            ilike(equipmentInspectionRecords.intervalLabel, `%${insP.q}%`),
+            ilike(equipmentInspectionRecords.reference, `%${escapeIlike(insP.q)}%`),
+            ilike(equipmentInspectionTypes.name, `%${escapeIlike(insP.q)}%`),
+            ilike(equipmentInspectionRecords.intervalLabel, `%${escapeIlike(insP.q)}%`),
           )
         : undefined,
     )
@@ -923,10 +923,10 @@ export default async function EquipmentDetailPage({
       eq(equipmentInspectionSchedules.equipmentItemId, id),
       schP.q
         ? or(
-            ilike(equipmentInspectionTypes.name, `%${schP.q}%`),
-            ilike(equipmentInspectionSchedules.label, `%${schP.q}%`),
-            ilike(equipmentInspectionSchedules.notes, `%${schP.q}%`),
-            ilike(equipmentInspectionSchedules.intervalUnit, `%${schP.q}%`),
+            ilike(equipmentInspectionTypes.name, `%${escapeIlike(schP.q)}%`),
+            ilike(equipmentInspectionSchedules.label, `%${escapeIlike(schP.q)}%`),
+            ilike(equipmentInspectionSchedules.notes, `%${escapeIlike(schP.q)}%`),
+            ilike(equipmentInspectionSchedules.intervalUnit, `%${escapeIlike(schP.q)}%`),
           )
         : undefined,
     )
@@ -935,10 +935,10 @@ export default async function EquipmentDetailPage({
       isNull(equipmentReminders.completedAt),
       remP.q
         ? or(
-            ilike(equipmentReminders.title, `%${remP.q}%`),
-            ilike(equipmentReminders.details, `%${remP.q}%`),
-            ilike(people.firstName, `%${remP.q}%`),
-            ilike(people.lastName, `%${remP.q}%`),
+            ilike(equipmentReminders.title, `%${escapeIlike(remP.q)}%`),
+            ilike(equipmentReminders.details, `%${escapeIlike(remP.q)}%`),
+            ilike(people.firstName, `%${escapeIlike(remP.q)}%`),
+            ilike(people.lastName, `%${escapeIlike(remP.q)}%`),
           )
         : undefined,
     )
@@ -946,9 +946,9 @@ export default async function EquipmentDetailPage({
       eq(equipmentLogEntries.equipmentItemId, id),
       logP.q
         ? or(
-            ilike(equipmentLogEntries.title, `%${logP.q}%`),
-            ilike(equipmentLogEntries.details, `%${logP.q}%`),
-            ilike(equipmentLogEntries.kind, `%${logP.q}%`),
+            ilike(equipmentLogEntries.title, `%${escapeIlike(logP.q)}%`),
+            ilike(equipmentLogEntries.details, `%${escapeIlike(logP.q)}%`),
+            ilike(equipmentLogEntries.kind, `%${escapeIlike(logP.q)}%`),
           )
         : undefined,
     )
@@ -957,9 +957,9 @@ export default async function EquipmentDetailPage({
       sql`${attachments.exif}->>'equipmentId' = ${id}`,
       fP.q
         ? or(
-            ilike(attachments.filename, `%${fP.q}%`),
-            sql`${attachments.exif}->>'label' ILIKE ${`%${fP.q}%`}`,
-            sql`${attachments.exif}->>'kind' ILIKE ${`%${fP.q}%`}`,
+            ilike(attachments.filename, `%${escapeIlike(fP.q)}%`),
+            sql`${attachments.exif}->>'label' ILIKE ${`%${escapeIlike(fP.q)}%`}`,
+            sql`${attachments.exif}->>'kind' ILIKE ${`%${escapeIlike(fP.q)}%`}`,
           )
         : undefined,
     )

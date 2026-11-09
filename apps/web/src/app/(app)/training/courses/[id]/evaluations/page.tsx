@@ -19,7 +19,7 @@ import { Pagination } from '@/components/pagination'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { SearchInput } from '@/components/search-input'
 import { TableToolbar } from '@/components/table-toolbar'
-import { isUuid, parseListParams } from '@/lib/list-params'
+import { isUuid, parseListParams, escapeIlike } from '@/lib/list-params'
 import { enrollLearner } from './_actions'
 import { EvaluationsGrid, type EvalLesson, type EvalRow } from './_evaluate'
 
@@ -79,9 +79,9 @@ export default async function CourseEvaluationsPage({
     )
     const enrollmentSearch = listParams.q
       ? or(
-          ilike(people.firstName, `%${listParams.q}%`),
-          ilike(people.lastName, `%${listParams.q}%`),
-          ilike(people.employeeNo, `%${listParams.q}%`),
+          ilike(people.firstName, `%${escapeIlike(listParams.q)}%`),
+          ilike(people.lastName, `%${escapeIlike(listParams.q)}%`),
+          ilike(people.employeeNo, `%${escapeIlike(listParams.q)}%`),
         )
       : undefined
     const enrollmentWhere = and(enrollmentBase, enrollmentSearch)
