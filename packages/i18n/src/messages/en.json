@@ -190,7 +190,7 @@
     "peopleKioskDescription": "Shared-tablet sign-in/out is gated by a write-only PIN.",
     "kioskPin": "Kiosk PIN (4–12 digits)",
     "keepKioskPin": "Leave blank to keep current PIN",
-    "kioskPinExample": "e.g. 4821",
+    "kioskPinExample": "e.g. 482913",
     "kioskConfigured": "A PIN is configured. Enter a new PIN to rotate it.",
     "disableKiosk": "Disable public people kiosk",
     "branding": "Branding",
@@ -210,7 +210,7 @@
     "riskMatrixBody": "Edit the severity × likelihood scale, risk bands, and colours used to score hazard assessments in",
     "riskMatrixLink": "Hazard Assessments → Manage → Risk matrix",
     "saveSettings": "Save settings",
-    "invalidKioskPin": "Kiosk PIN must be 4–12 digits.",
+    "invalidKioskPin": "Kiosk PIN must be 6–12 digits.",
     "invalidLanguagePolicy": "Choose a supported default language and enable it for this tenant."
   },
   "Regulatory": {
@@ -1245,7 +1245,6 @@
     "m_02af2c143301ac": "The pre-use inspection was due on",
     "m_02b0a83932da4a": "Worker fills",
     "m_02b18d5c7f6f2d": "Name",
-    "m_02b20fe7769a09": "Kiosk PIN must be 4–12 digits.",
     "m_02b24c3a800472": "Name taken",
     "m_02b32cecb09ec3": "Pick a person or type a name.",
     "m_02b4b6d59fd9fa": "No response with that id.",
@@ -8505,7 +8504,6 @@
     "m_1ca1fb16346716": "Edit reminder",
     "m_1ca31a74cbe927": "Invalid Card.",
     "m_1ca393d7995071": "Field removed",
-    "m_1ca4f44c10de9f": "The people kiosk is the shared tablet at a jobsite entrance. It records when you sign in or out and can attach the scan to a site and crew.\n\n## Sign in or out\n\n1. Enter the jobsite PIN and tap **Unlock kiosk**.\n2. Open **Your name**. Search by your name, employee number, or job title, then tap your exact match.\n3. If they apply, search **Site (optional)** and **Crew (optional)**. A saved choice stays selected for the next person using the same tablet.\n4. Tap **SIGN IN** or **SIGN OUT**.\n5. Check the confirmation, then tap **Done**. The kiosk also returns to the name search automatically after a few seconds.\n\nThe kiosk searches the current company directory in small groups. If it says more results exist, type more of the name, employee number, job title, site, or crew. It does not hide a valid match just because the company has a large directory.\n\nBecause the kiosk is shared and no member is signed in, it uses the workspace's **Default language**.\n\n## If the kiosk will not unlock\n\n- Check that the PIN has 4–12 digits.\n- Ask an administrator whether the people kiosk is enabled for this workspace.\n- A suspended or archived workspace cannot use the public kiosk.",
     "m_1ca665e2ce9353": "Edit step",
     "m_1ca6cf074ffb12": "Link this account to an employee record so their training, compliance, and self-service pages resolve to the right person. Each account maps to at most one person in this tenant.",
     "m_1ca71e4464e800": "Enroll a learner…",
@@ -9801,7 +9799,9 @@
     "m_1881f41d84bc8d": "succeeded",
     "m_087375ffa7bb34": "failed",
     "m_0a8dc204e323fb": "Invalid PPE item.",
-    "m_18d9d3813b3f4f": "Inspection date must be a valid calendar date."
+    "m_18d9d3813b3f4f": "Inspection date must be a valid calendar date.",
+    "m_05331436774d4e": "Kiosk PIN must be 6–12 digits.",
+    "m_0cc2c316a850a8": "The people kiosk is the shared tablet at a jobsite entrance. It records when you sign in or out and can attach the scan to a site and crew.\n\n## Sign in or out\n\n1. Enter the jobsite PIN and tap **Unlock kiosk**.\n2. Open **Your name**. Search by your name, employee number, or job title, then tap your exact match.\n3. If they apply, search **Site (optional)** and **Crew (optional)**. A saved choice stays selected for the next person using the same tablet.\n4. Tap **SIGN IN** or **SIGN OUT**.\n5. Check the confirmation, then tap **Done**. The kiosk also returns to the name search automatically after a few seconds.\n\nThe kiosk searches the current company directory in small groups. If it says more results exist, type more of the name, employee number, job title, site, or crew. It does not hide a valid match just because the company has a large directory.\n\nBecause the kiosk is shared and no member is signed in, it uses the workspace's **Default language**.\n\n## If the kiosk will not unlock\n\n- Check that the PIN has 6–12 digits.\n- Ask an administrator whether the people kiosk is enabled for this workspace.\n- A suspended or archived workspace cannot use the public kiosk."
   },
   "OpenSource": {
     "linkLabel": "BeaconHS is open source — source code",

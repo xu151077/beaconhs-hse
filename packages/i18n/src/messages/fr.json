@@ -190,7 +190,7 @@
     "peopleKioskDescription": "La connexion et la déconnexion sur tablette partagée sont protégées par un NIP confidentiel.",
     "kioskPin": "NIP de la borne (4 à 12 chiffres)",
     "keepKioskPin": "Laisser vide pour conserver le NIP actuel",
-    "kioskPinExample": "p. ex. 4821",
+    "kioskPinExample": "p. ex. 482913",
     "kioskConfigured": "Un NIP est configuré. Entrez-en un nouveau pour le remplacer.",
     "disableKiosk": "Désactiver la borne publique du personnel",
     "branding": "Image de marque",
@@ -210,7 +210,7 @@
     "riskMatrixBody": "Modifiez l’échelle gravité × probabilité, les niveaux de risque et les couleurs des évaluations des dangers dans",
     "riskMatrixLink": "Évaluations des dangers → Gérer → Matrice des risques",
     "saveSettings": "Enregistrer les paramètres",
-    "invalidKioskPin": "Le NIP de la borne doit contenir de 4 à 12 chiffres.",
+    "invalidKioskPin": "Le NIP de la borne doit contenir de 6 à 12 chiffres.",
     "invalidLanguagePolicy": "Choisissez une langue par défaut prise en charge et activez-la pour ce locataire."
   },
   "Regulatory": {
@@ -1192,7 +1192,6 @@
     "m_02af2c143301ac": "L'inspection avant utilisation était prévue le",
     "m_02b0a83932da4a": "Le travailleur remplit",
     "m_02b18d5c7f6f2d": "Dénomination",
-    "m_02b20fe7769a09": "Le NIP de Kiosque doit être de 4 à 12 chiffres.",
     "m_02b24c3a800472": "Name taken",
     "m_02b32cecb09ec3": "Choisissez une personne ou tapez un nom.",
     "m_02b4b6d59fd9fa": "Pas de réponse avec cette identité.",
@@ -8452,7 +8451,6 @@
     "m_1ca1fb16346716": "Modifier le rappel",
     "m_1ca31a74cbe927": "Carte invalide.",
     "m_1ca393d7995071": "Champ enlevé",
-    "m_1ca4f44c10de9f": "Le kiosque des employés est la tablette partagée à l'entrée d'un chantier. Il enregistre lorsque vous vous connectez ou vous déconnectez et peut associer la saisie à un site et à une équipe.\n\n## Connexion ou déconnexion\n\n1. Entrez le code PIN du chantier et appuyez sur **Déverrouiller le kiosque**.\n2. Ouvrez **Votre nom**. Recherchez par votre nom, numéro d'employé ou intitulé de poste, puis appuyez sur la correspondance exacte.\n3. Si nécessaire, recherchez **Site (optionnel)** et **Équipe (optionnel)**. Un choix enregistré reste sélectionné pour la personne suivante utilisant la même tablette.\n4. Appuyez sur **SE CONNECTER** ou **SE DÉCONNECTER**.\n5. Vérifiez la confirmation, puis appuyez sur **Terminé**. Le kiosque revient également automatiquement à la recherche de nom après quelques secondes.\n\nLe kiosque recherche dans l'annuaire actuel de l'entreprise par petits groupes. Si un message indique que plus de résultats existent, tapez davantage de lettres du nom, du numéro d'employé, du poste, du site ou de l'équipe. Il ne masque pas une correspondance valide simplement parce que l'entreprise a un grand annuaire.\n\nParce que le kiosque est partagé et qu'aucun membre n'est connecté, il utilise la **Langue par défaut** de l'espace de travail.\n\n## Si le kiosque ne se déverrouille pas\n\n- Vérifiez que le code PIN contient 4 à 12 chiffres.\n- Demandez à un administrateur si le kiosque public est activé pour cet espace de travail.\n- Un espace de travail suspendu ou archivé ne peut pas utiliser le kiosque public.",
     "m_1ca665e2ce9353": "Modifier l'étape",
     "m_1ca6cf074ffb12": "Relier ce compte à un dossier de l'employé afin que ses pages de formation, de conformité et de libre-service se résolvent à la bonne personne. Chaque compte fait une carte à au plus une personne dans ce locataire.",
     "m_1ca71e4464e800": "Inscrivez un apprenant...",
@@ -9801,7 +9799,9 @@
     "m_1881f41d84bc8d": "réussi",
     "m_087375ffa7bb34": "échoué",
     "m_0a8dc204e323fb": "Article EPI invalide.",
-    "m_18d9d3813b3f4f": "La date d'inspection doit être une date calendaire valide."
+    "m_18d9d3813b3f4f": "La date d'inspection doit être une date calendaire valide.",
+    "m_05331436774d4e": "Le NIP de la borne doit contenir de 6 à 12 chiffres.",
+    "m_0cc2c316a850a8": "Le kiosque des employés est la tablette partagée à l'entrée d'un chantier. Il enregistre lorsque vous vous connectez ou vous déconnectez et peut associer la saisie à un site et à une équipe.\n\n## Connexion ou déconnexion\n\n1. Entrez le code PIN du chantier et appuyez sur **Déverrouiller le kiosque**.\n2. Ouvrez **Votre nom**. Recherchez par votre nom, numéro d'employé ou intitulé de poste, puis appuyez sur la correspondance exacte.\n3. Si nécessaire, recherchez **Site (optionnel)** et **Équipe (optionnel)**. Un choix enregistré reste sélectionné pour la personne suivante utilisant la même tablette.\n4. Appuyez sur **SE CONNECTER** ou **SE DÉCONNECTER**.\n5. Vérifiez la confirmation, puis appuyez sur **Terminé**. Le kiosque revient également automatiquement à la recherche de nom après quelques secondes.\n\nLe kiosque recherche dans l'annuaire actuel de l'entreprise par petits groupes. Si un message indique que plus de résultats existent, tapez davantage de lettres du nom, du numéro d'employé, du poste, du site ou de l'équipe. Il ne masque pas une correspondance valide simplement parce que l'entreprise a un grand annuaire.\n\nParce que le kiosque est partagé et qu'aucun membre n'est connecté, il utilise la **Langue par défaut** de l'espace de travail.\n\n## Si le kiosque ne se déverrouille pas\n\n- Vérifiez que le code PIN contient 6 à 12 chiffres.\n- Demandez à un administrateur si le kiosque public est activé pour cet espace de travail.\n- Un espace de travail suspendu ou archivé ne peut pas utiliser le kiosque public."
   },
   "OpenSource": {
     "linkLabel": "BeaconHS est open source — code source",

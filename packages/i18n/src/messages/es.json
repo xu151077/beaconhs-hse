@@ -190,7 +190,7 @@
     "peopleKioskDescription": "El registro de entrada y salida en la tableta compartida está protegido por un PIN confidencial.",
     "kioskPin": "PIN del quiosco (4 a 12 dígitos)",
     "keepKioskPin": "Déjalo vacío para conservar el PIN actual",
-    "kioskPinExample": "p. ej., 4821",
+    "kioskPinExample": "p. ej., 482913",
     "kioskConfigured": "Hay un PIN configurado. Escribe uno nuevo para cambiarlo.",
     "disableKiosk": "Desactivar el quiosco público de personal",
     "branding": "Marca",
@@ -210,7 +210,7 @@
     "riskMatrixBody": "Edita la escala de gravedad × probabilidad, los niveles de riesgo y los colores de las evaluaciones de peligros en",
     "riskMatrixLink": "Evaluaciones de peligros → Administrar → Matriz de riesgos",
     "saveSettings": "Guardar configuración",
-    "invalidKioskPin": "El PIN del quiosco debe tener entre 4 y 12 dígitos.",
+    "invalidKioskPin": "El PIN del quiosco debe tener entre 6 y 12 dígitos.",
     "invalidLanguagePolicy": "Elige un idioma predeterminado compatible y actívalo para este inquilino."
   },
   "Regulatory": {
@@ -1192,7 +1192,6 @@
     "m_02af2c143301ac": "La inspección previa al uso debía realizarse el",
     "m_02b0a83932da4a": "El trabajador llena",
     "m_02b18d5c7f6f2d": "Nombre",
-    "m_02b20fe7769a09": "Kiosk PIN debe ser de 4 a 12 dígitos.",
     "m_02b24c3a800472": "Name taken",
     "m_02b32cecb09ec3": "Escoge una persona o escribe un nombre.",
     "m_02b4b6d59fd9fa": "No hay respuesta con ese id.",
@@ -8452,7 +8451,6 @@
     "m_1ca1fb16346716": "Editar recordatorio",
     "m_1ca31a74cbe927": "Tarjeta inválida.",
     "m_1ca393d7995071": "Campo retirado",
-    "m_1ca4f44c10de9f": "El quiosco de personas es la tableta compartida en la entrada del sitio de trabajo. Registra cuando te registras o sales y puede adjuntar el registro a un sitio y equipo.\n\n## Registrarse o salir\n\n1. Ingresa el PIN del sitio de trabajo y toca **Desbloquear quiosco**.\n2. Abre **Tu nombre**. Busca por tu nombre, número de empleado o título del trabajo, luego toca tu coincidencia exacta.\n3. Si aplica, busca **Sitio (opcional)** y **Equipo (opcional)**. Una elección guardada permanece seleccionada para la siguiente persona que use la misma tableta.\n4. Toca **REGISTRARSE** o **SALIR**.\n5. Verifica la confirmación, luego toca **Listo**. El quiosco también vuelve automáticamente a la búsqueda por nombre después de unos segundos.\n\nEl quiosco busca en el directorio actual de la empresa en pequeños grupos. Si indica que existen más resultados, escribe más del nombre, número de empleado, título del trabajo, sitio o equipo. No oculta una coincidencia válida solo porque la empresa tenga un directorio grande.\n\nDebido a que el quiosco es compartido y ningún miembro ha iniciado sesión, utiliza el **Idioma predeterminado** del espacio de trabajo.\n\n## Si el quiosco no se desbloquea\n\n- Verifica que el PIN tenga de 4 a 12 dígitos.\n- Pregunta a un administrador si el quiosco para personas está habilitado para este espacio de trabajo.\n- Un espacio de trabajo suspendido o archivado no puede usar el quiosco público.",
     "m_1ca665e2ce9353": "Editar paso",
     "m_1ca6cf074ffb12": "Vincular esta cuenta a un registro de empleados para que su formación, cumplimiento y páginas de autoservicio se resuelvan a la persona adecuada. Cada cuenta mapa a la mayoría de una persona en este inquilino.",
     "m_1ca71e4464e800": "Inscribir a un estudiante...",
@@ -9801,7 +9799,9 @@
     "m_1881f41d84bc8d": "completado",
     "m_087375ffa7bb34": "fallido",
     "m_0a8dc204e323fb": "Artículo de EPI no válido.",
-    "m_18d9d3813b3f4f": "La fecha de inspección debe ser una fecha de calendario válida."
+    "m_18d9d3813b3f4f": "La fecha de inspección debe ser una fecha de calendario válida.",
+    "m_05331436774d4e": "El PIN del quiosco debe tener entre 6 y 12 dígitos.",
+    "m_0cc2c316a850a8": "El quiosco de personas es la tableta compartida en la entrada del sitio de trabajo. Registra cuando te registras o sales y puede adjuntar el registro a un sitio y equipo.\n\n## Registrarse o salir\n\n1. Ingresa el PIN del sitio de trabajo y toca **Desbloquear quiosco**.\n2. Abre **Tu nombre**. Busca por tu nombre, número de empleado o título del trabajo, luego toca tu coincidencia exacta.\n3. Si aplica, busca **Sitio (opcional)** y **Equipo (opcional)**. Una elección guardada permanece seleccionada para la siguiente persona que use la misma tableta.\n4. Toca **REGISTRARSE** o **SALIR**.\n5. Verifica la confirmación, luego toca **Listo**. El quiosco también vuelve automáticamente a la búsqueda por nombre después de unos segundos.\n\nEl quiosco busca en el directorio actual de la empresa en pequeños grupos. Si indica que existen más resultados, escribe más del nombre, número de empleado, título del trabajo, sitio o equipo. No oculta una coincidencia válida solo porque la empresa tenga un directorio grande.\n\nDebido a que el quiosco es compartido y ningún miembro ha iniciado sesión, utiliza el **Idioma predeterminado** del espacio de trabajo.\n\n## Si el quiosco no se desbloquea\n\n- Verifica que el PIN tenga de 6 a 12 dígitos.\n- Pregunta a un administrador si el quiosco para personas está habilitado para este espacio de trabajo.\n- Un espacio de trabajo suspendido o archivado no puede usar el quiosco público."
   },
   "OpenSource": {
     "linkLabel": "BeaconHS es de código abierto — código fuente",

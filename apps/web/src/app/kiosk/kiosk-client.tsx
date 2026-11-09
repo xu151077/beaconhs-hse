@@ -176,7 +176,7 @@ export function KioskClient({ tenantId, tenantName }: { tenantId: string; tenant
             autoFocus
             value={pinInput}
             onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 12))}
-            pattern="[0-9]{4,12}"
+            pattern="[0-9]{6,12}"
             maxLength={12}
             placeholder={tGenerated('m_18edf6c152be49')}
             className="w-full rounded-lg border-0 bg-slate-900 px-4 py-3 text-center text-2xl tracking-widest text-white placeholder-slate-500 focus:ring-2 focus:ring-teal-500 focus:outline-none"

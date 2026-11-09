@@ -225,7 +225,7 @@ export async function recordKioskScan(
   }
   if (input.kind !== 'in' && input.kind !== 'out') return { ok: false, error: 'Bad kind' }
   const pin = normalizeKioskPin(input.pin)
-  if (!pin) return { ok: false, error: 'Kiosk PIN must be 4–12 digits.' }
+  if (!pin) return { ok: false, error: 'Kiosk PIN must be 6–12 digits.' }
 
   const access = await withVerifiedKioskScope(
     input.tenantId,
