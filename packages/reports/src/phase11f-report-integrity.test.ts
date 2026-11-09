@@ -283,6 +283,9 @@ describe('Phase 11-F introduced no new architecture', () => {
       '0055_drop_redundant_single_col_fks',
       // Compensating: idempotent FK convergence + audit trigger; no report relation.
       '0056_audit_log_and_fk_replay_safety',
+      // Repairs the audit trigger's owner branch (RETURN OLD/NEW for owner);
+      // no schema or report change.
+      '0057_audit_immutable_trigger_owner_fix',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))
