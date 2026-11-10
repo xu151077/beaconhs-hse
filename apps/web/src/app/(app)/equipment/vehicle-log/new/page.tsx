@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { Button, Card, CardContent, DetailHeader, Input, Label, Textarea } from '@beaconhs/ui'
 import { assertCan } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { pickString } from '@/lib/list-params'
 import { PageContainer } from '@/components/page-layout'
 import { RemoteSelectField } from '@/components/remote-search-select'
@@ -45,18 +46,20 @@ export default async function NewTruckLogEntryPage({
 }) {
   const tGenerated = await getGeneratedTranslations()
   const sp = await searchParams
+  // Authenticate before deriving defaults so "today" is the tenant's calendar
+  // day, not the server's UTC day.
+  const ctx = await requireRequestContext()
   const presetTruckId = pickString(sp.truckId) ?? ''
-  const presetDate = pickString(sp.date) ?? new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
+  const presetDate = pickString(sp.date) ?? today
   const presetMonth = pickString(sp.month)
-  const initialDate =
-    presetDate || (presetMonth ? `${presetMonth}-01` : new Date().toISOString().slice(0, 10))
+  const initialDate = presetDate || (presetMonth ? `${presetMonth}-01` : today)
   // If we already know the truck, prefer the drawer on the parent detail
   // page. The full-page route stays as a fallback when there is no item
   // context (e.g. linked from the truck-log calendar without a row click).
   if (presetTruckId) {
     redirect(`/equipment/${presetTruckId}?tab=log&drawer=new-truck-log-entry`)
   }
-  const ctx = await requireRequestContext()
   assertCan(ctx, 'equipment.manage')
 
   return (

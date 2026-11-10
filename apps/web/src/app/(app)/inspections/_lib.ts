@@ -20,6 +20,7 @@ import {
   inspectionTypes,
 } from '@beaconhs/db/schema'
 import { recordAuditInTransaction } from '@/lib/audit'
+import { addDaysToIsoDate, dateIsoInTimeZone } from '@/lib/datetime'
 import { nextReference } from '@/lib/reference'
 import { inspectionCriterionIsAnswered } from '@/lib/inspection-response-config'
 import { inspectionStatusMilestonePatch } from '@/lib/inspection-record-lifecycle'
@@ -250,9 +251,11 @@ export async function syncCorrectiveActionForCriterionInTx(
       .join('')
       .trim() || row.c.questionTextSnapshot
   const dayOffset = severity === 'critical' ? 1 : severity === 'high' ? 3 : 7
-  const dueDate = new Date(row.record.occurredAt)
-  dueDate.setDate(dueDate.getDate() + dayOffset)
-  const dueOn = row.c.assignedDueDate ?? dueDate.toISOString().slice(0, 10)
+  // Due date = the tenant-local day the record happened, plus the severity
+  // offset. Deriving it from the UTC instant shifted the day for tenants
+  // whose wall clock differs from UTC.
+  const occurredOn = dateIsoInTimeZone(row.record.occurredAt, ctx.timezone)
+  const dueOn = row.c.assignedDueDate ?? addDaysToIsoDate(occurredOn, dayOffset)
   const caSeverity = severity ?? 'high'
   const caOwnerTenantUserId = row.c.assignedToTenantUserId ?? ctx.membership?.id ?? null
 
@@ -346,7 +349,7 @@ export async function syncCorrectiveActionForCriterionInTx(
       sourceEntityType: 'inspection_record',
       sourceEntityId: recordId,
       siteOrgUnitId: row.record.siteOrgUnitId,
-      assignedOn: new Date().toISOString().slice(0, 10),
+      assignedOn: dateIsoInTimeZone(new Date(), ctx.timezone),
       dueOn,
       assignedByTenantUserId: ctx.membership?.id ?? null,
       ownerTenantUserId: caOwnerTenantUserId,

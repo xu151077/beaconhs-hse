@@ -35,6 +35,7 @@ import {
 } from '@beaconhs/design-studio'
 import { resolveTenantLogoUrl } from '@beaconhs/storage'
 import { requireRequestContext } from '@/lib/auth'
+import { addDaysToIsoDate, dateIsoInTimeZone } from '@/lib/datetime'
 import { appBaseUrl } from '@/lib/app-base-url'
 import { latestTrainingRecordOnly } from '@/lib/training-latest'
 import { ListPageLayout } from '@/components/page-layout'
@@ -106,10 +107,10 @@ export default async function MyWalletPage({
       ? requestedStatus
       : undefined
   const ctx = await requireRequestContext()
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const expiringThrough = new Date()
-  expiringThrough.setDate(expiringThrough.getDate() + EXPIRING_DAYS)
-  const expiringThroughStr = expiringThrough.toISOString().slice(0, 10)
+  // Expiry is judged on the tenant's wall clock: a UTC "today" flips a card to
+  // expired a day early (or late) for every tenant east/west of UTC.
+  const todayStr = dateIsoInTimeZone(new Date(), ctx.timezone)
+  const expiringThroughStr = addDaysToIsoDate(todayStr, EXPIRING_DAYS)
 
   const data = await ctx.db(async (tx) => {
     const [person] = await tx

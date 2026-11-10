@@ -48,6 +48,7 @@ import type { PracticalCriterion } from '@beaconhs/db/schema'
 import { normalizeDocumentHref } from '@beaconhs/forms-core'
 import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
 import { toast } from '@/lib/toast'
+import { todayIsoLocal } from '@/lib/datetime'
 import { confirmDialog } from '@/lib/confirm'
 import { useReseededState } from '@/lib/use-reseeded-state'
 import { LessonSurface, type LessonSaveController } from './_lesson-surface'
@@ -1295,7 +1296,7 @@ function RecordsPanel({
   currentParams: Record<string, string | string[] | undefined>
 }) {
   const tGenerated = useGeneratedTranslations()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIsoLocal()
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-1">

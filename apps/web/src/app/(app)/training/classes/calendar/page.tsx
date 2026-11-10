@@ -26,6 +26,7 @@ import {
 import { eq } from 'drizzle-orm'
 import { can } from '@beaconhs/tenant'
 import { requireRequestContext } from '@/lib/auth'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { pickString } from '@/lib/list-params'
 import { ListPageLayout } from '@/components/page-layout'
 import { TrainingSubNav } from '../../_components/training-sub-nav'
@@ -78,6 +79,7 @@ function monthLabel(year: number, month: number): string {
 function buildGrid(
   year: number,
   month: number,
+  timeZone: string,
 ): {
   days: { date: Date; iso: string; inMonth: boolean; isToday: boolean }[]
   rows: number
@@ -85,7 +87,9 @@ function buildGrid(
   const first = new Date(year, month - 1, 1)
   const start = new Date(first)
   start.setDate(first.getDate() - first.getDay()) // Sunday-anchored
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // "Today" is the tenant's calendar day; the grid cells are built from
+  // local calendar parts, so both sides must use the same notion of a day.
+  const todayIso = dateIsoInTimeZone(new Date(), timeZone)
   const cells: { date: Date; iso: string; inMonth: boolean; isToday: boolean }[] = []
   for (let i = 0; i < 42; i++) {
     const d = new Date(start)
@@ -138,7 +142,7 @@ export default async function TrainingClassesCalendarPage({
   const canManageClasses = can(ctx, 'training.class.manage')
 
   // Window: [first of visible month minus the leading Sundays] .. [last grid day + 1]
-  const { days } = buildGrid(year, month)
+  const { days } = buildGrid(year, month, ctx.timezone)
   const firstCell = days[0]
   const lastCell = days[days.length - 1]
   if (!firstCell || !lastCell) {

@@ -28,6 +28,7 @@ import {
   type SelectOption,
 } from '@beaconhs/ui'
 import { RemoteSearchSelect } from '@/components/remote-search-select'
+import { todayIsoLocal } from '@/lib/datetime'
 
 type PpeDrawerType = {
   id: string
@@ -92,8 +93,10 @@ function IssueDrawer({
   const [personId, setPersonId] = useState('')
   const [note, setNote] = useState('')
   const [issuedOn, setIssuedOn] = useState('')
-  // Rendered client-side only, so 'today' is the user's own date, not UTC.
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // Client component: "today" must be the browser's LOCAL calendar day.
+  // `toISOString()` returns a UTC day, which is a day ahead for users east of
+  // UTC in the evening and a day behind for users west of it in the morning.
+  const todayIso = todayIsoLocal()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 

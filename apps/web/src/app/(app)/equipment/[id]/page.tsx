@@ -59,7 +59,7 @@ import { clamp, isUuid, mergeHref, pickString, escapeIlike } from '@/lib/list-pa
 import { EquipmentInspectionDrawer } from '../inspections/_inspection-panel'
 import { NewEquipmentInspectionDrawer } from '../inspections/_new-drawer'
 import { StartInspectionButton } from '../inspections/_start-button'
-import { formatDate, formatDateTime } from '@/lib/datetime'
+import { dateIsoInTimeZone, formatDate, formatDateTime } from '@/lib/datetime'
 import {
   LiveField,
   LiveRemoteSelect,
@@ -1283,7 +1283,7 @@ export default async function EquipmentDetailPage({
   }
   const customValues = readCustomFieldValues(item.metadata)
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = dateIsoInTimeZone(new Date(), ctx.timezone)
   // Named so the pre-use row reads like the scheduled ones next to it.
   const preUseTypeName = item.preUseInspectionTypeId
     ? ((
@@ -3294,12 +3294,7 @@ export default async function EquipmentDetailPage({
         >
           <input type="hidden" name="itemId" value={id} />
           <Field label={tGenerated('m_0285c38761c540')} required>
-            <Input
-              name="entryDate"
-              type="date"
-              required
-              defaultValue={new Date().toISOString().slice(0, 10)}
-            />
+            <Input name="entryDate" type="date" required defaultValue={todayIso} />
           </Field>
           <Field label={tGenerated('m_1e578efe1574cd')} required>
             <Select name="kind" defaultValue="note">
@@ -3338,11 +3333,7 @@ export default async function EquipmentDetailPage({
         >
           <input type="hidden" name="id" value={id} />
           <Field label={tGenerated('m_09030228796275')}>
-            <Input
-              name="lastSeenDate"
-              type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
-            />
+            <Input name="lastSeenDate" type="date" defaultValue={todayIso} />
           </Field>
           <Field label={tGenerated('m_0c8ecbc807dca2')}>
             <Input
@@ -3522,7 +3513,7 @@ export default async function EquipmentDetailPage({
         open={drawerKey === 'new-truck-log-entry' && canManageEquipment}
         closeHref={closeHref}
         itemId={id}
-        defaultDate={new Date().toISOString().slice(0, 10)}
+        defaultDate={todayIso}
         action={createTruckLogEntryAction}
       />
 

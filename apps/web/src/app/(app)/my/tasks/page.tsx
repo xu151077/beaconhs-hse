@@ -24,6 +24,7 @@ import {
 } from '@beaconhs/ui'
 import { correctiveActions, orgUnits } from '@beaconhs/db/schema'
 import { requireRequestContext } from '@/lib/auth'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import { parseListParams, pickString, escapeIlike } from '@/lib/list-params'
 import { SearchInput } from '@/components/search-input'
 import { SortableTh } from '@/components/sortable-th'
@@ -117,7 +118,8 @@ export default async function MyTasksPage({
     )
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  // Overdue/soon is judged on the tenant's wall clock, not the server's UTC day.
+  const todayStr = dateIsoInTimeZone(new Date(), ctx.timezone)
 
   const { rows, total, statusCounts, sevCounts } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = [

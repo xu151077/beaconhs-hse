@@ -112,6 +112,54 @@ export function dateIsoInTimeZone(d: Date, timeZone: string): string {
 }
 
 /**
+ * Add calendar days to an ISO calendar date (`YYYY-MM-DD`).
+ *
+ * Date-only columns carry no time or zone, so the arithmetic must not drift
+ * across a DST boundary or shift with the server timezone. Callers resolve the
+ * starting day with `dateIsoInTimeZone` (the tenant's day) and offset from
+ * there; using `new Date().toISOString()` for "today" would hand a UTC day to
+ * a tenant whose wall clock is still on the previous one.
+ */
+export function addDaysToIsoDate(isoDate: string, days: number): string {
+  return shiftIsoDate(isoDate, days, 0, 'addDaysToIsoDate')
+}
+
+/**
+ * Add calendar years to an ISO calendar date (`YYYY-MM-DD`).
+ *
+ * The same rule as `addDaysToIsoDate`: a date-only column must be shifted as
+ * dates, not through a local `Date`. `setFullYear()` on a parsed
+ * `YYYY-MM-DD` keeps the LOCAL month/day, so on a non-UTC host or browser a
+ * 2026-07-13 certificate can preview as 2027-07-12 while the server stores
+ * 2027-07-13. Feb 29 rolls to Mar 1 exactly as the previous UTC-based code did.
+ */
+export function addYearsToIsoDate(isoDate: string, years: number): string {
+  return shiftIsoDate(isoDate, 0, years, 'addYearsToIsoDate')
+}
+
+function shiftIsoDate(isoDate: string, days: number, years: number, label: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!match) throw new Error(`${label} expected YYYY-MM-DD, got "${isoDate}"`)
+  const shifted = new Date(
+    Date.UTC(Number(match[1]) + years, Number(match[2]) - 1, Number(match[3]) + days),
+  )
+  return `${String(shifted.getUTCFullYear()).padStart(4, '0')}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
+}
+
+/**
+ * The LOCAL calendar day of the running process (browser in a client
+ * component, host in a server one) as `YYYY-MM-DD`.
+ *
+ * Client components cannot reach `ctx.timezone`, and `toISOString()` always
+ * answers in UTC — so a browser east of UTC in the evening would default a
+ * date field to "tomorrow". Server code should prefer
+ * `dateIsoInTimeZone(new Date(), ctx.timezone)`.
+ */
+export function todayIsoLocal(now: Date = new Date()): string {
+  return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+/**
  * Parse a wall-clock string (`YYYY-MM-DD[THH:mm[:ss[.sss]]]`) as a time in the
  * given IANA timezone. Strings carrying an explicit offset/Z fall through to
  * native parsing. Returns null when the value is not a valid date/time.

@@ -24,6 +24,7 @@ import {
   ppeTypeInspectionCriteria,
 } from '@beaconhs/db/schema'
 import { recordAuditInTransaction } from '@/lib/audit'
+import { addDaysToIsoDate, dateIsoInTimeZone } from '@/lib/datetime'
 import { nextReference } from '@/lib/reference'
 
 type PpeInspectionKind = 'pre_use' | 'annual'
@@ -68,11 +69,11 @@ export async function createCorrectiveActionForFailedPpeInspection(
     siteOrgUnitId?: string | null
   },
 ): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10)
+  // The CA is dated on the tenant's wall clock, not the server's UTC day: an
+  // evening inspection in a western timezone must not be stamped "tomorrow".
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const dayOffset = args.severity === 'critical' ? 1 : args.severity === 'high' ? 3 : 7
-  const dueDate = new Date()
-  dueDate.setDate(dueDate.getDate() + dayOffset)
-  const dueOn = dueDate.toISOString().slice(0, 10)
+  const dueOn = addDaysToIsoDate(today, dayOffset)
   const reference = await nextReference(tx, ctx.tenantId, 'corrective_action')
 
   const [ca] = await tx

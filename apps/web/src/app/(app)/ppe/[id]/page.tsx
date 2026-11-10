@@ -74,7 +74,7 @@ import { recordModuleFlowEvent } from '@beaconhs/events'
 import { attachmentUrl } from '@/lib/attachment-url'
 import { requireRequestContext } from '@/lib/auth'
 import { canSeeRecord } from '@/lib/visibility'
-import { formatDate, isCalendarDate } from '@/lib/datetime'
+import { addYearsToIsoDate, dateIsoInTimeZone, formatDate, isCalendarDate } from '@/lib/datetime'
 import { LiveField, LiveRemoteSelect, LiveSelect } from '@/components/live-field'
 import { RemoteSelectField } from '@/components/remote-search-select'
 import { CustomFieldsSection } from '@/components/custom-fields/custom-fields-section'
@@ -297,7 +297,7 @@ async function recordInspection(formData: FormData) {
   if (!isUuid(itemId) || !isUuid(typeId)) throw new Error('Invalid PPE item')
   if (supervisorPersonId && !isUuid(supervisorPersonId)) throw new Error('Invalid supervisor')
   if (notes && notes.length > 10_000) throw new Error('Inspection notes are too long')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
 
   // Pull the criteria list so we can validate the per-row answers + compute
   // whether any fail is high+ severity (drives the auto-CA). The overall result
@@ -733,11 +733,8 @@ async function addCertificate(
     ? input.result
     : 'pass'
   const year = deriveAnnualYear(inspectedOn)
-  const nextDueOn = (() => {
-    const d = new Date(inspectedOn)
-    d.setFullYear(d.getFullYear() + 1)
-    return d.toISOString().slice(0, 10)
-  })()
+  // Date-only: shift the calendar year without a local-Date round trip.
+  const nextDueOn = addYearsToIsoDate(inspectedOn, 1)
   let id: string | null = null
   try {
     id = await ctx.db(async (tx) => {
@@ -1298,7 +1295,7 @@ export default async function PpeDetailPage({
   // Drawer state is URL-driven; preserve the active tab in the close URL so
   // that closing the drawer doesn't kick you back to Overview.
   const closeHref = `${basePath}?tab=${active}`
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = dateIsoInTimeZone(new Date(), ctx.timezone)
   return (
     <DetailPageLayout
       header={

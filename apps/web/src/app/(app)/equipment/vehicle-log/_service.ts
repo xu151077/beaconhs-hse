@@ -19,6 +19,7 @@ import { secureFetch, unsealSecret, type SealedSecret } from '@beaconhs/sync'
 import { can, type RequestContext } from '@beaconhs/tenant'
 import { recordModuleFlowEvent } from '@beaconhs/events'
 import { recordAudit } from '@/lib/audit'
+import { dateIsoInTimeZone } from '@/lib/datetime'
 import {
   assertVehicleLogImportPayload,
   collectVehicleLogOrgUnitCandidates,
@@ -435,7 +436,9 @@ export async function loadVehicleLogWorkspace(
   const start = dateKey(year, month, 1)
   const endExclusive = dateKey(next.year, next.month, 1)
   const dim = daysInMonth(year, month)
-  const today = new Date().toISOString().slice(0, 10)
+  // "Days elapsed this month" is a tenant-local question; a UTC day would be
+  // off by one for every tenant whose wall clock differs from UTC.
+  const today = dateIsoInTimeZone(new Date(), ctx.timezone)
   const elapsedDays =
     today < start ? 0 : today >= endExclusive ? dim : Math.max(1, Number(today.slice(8, 10)))
   const requestedMode = parseVehicleLogMode(opts.mode)

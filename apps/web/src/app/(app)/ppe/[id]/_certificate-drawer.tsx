@@ -23,6 +23,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, Plus } from 'lucide-react'
 import { Button, FileUploader, Input, Label, Select, Textarea, UrlDrawer } from '@beaconhs/ui'
 import { finalizeUpload, requestMultipartPartUrl, requestUpload } from '@/lib/uploads'
+import { addYearsToIsoDate, isCalendarDate } from '@/lib/datetime'
 import { toast } from '@/lib/toast'
 import { RemoteSearchSelect } from '@/components/remote-search-select'
 
@@ -111,13 +112,9 @@ export function CertificateDrawer({
 
   // Next-due preview — the same +1 year the server applies, shown inline so the
   // user knows when the recert will lapse.
-  const nextDue = (() => {
-    if (!inspectedOn) return null
-    const d = new Date(inspectedOn)
-    if (Number.isNaN(d.getTime())) return null
-    d.setFullYear(d.getFullYear() + 1)
-    return d.toISOString().slice(0, 10)
-  })()
+  // Same date-only +1 year the server applies. Parsing the value into a local
+  // Date and calling setFullYear() shifts the day for any non-UTC browser.
+  const nextDue = isCalendarDate(inspectedOn) ? addYearsToIsoDate(inspectedOn, 1) : null
 
   return (
     <UrlDrawer

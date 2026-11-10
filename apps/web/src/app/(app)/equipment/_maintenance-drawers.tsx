@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, Trash2 } from 'lucide-react'
 import { Button, Input, Label, Select, Textarea, UrlDrawer } from '@beaconhs/ui'
 import { confirmDialog } from '@/lib/confirm'
+import { todayIsoLocal } from '@/lib/datetime'
 import { PersonSelectField } from '@/components/person-select-field'
 import { RemoteSearchSelect } from '@/components/remote-search-select'
 import type { PickerLookup } from '@/lib/picker-options'
@@ -58,7 +59,8 @@ type PersonOption = { value: string; label: string; hint?: string }
 type ItemOption = { value: string; label: string; hint?: string }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  // Client component: the browser's local day, never the UTC day.
+  return todayIsoLocal()
 }
 
 export function ScheduleDrawer({
