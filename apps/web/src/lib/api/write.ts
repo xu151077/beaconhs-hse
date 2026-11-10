@@ -73,7 +73,13 @@ import {
 } from '@/lib/compliance-type-evidence'
 import { isUuid } from '@/lib/list-params'
 import { ApiError } from './errors'
-import { assertCreateInScope, assertEntityInScope } from './scope'
+import {
+  assertCreateInScope,
+  assertEntityInScope,
+  assertPatchInScope,
+  assertResultInScope,
+  isTenantScope,
+} from './scope'
 
 type Json = Record<string, unknown>
 type WriteResult = { id: string; [k: string]: unknown }
@@ -2565,9 +2571,26 @@ export async function patchEntity(
 ): Promise<WriteResult> {
   const entry = WRITES[entityKey]?.update
   if (!entry) throw ApiError.methodNotAllowed(`Updates are not supported for "${entityKey}"`)
-  // Scope check first: 404 (not 403) so a scoped key cannot probe ids.
-  await assertEntityInScope(ctx, entityKey, id)
-  return entry.handler(ctx, id, body)
+  // Legacy tenant-wide credential: unchanged behaviour.
+  if (isTenantScope(ctx)) {
+    await assertEntityInScope(ctx, entityKey, id)
+    return entry.handler(ctx, id, body)
+  }
+  // Scoped credential (PD-01 M1): the row scope check, the body ownership
+  // check, the handler's writes and the post-write re-check share ONE
+  // transaction. A record that leaves the caller's scope during the patch — a
+  // concurrent reassignment winning the race (TOCTOU) or a write the body check
+  // cannot see — rolls the whole mutation back, so a refusal is never returned
+  // over a committed ownership transfer.
+  return ctx.db(async (tx) => {
+    const txCtx: RequestContext = { ...ctx, db: (fn) => fn(tx) }
+    // Scope check first: 404 (not 403) so a scoped key cannot probe ids.
+    await assertEntityInScope(txCtx, entityKey, id)
+    assertPatchInScope(txCtx, entityKey, body)
+    const result = await entry.handler(txCtx, id, body)
+    await assertResultInScope(txCtx, entityKey, id)
+    return result
+  })
 }
 
 export async function deleteEntity(

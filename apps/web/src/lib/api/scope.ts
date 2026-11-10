@@ -89,7 +89,8 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
   },
 }
 
-function isTenantScope(ctx: { scopes: Array<{ type: string }> }): boolean {
+/** Whether this credential carries the legacy, un-narrowed tenant scope. */
+export function isTenantScope(ctx: { scopes: Array<{ type: string }> }): boolean {
   return ctx.scopes.some((scope) => scope.type === 'tenant')
 }
 
@@ -243,5 +244,78 @@ export function assertCreateInScope(
         throw ApiError.forbidden(`This API key cannot create ${entityKey} for another person`)
       }
     }
+  }
+}
+
+/**
+ * Patch-time check on the request BODY: a scoped credential may not reassign
+ * the columns that define its own scope (site / owner / person). Absent keys
+ * mean "do not change" and pass; present keys must stay inside the scope. This
+ * is the pre-write half of the patch guard — the post-write half is
+ * `assertResultInScope`, which catches anything the body check cannot see
+ * (handler-internal writes, concurrent reassignment between check and write).
+ */
+export function assertPatchInScope(
+  ctx: Parameters<typeof recordVisibilityWhere>[0],
+  entityKey: string,
+  body: unknown,
+): void {
+  if (isTenantScope(ctx)) return
+  const entry = API_ENTITY_SCOPE[entityKey]
+  // Unmapped entities never reach a handler: assertEntityInScope already 404s.
+  if (!entry) return
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  const scopes = ctx.scopes as Array<{ type: string; siteIds?: string[] }>
+  if (entry.bodySiteKey && Object.hasOwn(record, entry.bodySiteKey)) {
+    const allowed = new Set<string>()
+    for (const scope of scopes) {
+      if (scope.type === 'sites') for (const id of scope.siteIds ?? []) allowed.add(id)
+    }
+    const siteId = record[entry.bodySiteKey]
+    if (typeof siteId !== 'string' || !allowed.has(siteId)) {
+      throw ApiError.forbidden(`This API key cannot move ${entityKey} outside its site scope`)
+    }
+  }
+  if (scopes.some((scope) => scope.type === 'self')) {
+    if (entry.bodyOwnerKey && Object.hasOwn(record, entry.bodyOwnerKey)) {
+      const owner = record[entry.bodyOwnerKey]
+      if (typeof owner !== 'string' || !ctx.membership || owner !== ctx.membership.id) {
+        throw ApiError.forbidden(`This API key cannot transfer ${entityKey} to another owner`)
+      }
+    }
+    if (entry.bodyPersonKey && Object.hasOwn(record, entry.bodyPersonKey)) {
+      const person = record[entry.bodyPersonKey]
+      if (typeof person !== 'string' || !ctx.personId || person !== ctx.personId) {
+        throw ApiError.forbidden(`This API key cannot transfer ${entityKey} to another person`)
+      }
+    }
+  }
+}
+
+/**
+ * Post-mutation re-check: the row must STILL satisfy the caller's scope
+ * predicate after the handler ran. Must run inside the SAME transaction as the
+ * mutation (patchEntity binds one), so a record that left the caller's scope —
+ * via a concurrent reassignment that won the race, or a write the body check
+ * could not see — rolls the entire mutation back instead of committing
+ * out-of-scope data and then reporting failure.
+ */
+export async function assertResultInScope(
+  ctx: Parameters<typeof recordVisibilityWhere>[0],
+  entityKey: string,
+  id: string,
+): Promise<void> {
+  if (isTenantScope(ctx)) return
+  const entry = API_ENTITY_SCOPE[entityKey]
+  if (!entry) return
+  const visible = await ctx.db(async (tx) => {
+    const scope = await entityScopeWhere(ctx, tx, entityKey)
+    if (scope === undefined) return true // defensive: only tenant scope returns undefined
+    const where = and(eq(entry.id, id), eq(entry.tenantId, ctx.tenantId), scope)
+    const [row] = await tx.select({ id: entry.id }).from(entry.table).where(where).limit(1)
+    return row !== undefined
+  })
+  if (!visible) {
+    throw ApiError.forbidden(`This API key cannot move ${entityKey} outside its scope`)
   }
 }

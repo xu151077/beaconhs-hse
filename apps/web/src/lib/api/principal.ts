@@ -65,16 +65,16 @@ export type ApiAuthorization =
     }
   | { ok: false; reason: ApiAuthorizationFailure }
 
-/** Intersection: a credential may only hold permissions its principal also holds. */
+/** Intersection: a credential may only hold permissions its principal also
+ * holds, by exact catalogue key. Wildcards are not part of the API-key
+ * permission model — PERMISSION_CATALOGUE has no wildcard keys and
+ * `sanitizeApiPermissions` has always stripped any wildcard stored on a
+ * credential (predating PD-01) — so no wildcard expansion happens here and a
+ * stored "x.*" grant is dropped exactly as it always has been. */
 function narrowPermissions(credential: string[], principal: Set<string>): Set<string> {
   const effective = new Set<string>()
   for (const permission of credential) {
     if (principal.has(permission)) effective.add(permission)
-    else if (permission.endsWith('.*')) {
-      // A wildcard credential grant survives only when the principal holds the
-      // same wildcard; expanding it against individual keys would widen it.
-      if (principal.has(permission)) effective.add(permission)
-    }
   }
   return effective
 }

@@ -222,6 +222,63 @@ describe('authorizeApiCredential', () => {
   })
 })
 
+describe('permission intersection & wildcard compatibility (L1)', () => {
+  it('14. drops a wildcard grant the principal does not hold', () => {
+    // Wildcards are not part of the API-key permission model: the catalogue has
+    // no wildcard keys and sanitizeApiPermissions strips them from credentials.
+    // The decision layer therefore only ever sees exact catalogue keys.
+    const result = authorizeApiCredential({
+      credential: credential({ permissions: ['incidents.read.all', 'incidents.*'] }),
+      principal: principal(),
+      access: access(['incidents.read.all']),
+      personId: null,
+      fallbackUserId: 'x',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect([...result.permissions]).toEqual(['incidents.read.all'])
+  })
+
+  it('15. keeps an identical wildcard key only via exact-match intersection', () => {
+    // Compat: a wildcard string stored on BOTH the credential and the principal
+    // survives as the literal key (downstream can() expands it). Behaviour is
+    // unchanged by the L1 dead-branch removal.
+    const result = authorizeApiCredential({
+      credential: credential({ permissions: ['incidents.*'] }),
+      principal: principal(),
+      access: access(['incidents.*']),
+      personId: null,
+      fallbackUserId: 'x',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect([...result.permissions]).toEqual(['incidents.*'])
+  })
+
+  it('16. keeps an unbound credential permissions verbatim (legacy compatibility)', () => {
+    const result = authorizeApiCredential({
+      credential: credential({ principalTenantUserId: null, permissions: ['a.read', 'b.write'] }),
+      principal: null,
+      access: null,
+      personId: null,
+      fallbackUserId: 'api_key:key-1',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.bound).toBe(false)
+    expect([...result.permissions]).toEqual(['a.read', 'b.write'])
+  })
+
+  it('17. source contract: no wildcard branch in the decision; credentials are sanitized', () => {
+    const decision = readFileSync(new URL('./principal.ts', import.meta.url), 'utf8')
+    // L1: the unreachable wildcard branch is gone.
+    expect(decision).not.toContain("endsWith('.*')")
+    // Credentials never reach the decision with unsanitized permissions.
+    const auth = readFileSync(new URL('./auth.ts', import.meta.url), 'utf8')
+    expect(auth).toContain('sanitizeApiPermissions(row.permissions')
+  })
+})
+
 describe('auth wiring contract', () => {
   const source = readFileSync(new URL('./auth.ts', import.meta.url), 'utf8')
 
