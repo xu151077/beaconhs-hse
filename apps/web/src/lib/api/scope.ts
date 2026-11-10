@@ -26,6 +26,13 @@ type ScopeEntry = {
   cols: RecordOwnerColumns
   /** Body key that names the record's site, for create-time scope checks. */
   bodySiteKey?: string
+  /**
+   * Some report entities are SQL VIEWS (e.g. `report_corrective_actions`) with
+   * no Drizzle table definition. `recordVisibilityWhere` emits table-qualified
+   * columns from `cols`, which cannot resolve against a differently-named view.
+   * For those entries, build the same predicate from constant column names.
+   */
+  viewCols?: { siteColName?: string; ownerColName?: string; personColName?: string }
 }
 
 const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
@@ -39,6 +46,7 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
       ownerTenantUserCol: correctiveActions.ownerTenantUserId,
     },
     bodySiteKey: 'siteOrgUnitId',
+    viewCols: { siteColName: 'site_org_unit_id', ownerColName: 'owner_tenant_user_id' },
   },
   // Documents have NO site column (the site on `document_ack_sessions` is a
   // different table). Self = the document owner. A `sites` scope therefore has
@@ -83,10 +91,29 @@ export async function entityScopeWhere(
   // A `sites` scope on an entity with no site column cannot be expressed.
   // Degrading to "own records only" would silently answer a different question
   // than the caller asked, so refuse instead.
-  if (ctx.scopes.some((scope) => scope.type === 'sites') && !entry.cols.siteCol) {
+  if (
+    ctx.scopes.some((scope) => scope.type === 'sites') &&
+    !entry.cols.siteCol &&
+    !entry.viewCols?.siteColName
+  ) {
     return sql`false`
   }
-  return recordVisibilityWhere(ctx, tx, entry.cols)
+  if (!entry.viewCols) return recordVisibilityWhere(ctx, tx, entry.cols)
+  // View entity: identical scope semantics, expressed with unqualified column
+  // names so the predicate resolves against the view in the FROM clause.
+  const conds: SQL[] = []
+  for (const scope of ctx.scopes) {
+    if (scope.type === 'sites' && entry.viewCols.siteColName) {
+      const ids = scope.siteIds ?? []
+      if (ids.length > 0) {
+        conds.push(sql`${sql.raw(`"${entry.viewCols.siteColName}"`)} in ${ids}`)
+      }
+    } else if (scope.type === 'self' && entry.viewCols.ownerColName && ctx.membership) {
+      conds.push(sql`${sql.raw(`"${entry.viewCols.ownerColName}"`)} = ${ctx.membership.id}`)
+    }
+  }
+  if (conds.length === 0) return sql`false`
+  return conds.length === 1 ? conds[0]! : sql.join(conds, sql` OR `)
 }
 
 /**
