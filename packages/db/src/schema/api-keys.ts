@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { id, timestamps } from './_helpers'
 import { tenants, users } from './core'
-import type { PermissionKey } from './iam'
+import type { PermissionKey, RoleScope } from './iam'
 
 export const apiKeys = pgTable(
   'api_keys',
@@ -31,6 +31,28 @@ export const apiKeys = pgTable(
     /** Explicit Builder templates this machine principal may access. Empty is
      * fail-closed even when forms permissions are present. */
     builderTemplateIds: jsonb('builder_template_ids').$type<string[]>().default([]).notNull(),
+    /**
+     * Authorization principal this credential acts as (PD-01, phase 1).
+     *
+     * Null keeps the legacy tenant-level credential: `permissions` is the whole
+     * grant and there is no record-scope narrowing. Set it to a `tenant_users.id`
+     * so the credential inherits that member's roles, `RoleScope` set and linked
+     * person — which is what makes `site`/`self` scopes expressible for API keys
+     * without a parallel permission system.
+     *
+     * Deliberately no FK: a composite `(tenant_id, principal_tenant_user_id)`
+     * key cannot use `ON DELETE SET NULL` (tenant_id is NOT NULL) and CASCADE
+     * would silently delete credentials when a membership is removed. The
+     * binding write path validates tenant agreement; the auth path fails closed
+     * when the principal is missing or inactive.
+     */
+    principalTenantUserId: uuid('principal_tenant_user_id'),
+    /**
+     * Explicit narrowing of the principal's scopes. Null inherits the principal
+     * verbatim; an array may only narrow (never widen). Ignored while
+     * `principal_tenant_user_id` is null.
+     */
+    scopes: jsonb('scopes').$type<RoleScope[]>(),
     createdBy: text('created_by').references(() => users.id),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -41,6 +63,7 @@ export const apiKeys = pgTable(
     tenantIdx: index('api_keys_tenant_idx').on(t.tenantId),
     tenantIdIdUx: uniqueIndex('api_keys_tenant_id_id_ux').on(t.tenantId, t.id),
     hashUx: uniqueIndex('api_keys_key_hash_ux').on(t.keyHash),
+    principalIdx: index('api_keys_principal_idx').on(t.tenantId, t.principalTenantUserId),
   }),
 )
 

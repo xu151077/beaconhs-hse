@@ -286,6 +286,9 @@ describe('Phase 11-F introduced no new architecture', () => {
       // Repairs the audit trigger's owner branch (RETURN OLD/NEW for owner);
       // no schema or report change.
       '0057_audit_immutable_trigger_owner_fix',
+      // PD-01 phase 1: api_keys gains a nullable principal + scope column;
+      // no report relation or projection is touched.
+      '0058_api_key_principal_scope',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))

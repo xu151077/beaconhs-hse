@@ -241,20 +241,27 @@ describe('audit_log immutable + FK replay safety (real PG)', () => {
     await expect(s.unsafe(doBlock)).rejects.toThrowError(/wrong/i)
   })
 
-  it('journal/snapshot chain includes 0057 (with 0056 and 0055 untouched)', () => {
+  it('journal chain is linear through the latest migration', () => {
     // 15/16 static parts: full migrate chain length + file presence (live full migrate left to CI)
     const journal = JSON.parse(
       readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8'),
     )
+    // Newest first: every migration added after 0055 must keep the earlier
+    // audit-protection migrations in place, so assert the whole tail rather
+    // than only the last tag.
     expect(journal.entries.at(-1)).toMatchObject({
+      idx: 58,
+      tag: '0058_api_key_principal_scope',
+    })
+    expect(journal.entries.at(-2)).toMatchObject({
       idx: 57,
       tag: '0057_audit_immutable_trigger_owner_fix',
     })
-    expect(journal.entries.at(-2)).toMatchObject({
+    expect(journal.entries.at(-3)).toMatchObject({
       idx: 56,
       tag: '0056_audit_log_and_fk_replay_safety',
     })
-    expect(journal.entries.at(-3)).toMatchObject({
+    expect(journal.entries.at(-4)).toMatchObject({
       idx: 55,
       tag: '0055_drop_redundant_single_col_fks',
     })
