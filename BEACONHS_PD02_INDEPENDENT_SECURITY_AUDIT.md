@@ -184,13 +184,13 @@ Reason: hard constraint 5 is violated in the live cluster (F1, Critical) — the
 
 ## New findings from the remediation diff
 
-### N1 — MEDIUM — `beaconhs_backup` (LOGIN, BYPASSRLS) still holds SELECT on both platform audit tables
+### N1 — MEDIUM (round 3: CLOSED — documented deviation, SELECT-only pinned) — `beaconhs_backup` (LOGIN, BYPASSRLS) held SELECT on both platform audit tables
 
 - **Location:** `scripts/cluster/provision.sql` — `GRANT SELECT ON ALL TABLES IN SCHEMA public TO beaconhs_backup;` runs **after** the PD-02 `\gexec` revoke block, so a provision (re-)run re-grants backup SELECT on `audit_access_grants` and `platform_audit_access_log`; neither the 0059 DO block, `convergeAuditPrivileges`, nor the `businessOffenders` gate (which checks only `beaconhs_app`/`beaconhs_super`) strips or detects it.
 - **Live:** `information_schema.role_table_grants` shows `beaconhs_backup | audit_access_grants | SELECT` and `beaconhs_backup | platform_audit_access_log | SELECT` (plus audit_log SELECT); role attributes `LOGIN ... BYPASSRLS`.
 - **Impact:** constraint 5's "only owner + audit_service" is still violated for this role. A holder of the backup credential can read the platform-wide grant registry and the access trail, and — via BYPASSRLS — the cross-tenant audit_log. Not reachable from the application runtime pool (the round-1 F1 escalation path), but it is a standing login-capable privilege outside the intended matrix and invisible to the fail-closed gate.
 - **Fix direction:** extend the same three remediation points (0059 DO block, converge, provision revoke block, `businessOffenders` query) to `beaconhs_backup` for the two platform tables — or, if backup genuinely must dump them, document that as an explicit design exception and extend the gate to assert backup holds SELECT **only**. audit_log SELECT for logical backup is arguably the role's function but should be stated in the architecture doc alongside the BYPASSRLS caveat.
-- **Status:** new (residual of F1's remediation scope).
+- **Round-3 update — CLOSED (allowlist-and-document option):** commit `31f620f0` pins backup **SELECT-only** on both platform tables at all three enforcement points (`provision.sql` `\gexec` revokes INSERT/UPDATE/DELETE/TRUNCATE, the 0059 `to_regrole`-guarded DO block, and the `convergeAuditPrivileges` self-heal DO block), and the `businessOffenders` gate now flags `grantee='beaconhs_backup'` on any `privilege_type <> 'SELECT'` — fail-closed. Live-verified: backup holds SELECT on both platform tables and nothing else (INSERT/UPDATE/DELETE/TRUNCATE all false); gate dry-run against the live catalog returns no offenders; new test asserts the 8-privilege matrix, proves the gate rejects an injected backup UPDATE (`/business-pool roles hold platform-audit privileges.*beaconhs_backup/`) and that converge heals. The deviation rationale is technically sound (see round-3 adjudication below).
 
 ### N2 — LOW — last page of a full window returns 400 (`row_cap`) due to the +1 probe
 
@@ -203,10 +203,38 @@ Reason: hard constraint 5 is violated in the live cluster (F1, Critical) — the
 
 Grantee matrix on the three audit tables (live): `audit_owner`-level privileges only for `beaconhs_owner`; SELECT/INSERT/UPDATE for `audit_service` on grants, SELECT/INSERT on log; SELECT for `audit_reader` on audit_log; SELECT for `beaconhs_app` on audit_log (RLS-forced, tenant-scoped); INSERT/UPDATE (no SELECT) for `beaconhs_super` on audit_log; **SELECT for `beaconhs_backup` on all three (N1)**. One residual violation of the "owner + audit_service only" letter, on a maintenance role, undetected by the gate.
 
-## FINAL VERDICT (round 2)
+## FINAL VERDICT (round 2 — superseded by round 3: PASS)
 
 # CONDITIONAL PASS
 
 Round-1 blocking findings are genuinely closed at the application-facing level: the business pool can no longer read or forge platform audit state (F1), super can no longer read cross-tenant audit_log (F2), the approval boundary is enforced and trailed (F4), impersonation is blocked on the whole audit surface (F5), the migration is single-final-file (F3), and F6/F7/F8 dispositions hold as claimed (with N2 carved out). The remediation tests are production-shaped and all 48 pass.
 
-**Condition to reach full PASS:** close N1 — strip (or explicitly allowlist-and-document) `beaconhs_backup`'s SELECT on `audit_access_grants`/`platform_audit_access_log` in the same three enforcement points, and extend `assertAuditTablePrivileges` so the fail-closed gate covers every grantee, not only app/super. N2 is a functional pagination bug; fix at leisure, no security impact.
+**Condition to reach full PASS:** close N1 — strip (or explicitly allowlist-and-document) `beaconhs_backup`'s SELECT on `audit_access_grants`/`platform_audit_access_log` in the same three enforcement points, and extend `assertAuditTablePrivileges` so the fail-closed gate covers every grantee, not only app/super. N2 is a functional pagination bug; fix at leisure, no security impact. _(Round 3: condition met — see adjudication below; verdict upgraded to PASS.)_
+
+---
+
+# Round-3 adjudication (final)
+
+- **Date:** 2026-11-11
+- **Scope:** commits `31f620f0` (fix) + `f7a9bd20` (docs) on top of `4c1c530e`; implements the "explicitly allowlist-and-document" option offered in the round-2 N1 condition.
+- **Independent verification performed:**
+  1. **Code (`git show 31f620f0`):** the SELECT-only pin for `beaconhs_backup` (REVOKE INSERT/UPDATE/DELETE/TRUNCATE on both platform tables) is present and idempotent at all three enforcement points — `scripts/cluster/provision.sql` (`\gexec`, `to_regclass`-guarded), `packages/db/drizzle/0059_audit_access_platform.sql` (inside the existing `to_regrole`-guarded DO block, with the documented-deviation comment), and `packages/db/src/audit-roles.ts` `convergeAuditPrivileges` (self-heal DO block). `assertAuditTablePrivileges` `businessOffenders` now flags `grantee='beaconhs_backup'` with `privilege_type <> 'SELECT'` — a fail-closed migration error. `provision.sql:212` confirms backup default privileges are SELECT-only, so fresh clusters never receive write grants to heal.
+  2. **Tests:** ran `NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @beaconhs/db exec vitest run src/audit-access.test.ts src/audit-role-preflight.test.ts` → **2 files, 49/49 passed** (round 2 was 48; +1 is the N1 case). The N1 test is meaningful: it adds `beaconhs_backup` to the simulated provision-time blanket grant, asserts the 8-entry `has_table_privilege` matrix (SELECT true, INSERT/UPDATE/DELETE false on both tables), injects a backup UPDATE and proves the gate **rejects** with `/business-pool roles hold platform-audit privileges.*beaconhs_backup/`, then proves converge heals and the gate resolves.
+  3. **Live cluster (`beaconhs-postgres`, read-only):** `has_table_privilege('beaconhs_backup', …)` = SELECT true, INSERT/UPDATE/DELETE/TRUNCATE false on both platform tables; the extended offender predicate run against the live catalog returns **zero rows** (gate clean); migration ledger = 59 applied.
+  4. **No application path uses the backup identity:** repo-wide grep for `beaconhs_backup` in apps/packages (non-test) hits only `packages/db/src/migrate.ts:510` (role-name validation for migration preflight). No web/worker code authenticates as backup.
+
+- **Adjudication of the deviation rationale — ACCEPTED as technically sound:**
+  - _pg_dump cannot dump table data without SELECT_ — correct; revoking SELECT would produce incomplete backups, and excluding the two tables would leave a restored cluster whose drizzle ledger claims 0059 applied while the tables are absent, breaking converge/assert post-restore.
+  - _Marginal sensitivity ≈ zero_ — verified: migration 0056 (lines 76-79) already pins `beaconhs_backup` SELECT on the **entire cross-tenant audit_log** by design for complete backups. The grant registry and access trail are metadata strictly less sensitive than what backup legitimately reads today. The deviation adds no new exposure class.
+  - _The dangerous half (write/tamper) is now closed and gated_ — backup can no longer forge grants, tamper with the trail, or delete rows on either platform table; any regression fails the migration.
+  - This satisfies the round-2 condition **verbatim** ("strip (or explicitly allowlist-and-document) … and extend `assertAuditTablePrivileges` so the fail-closed gate covers every grantee"): constraint 5 is now satisfied via a documented, gated allowlist instead of literal exclusivity.
+
+- **N2 re-confirmation:** unchanged, remains **non-blocking** — the last-page `row_cap` 400 (pageSize=500 → page 20: 9500+501 > 10000) is fail-closed, functional-only, no security impact. Fix at leisure (cap the probe at the window boundary).
+
+## FINAL VERDICT (round 3)
+
+# PASS
+
+All round-1 and round-2 findings are now CLOSED or explicitly ACCEPTED with documented, gated rationale: F1/F2 (Critical/High) closed and pinned by fail-closed gates with production-shaped drift tests; F3/F4/F5 closed; F6 accepted-documented; F7's budget semantics verified not a bug; F8 fail-closed by construction; N1 closed via the sanctioned allowlist-and-document option with the gate extended to every grantee class; N2 open and non-blocking (functional UX edge). No privilege escalation path to the platform audit state remains from any application-facing role; the only standing cross-tenant read identity outside the grant chain is the backup role, which is by-design, SELECT-only, write-gated, and unused by application code.
+
+**Residual concerns (non-blocking, for the record):** N2 pagination edge; backup-credential custody is an operational matter (the credential reads the whole database by design); F4's unbounded cross-tenant revoke remains accepted-with-note and should be revisited if multi-tenant approval volumes grow.
