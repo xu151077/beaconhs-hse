@@ -49,7 +49,7 @@ import {
   readStorageFreezeStateForTenant,
   requireFreezeState,
 } from './storage-freeze-operations'
-import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema/iam'
+import { AUDIT_DEFAULT_UNGRANTED, BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema/iam'
 import {
   HAZID_ARC_FLASH_APP_KEY,
   HAZID_CONFINED_SPACE_APP_KEY,
@@ -358,12 +358,59 @@ async function counts(url: string): Promise<Counts> {
        (select count(*) from roles where is_built_in)::int as built_in_roles,
        (select count(*) from org_units)::int as org_units,
        (select count(*) from people)::int as people,
-       (select count(*) from form_templates)::int as form_templates,
-       (select count(*) from audit_log where entity_type = 'tenant')::int as audit_rows`,
+       (select count(*) from form_templates)::int as form_templates`,
   )
   const row = rows[0]
   if (!row) throw new Error('counts query returned no row')
-  return row
+  // PD-02 (audit finding F2) revoked `audit_log` SELECT from `beaconhs_super`, so the
+  // superadmin credential can no longer read the trail. Audit rows are counted through
+  // the owner identity per-tenant instead — the same credential pattern the teardown
+  // (`wipeTenants`) already uses for audit-row deletion.
+  const tenantRows = await query<{ id: string }>(url, `select id::text as id from tenants`)
+  const auditCounts = await readAuditViaOwner<{ n: number }>(
+    tenantRows.map((t) => t.id),
+    () => `select count(*)::int as n from audit_log where entity_type = 'tenant'`,
+  )
+  const audit_rows = auditCounts.reduce((sum, r) => sum + Number(r?.n ?? 0), 0)
+  return { ...row, audit_rows }
+}
+
+/**
+ * Read `audit_log` through the OWNER identity with the tenant GUC set, one query per
+ * tenant.
+ *
+ * WHY NOT THE SUPERADMIN: PD-02 (independent audit finding F2) deliberately revoked
+ * `audit_log` SELECT from `beaconhs_super` — the BYPASSRLS business-pool credential
+ * must not read the cross-tenant trail without a grant and a trail entry. The fixture
+ * still needs to assert on what provisioning WROTE, so it reads as the table owner
+ * (via `MIGRATION_DATABASE_URL`, the migrator login reaching the NOLOGIN owner by
+ * `SET ROLE`), exactly like the teardown's audit-row deletes. `audit_log` is FORCE
+ * RLS, so the tenant GUC is mandatory for the owner too; `tenantIds` comes from a
+ * superadmin enumeration because the owner cannot see the `tenants` catalogue itself.
+ */
+async function readAuditViaOwner<T = Record<string, unknown>>(
+  tenantIds: string[],
+  text: () => string,
+): Promise<T[]> {
+  const migratorUrl = process.env.MIGRATION_DATABASE_URL
+  if (!migratorUrl) {
+    throw new Error(
+      'MIGRATION_DATABASE_URL is not set — audit_log reads need the owner credential (PD-02 F2 revoked the superadmin audit_log read).',
+    )
+  }
+  const sql = postgres(migratorUrl, { max: 1 })
+  try {
+    await sql.unsafe('SET ROLE beaconhs_owner')
+    const out: T[] = []
+    for (const id of tenantIds) {
+      await sql.unsafe(`SET app.tenant_id='${id}'`)
+      const rows = (await sql.unsafe(text())) as unknown as T[]
+      if (Array.isArray(rows)) out.push(...rows)
+    }
+    return out
+  } finally {
+    await sql.end({ timeout: 0 }).catch(() => {})
+  }
 }
 
 type RoleRow = {
@@ -552,10 +599,17 @@ describeDb('the first-tenant provisioner (live database)', () => {
       expect([...row.permissions].sort()).toEqual([...def.permissions].sort())
     }
 
-    // And the sensitive one: tenant_admin must carry the whole catalogue.
-    const catalogue = [...PERMISSION_CATALOGUE].sort()
+    // And the sensitive one: tenant_admin must carry the whole catalogue EXCEPT the
+    // PD-02 audit keys, which V3 P-4 requires to be default-ungranted on every role
+    // (approvals, cross-tenant reads). Mirrors the provisioner's own baseline.
+    const catalogue = [...PERMISSION_CATALOGUE]
+      .filter((permission) => !(AUDIT_DEFAULT_UNGRANTED as readonly string[]).includes(permission))
+      .sort()
     const admin = rows.find((r) => r.key === 'tenant_admin')
     expect([...(admin?.permissions ?? [])].sort()).toEqual(catalogue)
+    for (const auditKey of AUDIT_DEFAULT_UNGRANTED) {
+      expect(admin?.permissions, `${auditKey} must not be default-granted`).not.toContain(auditKey)
+    }
   }, 180_000)
 
   it('a custom role in the tenant survives, and built-in roles are not overwritten', async () => {
@@ -618,33 +672,46 @@ describeDb('the first-tenant provisioner (live database)', () => {
     await wipeTenants(url)
     await ensureSuperAdmin()
     runCli(['--name', 'Audit Trail Ltd', '--apply'], url)
-    const rows = await query<{
+    // Tenant ids come from the superadmin (the owner cannot enumerate tenants under
+    // FORCE RLS); the audit row itself is read through the owner identity per-tenant
+    // (PD-02 F2 revoked the superadmin audit_log read).
+    const tenants = await query<{ tenant_id: string; tenant_slug: string }>(
+      url,
+      `select t.id::text as tenant_id, t.slug as tenant_slug from tenants t where t.slug = 'audit-trail-ltd'`,
+    )
+    const rows = await readAuditViaOwner<{
       tenant_id: string
       tenant_slug: string
       audit_tenant: string
       action: string
-      actor: string | null
+      actor_id: string | null
     }>(
-      url,
-      `select t.id::text as tenant_id,
-              t.slug as tenant_slug,
-              a.tenant_id::text as audit_tenant,
-              a.action,
-              u.email as actor
-         from tenants t
-         join audit_log a on a.entity_id = t.id and a.entity_type = 'tenant'
-         left join "user" u on u.id = a.actor_user_id`,
+      tenants.map((t) => t.tenant_id),
+      () =>
+        `select a.tenant_id::text as audit_tenant,
+                a.action,
+                a.actor_user_id::text as actor_id
+           from audit_log a
+          where a.entity_type = 'tenant'`,
     )
     expect(rows).toHaveLength(1)
     const row = rows[0]
     if (!row) throw new Error('no audit row')
+    const tenant = tenants[0]
+    if (!tenant) throw new Error('no tenant fixture')
     // The audit row must live in the NEW tenant's own log, or the day-one timeline is
     // empty on arrival. Compared id-to-id: the audit row's tenant_id must be the tenant
     // that was just created.
-    expect(row.audit_tenant).toBe(row.tenant_id)
-    expect(row.tenant_slug).toBe('audit-trail-ltd')
+    expect(row.audit_tenant).toBe(tenant.tenant_id)
+    expect(tenant.tenant_slug).toBe('audit-trail-ltd')
     expect(row.action).toBe('create')
-    expect(row.actor).toBeTruthy()
+    // The actor's email is resolved with the superadmin credential (the "user" catalogue
+    // is not readable through the per-tenant owner GUC when the actor is a platform
+    // administrator rather than a tenant member).
+    const actor = row.actor_id
+      ? await query<{ email: string }>(url, `select email from "user" where id = '${row.actor_id}'`)
+      : []
+    expect(actor[0]?.email).toBeTruthy()
   }, 60_000)
 
   it('the seeded templates are exactly the day-one set, and the Lift Plan is fillable', async () => {
@@ -744,10 +811,11 @@ describeDb('the first-tenant provisioner (live database)', () => {
     expect((await counts(url)).tenants).toBe(1)
 
     // Nothing to attribute the day-one audit row to, so `actor_user_id` is null
-    // rather than pointing at a fabricated identity.
-    const actor = await query<{ actor: string | null }>(
-      url,
-      `select actor_user_id::text as actor from audit_log where entity_type = 'tenant'`,
+    // rather than pointing at a fabricated identity. Read through the owner identity
+    // (PD-02 F2 revoked the superadmin audit_log read).
+    const actor = await readAuditViaOwner<{ actor: string | null }>(
+      (await query<{ id: string }>(url, `select id::text as id from tenants`)).map((t) => t.id),
+      () => `select actor_user_id::text as actor from audit_log where entity_type = 'tenant'`,
     )
     expect(actor[0]?.actor).toBeNull()
 
@@ -973,21 +1041,25 @@ describeDb('storage-freeze initialization (live database)', () => {
       tenants: number
       freeze_rows: number
       roles: number
-      audit_rows: number
     }>(
       url,
       `select
          (select count(*) from tenants)::int as tenants,
          (select count(*) from storage_freeze)::int as freeze_rows,
-         (select count(*) from roles)::int as roles,
-         (select count(*) from audit_log where entity_type = 'tenant')::int as audit_rows`,
+         (select count(*) from roles)::int as roles`,
     )
+    // Audit rows are counted through the owner identity per-tenant (PD-02 F2).
+    const auditRows = await readAuditViaOwner<{ n: number }>(
+      (await query<{ id: string }>(url, `select id::text as id from tenants`)).map((t) => t.id),
+      () => `select count(*)::int as n from audit_log where entity_type = 'tenant'`,
+    )
+    const audit_rows = auditRows.reduce((sum, r) => sum + Number(r?.n ?? 0), 0)
     expect(state[0]?.tenants).toBe(1)
     expect(state[0]?.freeze_rows).toBe(1)
     // One set of built-in roles and one day-one audit row: the losing transaction
     // left NOTHING behind, not even a second freeze row.
     expect(state[0]?.roles).toBe(Object.keys(BUILTIN_ROLES).length)
-    expect(state[0]?.audit_rows).toBe(1)
+    expect(audit_rows).toBe(1)
   }, 180_000)
 
   it('keeps each freeze row visible only to its own tenant under the runtime RLS role', async () => {
