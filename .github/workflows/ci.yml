@@ -69,10 +69,13 @@ jobs:
           CREATE ROLE beaconhs_super LOGIN NOINHERIT NOSUPERUSER BYPASSRLS PASSWORD 'beaconhs_super';
           CREATE ROLE beaconhs_backup LOGIN NOINHERIT NOSUPERUSER BYPASSRLS PASSWORD 'beaconhs_backup';
           ALTER ROLE beaconhs_backup SET default_transaction_read_only = 'on';
+          CREATE ROLE audit_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
+          CREATE ROLE audit_service LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'audit_service';
+          GRANT audit_reader TO audit_service;
           GRANT beaconhs_owner TO beaconhs_migrator;
           ALTER DATABASE beaconhs_test OWNER TO beaconhs_owner;
           REVOKE ALL ON DATABASE beaconhs_test FROM PUBLIC;
-          GRANT CONNECT ON DATABASE beaconhs_test TO beaconhs_migrator, beaconhs_app, beaconhs_super, beaconhs_backup;
+          GRANT CONNECT ON DATABASE beaconhs_test TO beaconhs_migrator, beaconhs_app, beaconhs_super, beaconhs_backup, audit_service;
           \connect beaconhs_test
           ALTER SCHEMA public OWNER TO beaconhs_owner;
           REVOKE ALL ON SCHEMA public FROM PUBLIC;
@@ -93,12 +96,12 @@ jobs:
               -c "CREATE DATABASE ${db} OWNER beaconhs_owner;"
             psql -h localhost -U postgres -d "$db" -v ON_ERROR_STOP=1 <<SQL
           REVOKE ALL ON DATABASE ${db} FROM PUBLIC;
-          GRANT CONNECT ON DATABASE ${db} TO beaconhs_migrator, beaconhs_app, beaconhs_super, beaconhs_backup;
+          GRANT CONNECT ON DATABASE ${db} TO beaconhs_migrator, beaconhs_app, beaconhs_super, beaconhs_backup, audit_service;
           GRANT CONNECT, CREATE, TEMPORARY ON DATABASE ${db} TO beaconhs_migrator;
           ALTER SCHEMA public OWNER TO beaconhs_owner;
           REVOKE ALL ON SCHEMA public FROM PUBLIC;
           GRANT USAGE, CREATE ON SCHEMA public TO beaconhs_owner;
-          GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super, beaconhs_backup;
+          GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super, beaconhs_backup, audit_reader;
           SQL
           done
       - run: pnpm format:check

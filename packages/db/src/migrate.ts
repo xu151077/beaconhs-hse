@@ -5,6 +5,13 @@ import { sql } from 'drizzle-orm'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { RLS_POLICY_SQL, TENANT_SCOPED_TABLES } from './rls'
+import {
+  assertAuditRoleAttributes,
+  assertAuditTablePrivileges,
+  convergeAuditPrivileges,
+  AUDIT_READER_ROLE,
+  AUDIT_SERVICE_ROLE,
+} from './audit-roles'
 import { REPORT_VIEWS_SQL } from './views'
 import { STATS_SQL, STATS_HIGH_VOLUME_TABLES } from './stats'
 import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema'
@@ -351,10 +358,12 @@ async function assertDatabaseRoles(
     runtime.role,
     maintenance.role,
     backup.role,
+    AUDIT_READER_ROLE,
+    AUDIT_SERVICE_ROLE,
   ])
-  if (distinctRoles.size !== 5) {
+  if (distinctRoles.size !== 7) {
     throw new Error(
-      'Migration login, owner, runtime, maintenance, and backup roles must all be distinct',
+      'Migration login, owner, runtime, maintenance, backup, and the PD-02 audit roles must all be distinct',
     )
   }
   if (runtime.is_super || runtime.bypass_rls || runtime.owner_member) {
@@ -525,6 +534,9 @@ async function main() {
       ownerRole,
       backupRole,
     )
+    console.log('▶ Verifying audit roles (PD-02 preflight)…')
+    const auditSummary = await assertAuditRoleAttributes(migrationDb, ownerRole)
+    console.log(`✔ ${auditSummary}`)
     await migrationDb.execute(sql`select pg_advisory_lock(hashtext('beaconhs:schema-migration'))`)
     lockAcquired = true
 
@@ -549,6 +561,11 @@ async function main() {
       roles.maintenanceRole,
       roles.backupRole,
     )
+
+    console.log('▶ Converging and verifying audit privileges (PD-02)…')
+    await convergeAuditPrivileges(migrationDb)
+    const auditPrivSummary = await assertAuditTablePrivileges(migrationDb)
+    console.log(`✔ ${auditPrivSummary}`)
 
     console.log('▶ Verifying security data invariants…')
     await assertKioskPinHashes(maintenanceDb)
