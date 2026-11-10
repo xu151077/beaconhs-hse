@@ -163,4 +163,18 @@ AGENTS.md 明确注明该文件由 `next dev` 自动再生成，"committing it w
 
 ---
 
+## 12. 追记（2026-11-10）：M1/L1 已关闭，结论更新为 PASS
+
+M1 与 L1 已按最小范围修复并通过**未参与修复的独立代理**复核（其自行查看源码与测试，并实际运行两套测试：principal 18/18、patch-scope 7/7）：
+
+- **M1 — CLOSED。** `patchEntity` 对 scoped 凭证将「行预检 → body 归属校验 → handler 写入 → 写后复查」绑定在同一事务，复查失败即整体回滚（真实 TOCTOU 竞态测试证明回滚）；tenant 凭证路径逐字节不变；三个已映射实体的全部可重分配列均已声明，未映射实体 fail-closed 不可达。
+- **L1 — CLOSED。** 不可达通配符分支已删除、注释已修正、未新增能力，回归测试（含源码契约）钉住行为，无行为变化。
+- **兼容性** — 未绑定/tenant/sites/self 四类凭证无任何既有合法流程被新增拒绝。
+
+详见 `BEACONHS_PD01_M1_REMEDIATION_REPORT.md`、`BEACONHS_PD01_L1_REMEDIATION_REPORT.md`、`BEACONHS_PD01_FINAL_REVIEW_ADDENDUM.md`。
+
+**本报告结论据此更新为：PASS（具备进入发布候选审查的条件）。** 随行限制（R1–R4、R6、R7、M1 测试的 Docker 依赖、0058 无 FK 设计）保持非阻断记录，须进入发布候选审查的已知限制清单。
+
+---
+
 _审查证据：独立代理原始审计（含全部 file:line 引用）保留于会话记录；本报告所有关键论断均经实施方逐条独立复核，复核命令与 HTTP 复现见 `BEACONHS_PD01_WRITE_HTTP_E2E_REPORT.md` 与 `BEACONHS_PD01_CONNECTION_POOL_ISOLATION_REPORT.md`。审查过程零写入（除本报告）。_
