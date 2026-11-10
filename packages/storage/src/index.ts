@@ -44,10 +44,14 @@ export * from './multipart'
 export * from './freeze-gate'
 export * from './write-arms'
 
-const accountId = process.env.R2_ACCOUNT_ID ?? 'local'
-const accessKeyId = process.env.R2_ACCESS_KEY_ID ?? 'beaconhs'
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? 'beaconhs-dev-secret'
-const bucket = process.env.R2_BUCKET ?? 'beaconhs-dev'
+// `.env.example` ships these keys EMPTY, and `??` treats "" as configured — so a
+// developer who copies the example verbatim got an empty access key and secret,
+// and every S3 call failed with a signature error that pointed nowhere near the
+// cause. Trim + `||` so an empty or whitespace value falls back like an absent one.
+const accountId = process.env.R2_ACCOUNT_ID?.trim() || 'local'
+const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim() || 'beaconhs'
+const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim() || 'beaconhs-dev-secret'
+const bucket = process.env.R2_BUCKET?.trim() || 'beaconhs-dev'
 
 // PUBLIC endpoint — the address the BROWSER reaches. Every presigned URL is minted
 // against this, because the signature covers the `host` header the browser will send.
