@@ -122,7 +122,15 @@ export async function assertAuditRoleAttributes(db: MinimalDatabase, ownerRole: 
 /**
  * Converge the audit privilege set as part of the migration flow. Idempotent:
  * strips any stray table privilege from either audit role, then grants the
- * minimal read surface. Runs as the database owner.
+ * minimal surface:
+ *
+ *   audit_reader  — SELECT audit_log (assumed via SET LOCAL ROLE only).
+ *   audit_service — SELECT/INSERT/UPDATE on audit_access_grants (request,
+ *                   approve, revoke) and SELECT/INSERT on
+ *                   platform_audit_access_log (append-only trail); everything
+ *                   else stays with beaconhs_owner only.
+ *
+ * Runs as the database owner.
  */
 export async function convergeAuditPrivileges(db: MinimalDatabase) {
   await db.execute(sql`grant usage on schema public to ${sql.raw(`"${AUDIT_READER_ROLE}"`)}`)
@@ -130,6 +138,12 @@ export async function convergeAuditPrivileges(db: MinimalDatabase) {
     sql`revoke all privileges on all tables in schema public from ${sql.raw(`"${AUDIT_READER_ROLE}"`)}, ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
   )
   await db.execute(sql`grant select on public.audit_log to ${sql.raw(`"${AUDIT_READER_ROLE}"`)}`)
+  await db.execute(
+    sql`grant select, insert, update on public.audit_access_grants to ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
+  )
+  await db.execute(
+    sql`grant select, insert on public.platform_audit_access_log to ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
+  )
 }
 
 /**
@@ -182,8 +196,51 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
     )
   }
 
-  // No other privilege on any other table for either role. One query returns
-  // the first offending tables; empty means the matrix holds.
+  // Exact privilege set on the two platform tables for audit_service — the
+  // allowlist below skips them, so assert the intended shape here (in
+  // particular: no DELETE anywhere, no UPDATE on the append-only log).
+  const servicePrivs = allRows<{
+    grants_select: boolean
+    grants_insert: boolean
+    grants_update: boolean
+    grants_delete: boolean
+    log_select: boolean
+    log_insert: boolean
+    log_update: boolean
+    log_delete: boolean
+  }>(
+    await db.execute(sql`
+      select
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.audit_access_grants', 'SELECT') as grants_select,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.audit_access_grants', 'INSERT') as grants_insert,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.audit_access_grants', 'UPDATE') as grants_update,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.audit_access_grants', 'DELETE') as grants_delete,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.platform_audit_access_log', 'SELECT') as log_select,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.platform_audit_access_log', 'INSERT') as log_insert,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.platform_audit_access_log', 'UPDATE') as log_update,
+        has_table_privilege(${AUDIT_SERVICE_ROLE}, 'public.platform_audit_access_log', 'DELETE') as log_delete
+    `),
+  )[0]
+  if (
+    !servicePrivs ||
+    !servicePrivs.grants_select ||
+    !servicePrivs.grants_insert ||
+    !servicePrivs.grants_update ||
+    servicePrivs.grants_delete ||
+    !servicePrivs.log_select ||
+    !servicePrivs.log_insert ||
+    servicePrivs.log_update ||
+    servicePrivs.log_delete
+  ) {
+    throw new Error(
+      `Audit privilege preflight failed: ${AUDIT_SERVICE_ROLE} must hold SELECT/INSERT/UPDATE on audit_access_grants and SELECT/INSERT on platform_audit_access_log — nothing else. ${REMEDIATION}`,
+    )
+  }
+
+  // No privilege outside the V3 allowlist:
+  //   audit_reader  × audit_log × SELECT
+  //   audit_service × audit_access_grants × SELECT/INSERT/UPDATE
+  //   audit_service × platform_audit_access_log × SELECT/INSERT
   const offenders = allRows<{ role: string; table_name: string }>(
     await db.execute(sql`
       select role, table_name
@@ -197,7 +254,11 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
         cross join information_schema.tables t
         where t.table_schema = 'public'
           and t.table_type = 'BASE TABLE'
-          and (r.rolname <> ${AUDIT_READER_ROLE} or t.table_name <> 'audit_log')
+          and (r.rolname, t.table_name) not in (
+            (${AUDIT_READER_ROLE}, 'audit_log'),
+            (${AUDIT_SERVICE_ROLE}, 'audit_access_grants'),
+            (${AUDIT_SERVICE_ROLE}, 'platform_audit_access_log')
+          )
       ) violations
       where granted
       order by table_name
@@ -207,7 +268,7 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
   if (offenders.length > 0) {
     const detail = offenders.map((o) => `${o.role}:${o.table_name}`).join(', ')
     throw new Error(
-      `Audit privilege preflight failed: audit roles hold privileges outside audit_log (${detail}). ${REMEDIATION}`,
+      `Audit privilege preflight failed: audit roles hold privileges outside the PD-02 allowlist (${detail}). ${REMEDIATION}`,
     )
   }
   return `audit privilege matrix verified (${AUDIT_READER_ROLE}: SELECT audit_log only)`

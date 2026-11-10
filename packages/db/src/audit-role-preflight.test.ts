@@ -92,6 +92,14 @@ beforeAll(async () => {
     SET ROLE beaconhs_owner;
     CREATE TABLE tenants (id uuid PRIMARY KEY);
     CREATE TABLE incidents (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES tenants(id), title text NOT NULL);
+    CREATE TABLE audit_access_grants (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL
+    );
+    CREATE TABLE platform_audit_access_log (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL
+    );
     CREATE TABLE audit_log (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,

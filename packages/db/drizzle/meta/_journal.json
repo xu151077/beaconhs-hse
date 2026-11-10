@@ -407,6 +407,13 @@
       "when": 1794283405693,
       "tag": "0058_api_key_principal_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794322556842,
+      "tag": "0059_audit_access_platform",
+      "breakpoints": true
     }
   ]
 }

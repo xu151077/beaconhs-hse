@@ -90,8 +90,10 @@ describe('ppe read-tier catalogue', () => {
     // must" without also being able to unfreeze, and the emergency `recover` path is
     // never implied by any other key.
     // 107 → 108 when the picker convergence added the flat `people.pick` gate.
-    expect(PERMISSION_CATALOGUE.length).toBe(108)
-    expect(new Set(PERMISSION_CATALOGUE).size).toBe(108)
+    // 108 → 111 when PD-02 added the audit keys (`audit.read.tenant`,
+    // `audit.read.platform`, `admin.audit.approve`) — all three default-UNgranted.
+    expect(PERMISSION_CATALOGUE.length).toBe(111)
+    expect(new Set(PERMISSION_CATALOGUE).size).toBe(111)
   })
 
   it('grants a worker own-PPE read', () => {
@@ -115,10 +117,14 @@ describe('ppe read-tier catalogue', () => {
     expect(BUILTIN_ROLES.safety_manager?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.all')
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toContain('ppe.read.site')
-    // tenant_admin holds the whole catalogue, so this tracks PERMISSION_CATALOGUE.
-    // 100 → 107 when Phase 6Q stage E1 added the storage write-freeze permissions,
-    // and 108 when the picker convergence added `people.pick`.
+    // tenant_admin holds the whole catalogue EXCEPT the three PD-02 audit keys
+    // (`AUDIT_DEFAULT_UNGRANTED`): 111 − 3 = 108. No builtin role receives
+    // `admin.audit.approve` or the audit read keys by default — approvals must
+    // be granted deliberately; audit reads are grant-scoped, not role-scoped.
     expect(BUILTIN_ROLES.tenant_admin?.permissions).toHaveLength(108)
+    for (const auditKey of ['audit.read.tenant', 'audit.read.platform', 'admin.audit.approve']) {
+      expect(BUILTIN_ROLES.tenant_admin?.permissions).not.toContain(auditKey)
+    }
   })
 
   it('widens through readTierCovers so higher tiers satisfy lower ones', () => {

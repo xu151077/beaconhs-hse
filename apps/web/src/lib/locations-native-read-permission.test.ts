@@ -291,10 +291,11 @@ describe('no built-in role gained access', () => {
   const roles = Object.keys(BUILTIN_ROLES) as (keyof typeof BUILTIN_ROLES)[]
 
   it('admin.org.read is held by tenant_admin, through catalogue inheritance', () => {
-    // Not written into the role: `tenant_admin` holds the whole catalogue, so it
-    // receives every key automatically and needs no edit.
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toBe(PERMISSION_CATALOGUE)
+    // Not written into the role: `tenant_admin` holds the whole catalogue minus
+    // the PD-02 audit keys (AUDIT_DEFAULT_UNGRANTED), so it receives every other
+    // key automatically and needs no edit.
     expect([...(BUILTIN_ROLES.tenant_admin?.permissions ?? [])]).toContain(READ_KEY)
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).not.toContain('admin.audit.approve')
   })
 
   it('and by no other built-in role', () => {

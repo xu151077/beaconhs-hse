@@ -341,6 +341,16 @@ export const PERMISSION_CATALOGUE = [
   'admin.api-keys.manage',
   'admin.settings.manage',
   'admin.audit.read',
+  // PD-02 cross-tenant audit (V3 §3): distinct from admin.audit.read (per-
+  // tenant audit page). Neither key is granted to any built-in role — only a
+  // platform/tenant admin assigns them explicitly. Reading also requires an
+  // approved, unexpired audit_access_grants row (P-4), so the permission key
+  // alone never unlocks audit data.
+  'audit.read.tenant',
+  'audit.read.platform',
+  // Independent audit approver: may approve/revoke audit_access_grants for
+  // other subjects. Enforced different-subject rule (CHECK + app logic).
+  'admin.audit.approve',
   // Tenant-wide CSV export permission, required by every export.csv route and
   // the central Admin data export hub.
   'admin.data.export',
@@ -373,6 +383,19 @@ export const PERMISSION_CATALOGUE = [
 ] as const
 
 export type CataloguePermission = (typeof PERMISSION_CATALOGUE)[number]
+
+/**
+ * PD-02 platform audit keys that NO built-in role receives by default.
+ * Cross-tenant audit reads and approvals are grant-scoped platform
+ * capabilities (V3 P-4/P-5): `admin.audit.approve` must be granted
+ * deliberately to keep requester/approver separation, and audit reads are
+ * gated by `audit_access_grants`, not by role membership.
+ */
+export const AUDIT_DEFAULT_UNGRANTED = [
+  'audit.read.tenant',
+  'audit.read.platform',
+  'admin.audit.approve',
+] as const satisfies readonly CataloguePermission[]
 
 // Built-in role definitions, seeded per tenant.
 export const BUILTIN_ROLES: Record<
@@ -552,6 +575,9 @@ export const BUILTIN_ROLES: Record<
   tenant_admin: {
     name: 'Tenant Admin',
     description: 'Full administrative control of the tenant. Manages users, roles, settings.',
-    permissions: PERMISSION_CATALOGUE as unknown as CataloguePermission[],
+    // Whole catalogue EXCEPT the PD-02 audit keys (see AUDIT_DEFAULT_UNGRANTED).
+    permissions: PERMISSION_CATALOGUE.filter(
+      (permission) => !(AUDIT_DEFAULT_UNGRANTED as readonly string[]).includes(permission),
+    ) as unknown as CataloguePermission[],
   },
 }

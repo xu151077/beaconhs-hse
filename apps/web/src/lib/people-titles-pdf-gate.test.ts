@@ -239,7 +239,14 @@ describe('the Job Titles PDF, by real built-in role', () => {
   })
 
   it('4. tenant_admin is ALLOWED, through catalogue inheritance', () => {
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toBe(PERMISSION_CATALOGUE)
+    // tenant_admin holds the whole catalogue EXCEPT the PD-02 audit keys
+    // (AUDIT_DEFAULT_UNGRANTED in packages/db/src/schema/iam.ts).
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).toEqual(
+      PERMISSION_CATALOGUE.filter(
+        (permission) =>
+          !['audit.read.tenant', 'audit.read.platform', 'admin.audit.approve'].includes(permission),
+      ),
+    )
     expect(manageAllowed(ctxAs('tenant_admin'))).toBe(true)
   })
 
@@ -453,11 +460,11 @@ describe('no Job Titles permission vocabulary was introduced', () => {
   })
 
   it('tenant_admin receives the module permission only through catalogue inheritance', () => {
-    // Not written into the role: `tenant_admin` holds the whole catalogue, so it gains
-    // every key automatically. That is why it needs no edit here — and why a role
-    // count is the wrong thing to pin.
-    expect(BUILTIN_ROLES.tenant_admin?.permissions).toBe(PERMISSION_CATALOGUE)
+    // Not written into the role: `tenant_admin` holds the whole catalogue minus the
+    // PD-02 audit keys, so it gains every other key automatically. That is why it
+    // needs no edit here — and why a role count is the wrong thing to pin.
     expect([...(BUILTIN_ROLES.tenant_admin?.permissions ?? [])]).toContain(MODULE_PERMISSION)
+    expect(BUILTIN_ROLES.tenant_admin?.permissions).not.toContain('admin.audit.approve')
   })
 })
 
@@ -469,10 +476,11 @@ describe('the catalogue is unchanged by this fix', () => {
   it('8. the catalogue holds exactly the permissions it should', () => {
     // 100 before Phase 6Q stage E1, which added the seven storage write-freeze keys
     // (`admin.storage.freeze.{request,drain,confirm,reconcile,release,fail,recover}`),
-    // and 108 after the picker convergence added `people.pick`.
+    // and 108 after the picker convergence added `people.pick`;
+    // 111 after PD-02 added the three audit keys (default-UNgranted).
     // The catalogue is still a deliberate, human-audited number: adding a key without
     // editing this assertion must keep failing, because that is the whole point.
-    expect(PERMISSION_CATALOGUE).toHaveLength(108)
+    expect(PERMISSION_CATALOGUE).toHaveLength(111)
   })
 
   it('every catalogue key is still unique', () => {

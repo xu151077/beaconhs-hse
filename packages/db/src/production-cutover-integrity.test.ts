@@ -167,6 +167,8 @@ describe('production cutover migration integrity', () => {
       '0057_audit_immutable_trigger_owner_fix.sql',
       // PD-01 phase 1: nullable api-key principal + explicit scope narrowing.
       '0058_api_key_principal_scope.sql',
+      // PD-02 P-5: platform-level audit authorization + append-only trail.
+      '0059_audit_access_platform.sql',
     ])
 
     const journal = JSON.parse(readFileSync(new URL('_journal.json', metaFolder), 'utf8')) as {
@@ -232,6 +234,7 @@ describe('production cutover migration integrity', () => {
       { idx: 56, tag: '0056_audit_log_and_fk_replay_safety' },
       { idx: 57, tag: '0057_audit_immutable_trigger_owner_fix' },
       { idx: 58, tag: '0058_api_key_principal_scope' },
+      { idx: 59, tag: '0059_audit_access_platform' },
     ])
     for (let index = 1; index < journal.entries.length; index++) {
       expect(journal.entries[index]!.when).toBeGreaterThan(journal.entries[index - 1]!.when)

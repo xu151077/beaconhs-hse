@@ -250,18 +250,22 @@ describe('audit_log immutable + FK replay safety (real PG)', () => {
     // audit-protection migrations in place, so assert the whole tail rather
     // than only the last tag.
     expect(journal.entries.at(-1)).toMatchObject({
+      idx: 59,
+      tag: '0059_audit_access_platform',
+    })
+    expect(journal.entries.at(-2)).toMatchObject({
       idx: 58,
       tag: '0058_api_key_principal_scope',
     })
-    expect(journal.entries.at(-2)).toMatchObject({
+    expect(journal.entries.at(-3)).toMatchObject({
       idx: 57,
       tag: '0057_audit_immutable_trigger_owner_fix',
     })
-    expect(journal.entries.at(-3)).toMatchObject({
+    expect(journal.entries.at(-4)).toMatchObject({
       idx: 56,
       tag: '0056_audit_log_and_fk_replay_safety',
     })
-    expect(journal.entries.at(-4)).toMatchObject({
+    expect(journal.entries.at(-5)).toMatchObject({
       idx: 55,
       tag: '0055_drop_redundant_single_col_fks',
     })

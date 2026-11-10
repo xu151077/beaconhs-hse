@@ -289,6 +289,9 @@ describe('Phase 11-F introduced no new architecture', () => {
       // PD-01 phase 1: api_keys gains a nullable principal + scope column;
       // no report relation or projection is touched.
       '0058_api_key_principal_scope',
+      // PD-02 P-5: platform-level audit_access_grants + append-only
+      // platform_audit_access_log; neither is a report relation or projection.
+      '0059_audit_access_platform',
     ]
     // Filter out repair migrations before the check
     const filteredTags = tags.filter((t) => !t.startsWith('0050_'))

@@ -46,7 +46,7 @@ function foreignKeySignatures(table: TableConfig): Map<string, string> {
 }
 
 function snapshotForeignKeyNames(): Set<string> {
-  const snapshot = JSON.parse(readFileSync(new URL('0056_snapshot.json', metaFolder), 'utf8')) as {
+  const snapshot = JSON.parse(readFileSync(new URL('0059_snapshot.json', metaFolder), 'utf8')) as {
     tables: Record<string, { foreignKeys?: Record<string, { name: string }> }>
   }
   const names = new Set<string>()

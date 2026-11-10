@@ -49,9 +49,9 @@ describe('api_keys principal + scope (PD-01 phase 1)', () => {
     const journal = JSON.parse(
       readFileSync(new URL('meta/_journal.json', drizzleFolder), 'utf8'),
     ) as { entries: Array<{ idx: number; tag: string }> }
-    const last = journal.entries.at(-1)
-    expect(last).toMatchObject({ idx: 58, tag: '0058_api_key_principal_scope' })
-    expect(journal.entries.at(-2)).toMatchObject({
+    // 0059 (PD-02) landed after 0058; 0058 stays pinned two from the end.
+    expect(journal.entries.at(-2)).toMatchObject({ idx: 58, tag: '0058_api_key_principal_scope' })
+    expect(journal.entries.at(-3)).toMatchObject({
       idx: 57,
       tag: '0057_audit_immutable_trigger_owner_fix',
     })

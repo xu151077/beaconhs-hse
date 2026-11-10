@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema'
+import {
+  AUDIT_DEFAULT_UNGRANTED,
+  BUILTIN_ROLES,
+  PERMISSION_CATALOGUE,
+  type CataloguePermission,
+} from './schema'
 
 /**
  * The permission catalogue is the single source of truth for authorization.
@@ -27,8 +32,15 @@ describe('permission catalogue integrity', () => {
     expect(bad).toEqual([])
   })
 
-  it('gives tenant_admin the full catalogue', () => {
-    expect([...baseline('tenant_admin')].sort()).toEqual([...catalogue].sort())
+  it('gives tenant_admin the whole catalogue except the PD-02 audit keys', () => {
+    // tenant_admin = catalogue minus AUDIT_DEFAULT_UNGRANTED: cross-tenant audit
+    // reads/approvals are grant-scoped platform capabilities (V3 P-4/P-5) and
+    // must never ride along with the admin role.
+    expect([...baseline('tenant_admin')].sort()).toEqual(
+      catalogue
+        .filter((key) => !(AUDIT_DEFAULT_UNGRANTED as readonly string[]).includes(key))
+        .sort(),
+    )
   })
 
   it('names every key as a lowercase dotted path with a module prefix', () => {
@@ -58,7 +70,14 @@ describe('permission catalogue integrity', () => {
     // weaker tiers at runtime (`training` grants `all` + `self` and no `site`),
     // so the catalogue records explicit grants and the ladder supplies the rest.
     const TIERS = new Set(['all', 'site', 'self', 'others'])
+    // PD-02 audit read keys are NOT visibility-ladder tiers: they are
+    // platform-level gates checked against `audit_access_grants` scope
+    // ('tenant' = one tenant's trail, 'platform' = cross-tenant), never through
+    // resolveVisibilityTier/readTierCovers. Allowed explicitly here so the
+    // ladder rule stays strict for every other family.
+    const AUDIT_READ_KEYS = new Set(['audit.read.tenant', 'audit.read.platform'])
     const malformed = catalogue.filter((key) => {
+      if (AUDIT_READ_KEYS.has(key)) return false
       const parts = key.split('.')
       if (parts.length < 3 || parts[parts.length - 2] !== 'read') return false
       return !TIERS.has(parts[parts.length - 1]!)
