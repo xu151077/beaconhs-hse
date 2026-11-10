@@ -111,6 +111,26 @@ export async function assertEntityInScope(
 }
 
 /**
+ * Reject a scoped credential from an entity whose owner semantics are not yet
+ * confirmed (B-1: Builder app responses). `entityScopeWhere` returns
+ * `undefined` only for a tenant-scoped caller; any SQL — including the
+ * fail-closed `false` for an unmapped entity — means this credential must not
+ * reach the data path at all. This runs BEFORE any row is read, so no
+ * cross-scope data is ever fetched and hidden afterwards.
+ */
+export async function assertScopedEntityAllowed(
+  ctx: Parameters<typeof recordVisibilityWhere>[0],
+  entityKey: string,
+): Promise<void> {
+  const narrowed = await ctx.db((tx) => entityScopeWhere(ctx, tx, entityKey))
+  if (narrowed !== undefined) {
+    throw ApiError.forbidden(
+      `Scoped API keys cannot access ${entityKey}: owner semantics are not configured`,
+    )
+  }
+}
+
+/**
  * Create-time check: a scoped credential may only create a record at a site it
  * can see. Entities without a known site field are left to the handler (they
  * carry no site), which is safe because their reads are still scope-filtered.
@@ -122,7 +142,12 @@ export function assertCreateInScope(
 ): void {
   if (isTenantScope(ctx)) return
   const entry = API_ENTITY_SCOPE[entityKey]
-  if (!entry?.bodySiteKey) return
+  // An unmapped entity has no proven owner/site columns. Never let a scoped
+  // credential create one (it could then be read back outside the scope).
+  if (!entry) {
+    throw ApiError.forbidden(`Scoped API keys cannot create ${entityKey}`)
+  }
+  if (!entry.bodySiteKey) return
   const allowed = new Set<string>()
   for (const scope of ctx.scopes as Array<{ type: string; siteIds?: string[] }>) {
     if (scope.type === 'sites') for (const id of scope.siteIds ?? []) allowed.add(id)

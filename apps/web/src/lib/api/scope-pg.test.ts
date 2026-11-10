@@ -12,7 +12,7 @@ import postgres, { type Sql } from 'postgres'
 import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import type { RequestContext } from '@beaconhs/tenant'
-import { entityScopeWhere } from './scope'
+import { assertCreateInScope, entityScopeWhere } from './scope'
 
 const NAME = `beaconhs-scope-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 let client: Sql | null = null
@@ -304,5 +304,39 @@ describe('API record scope (real PostgreSQL)', () => {
     })
     const listed = await visibleIdsIn('documents', selfCtx, 'documents')
     expect(counted).toBe(listed.length)
+  })
+
+  it('B-1: Builder responses fail closed for any non-tenant scope', async () => {
+    const f = await seed()
+    const tenantCtx = ctxFor(f.tenantA, [{ type: 'tenant' }], null)
+    // tenant scope is the compatibility path (no narrowing)
+    expect(await entityScopeWhere(tenantCtx, db as never, 'form_responses')).toBeUndefined()
+    for (const scopes of [
+      [{ type: 'sites', siteIds: [f.siteA] }],
+      [{ type: 'self' }],
+    ] as RequestContext['scopes'][]) {
+      const ctx = ctxFor(f.tenantA, scopes, f.owner1)
+      const predicate = await entityScopeWhere(ctx, db as never, 'form_responses')
+      expect(predicate).not.toBeUndefined()
+      const rows = await db!.transaction(async (tx) => {
+        const res = (await tx.execute(
+          sql`select id from corrective_actions where tenant_id = ${f.tenantA}::uuid and ${predicate}`,
+        )) as unknown as Array<{ id: string }>
+        return Array.isArray(res) ? res : []
+      })
+      expect(rows).toEqual([])
+    }
+  })
+
+  it('B-1: a scoped key cannot CREATE into an unmapped entity', async () => {
+    const f = await seed()
+    const ctx = ctxFor(f.tenantA, [{ type: 'sites', siteIds: [f.siteA] }], null)
+    expect(() => assertCreateInScope(ctx, 'form_responses', { siteOrgUnitId: f.siteA })).toThrow(
+      /cannot create/i,
+    )
+    // tenant scope stays compatible
+    expect(() =>
+      assertCreateInScope(ctxFor(f.tenantA, [{ type: 'tenant' }], null), 'form_responses', {}),
+    ).not.toThrow()
   })
 })

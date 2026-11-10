@@ -3,6 +3,7 @@
 
 import { NextResponse } from 'next/server'
 import { authenticateApiKey } from '@/lib/api/auth'
+import { assertScopedEntityAllowed } from '@/lib/api/scope'
 import { readApiJsonBody } from '@/lib/api/body'
 import {
   BUILDER_APP_CREATE_PERMISSION,
@@ -24,6 +25,9 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const { ctx, key } = await authenticateApiKey(req)
+    // B-1: Builder response owner semantics are not confirmed; any
+    // non-tenant scope is rejected before a single row is read.
+    await assertScopedEntityAllowed(ctx, 'form_responses')
     if (!keyHasPermission(key.permissions, BUILDER_APP_READ_PERMISSION)) {
       throw ApiError.forbidden(
         `This key cannot read Builder app responses — grant permission ${BUILDER_APP_READ_PERMISSION}.`,
@@ -47,6 +51,7 @@ export async function POST(
 ): Promise<NextResponse> {
   try {
     const auth = await authenticateApiKey(req)
+    await assertScopedEntityAllowed(auth.ctx, 'form_responses')
     const { ctx, key } = auth
     if (!keyHasPermission(key.permissions, BUILDER_APP_CREATE_PERMISSION)) {
       throw ApiError.forbidden(

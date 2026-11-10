@@ -3,6 +3,7 @@
 
 import { NextResponse } from 'next/server'
 import { authenticateApiKey } from '@/lib/api/auth'
+import { assertScopedEntityAllowed } from '@/lib/api/scope'
 import { readApiJsonBody } from '@/lib/api/body'
 import {
   BUILDER_APP_DELETE_PERMISSION,
@@ -30,6 +31,9 @@ export async function GET(
     if (!isUuid(id)) throw ApiError.invalid('Response id must be a uuid')
 
     const { ctx, key } = await authenticateApiKey(req)
+    // B-1: Builder response owner semantics are not confirmed; any
+    // non-tenant scope is rejected before a single row is read.
+    await assertScopedEntityAllowed(ctx, 'form_responses')
     if (!keyHasPermission(key.permissions, BUILDER_APP_READ_PERMISSION)) {
       throw ApiError.forbidden(
         `This key cannot read Builder app responses — grant permission ${BUILDER_APP_READ_PERMISSION}.`,
@@ -59,6 +63,7 @@ export async function PATCH(
     if (!isUuid(id)) throw ApiError.invalid('Response id must be a uuid')
 
     const auth = await authenticateApiKey(req)
+    await assertScopedEntityAllowed(auth.ctx, 'form_responses')
     const { ctx, key } = auth
     if (!keyHasPermission(key.permissions, BUILDER_APP_UPDATE_PERMISSION)) {
       throw ApiError.forbidden(
@@ -94,6 +99,7 @@ export async function DELETE(
     if (!isUuid(id)) throw ApiError.invalid('Response id must be a uuid')
 
     const auth = await authenticateApiKey(req)
+    await assertScopedEntityAllowed(auth.ctx, 'form_responses')
     const { ctx, key } = auth
     if (!keyHasPermission(key.permissions, BUILDER_APP_DELETE_PERMISSION)) {
       throw ApiError.forbidden(
