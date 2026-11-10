@@ -42,7 +42,7 @@ export type RecordOwnerColumns = {
   /** Person the record is about/assigned to (holder, owner, assignee, author). */
   personCol?: PgColumn
   /** tenant_users id of whoever created the record. */
-  createdByCol?: PgColumn
+  ownerTenantUserCol?: PgColumn
   /** The record's site/org unit, for the `sites` scope. */
   siteCol?: PgColumn
 }
@@ -80,8 +80,8 @@ export async function recordVisibilityWhere(
     conds.push(eq(cols.personCol, ctx.personId))
   }
   const myUserId = ctx.membership?.id
-  if (cols.createdByCol && myUserId) {
-    conds.push(eq(cols.createdByCol, myUserId))
+  if (cols.ownerTenantUserCol && myUserId) {
+    conds.push(eq(cols.ownerTenantUserCol, myUserId))
   }
 
   for (const s of scopes) {

@@ -36,7 +36,7 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
     tenantId: correctiveActions.tenantId,
     cols: {
       siteCol: correctiveActions.siteOrgUnitId,
-      createdByCol: correctiveActions.ownerTenantUserId,
+      ownerTenantUserCol: correctiveActions.ownerTenantUserId,
     },
     bodySiteKey: 'siteOrgUnitId',
   },
@@ -48,7 +48,7 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
     id: documents.id,
     tenantId: documents.tenantId,
     cols: {
-      createdByCol: documents.ownerTenantUserId,
+      ownerTenantUserCol: documents.ownerTenantUserId,
     },
   },
   // Training records have no site column either. Self = the trainee.

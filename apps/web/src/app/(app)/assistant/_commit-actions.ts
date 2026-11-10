@@ -44,7 +44,7 @@ export async function commitCorrectiveAction(input: {
       const conds = [eq(incidents.id, p.sourceEntityId!), isNull(incidents.deletedAt)]
       const vis = await recordVisibilityWhere(ctx, tx, {
         siteCol: incidents.siteOrgUnitId,
-        createdByCol: incidents.reportedByTenantUserId,
+        ownerTenantUserCol: incidents.reportedByTenantUserId,
       })
       if (vis) conds.push(vis)
       const [r] = await tx
