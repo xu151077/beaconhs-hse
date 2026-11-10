@@ -26,13 +26,26 @@ type ScopeEntry = {
   cols: RecordOwnerColumns
   /** Body key that names the record's site, for create-time scope checks. */
   bodySiteKey?: string
+  /** Body key whose value must equal the principal under a `self` scope. */
+  bodyOwnerKey?: string
+  /** Body key whose value must equal the principal's person under `self`. */
+  bodyPersonKey?: string
   /**
-   * Some report entities are SQL VIEWS (e.g. `report_corrective_actions`) with
-   * no Drizzle table definition. `recordVisibilityWhere` emits table-qualified
-   * columns from `cols`, which cannot resolve against a differently-named view.
-   * For those entries, build the same predicate from constant column names.
+   * Some report entities are SQL VIEWS (e.g. `report_corrective_actions`,
+   * `report_training_records`) with no Drizzle table definition.
+   * `recordVisibilityWhere` emits table-qualified columns from `cols`, which
+   * cannot resolve against a differently-named view. For those entries, build
+   * the same predicate from constant column names.
    */
   viewCols?: { siteColName?: string; ownerColName?: string; personColName?: string }
+}
+
+/** View column names are developer-authored constants, never caller input. */
+const SAFE_IDENT = /^[a-z_][a-z0-9_]*$/
+
+function viewColumn(name: string): SQL {
+  if (!SAFE_IDENT.test(name)) throw new Error('Unsafe view column name')
+  return sql.raw(`"${name}"`)
 }
 
 const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
@@ -46,6 +59,7 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
       ownerTenantUserCol: correctiveActions.ownerTenantUserId,
     },
     bodySiteKey: 'siteOrgUnitId',
+    bodyOwnerKey: 'ownerTenantUserId',
     viewCols: { siteColName: 'site_org_unit_id', ownerColName: 'owner_tenant_user_id' },
   },
   // Documents have NO site column (the site on `document_ack_sessions` is a
@@ -58,8 +72,11 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
     cols: {
       ownerTenantUserCol: documents.ownerTenantUserId,
     },
+    bodyOwnerKey: 'ownerTenantUserId',
   },
-  // Training records have no site column either. Self = the trainee.
+  // Training records have no site column either. Self = the trainee. The list
+  // entity is the view `report_training_records`, so the predicate must use
+  // unqualified column names (see viewCols).
   training_records: {
     table: trainingRecords,
     id: trainingRecords.id,
@@ -67,6 +84,8 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
     cols: {
       personCol: trainingRecords.personId,
     },
+    bodyPersonKey: 'personId',
+    viewCols: { personColName: 'person_id' },
   },
 }
 
@@ -100,16 +119,20 @@ export async function entityScopeWhere(
   }
   if (!entry.viewCols) return recordVisibilityWhere(ctx, tx, entry.cols)
   // View entity: identical scope semantics, expressed with unqualified column
-  // names so the predicate resolves against the view in the FROM clause.
+  // names so the predicate resolves against the view in the FROM clause. The
+  // read/query builders use a single `FROM "<view>"` with no JOIN, so an
+  // unqualified name is unambiguous; names are fixed constants (viewColumn).
   const conds: SQL[] = []
   for (const scope of ctx.scopes) {
     if (scope.type === 'sites' && entry.viewCols.siteColName) {
       const ids = scope.siteIds ?? []
       if (ids.length > 0) {
-        conds.push(sql`${sql.raw(`"${entry.viewCols.siteColName}"`)} in ${ids}`)
+        conds.push(sql`${viewColumn(entry.viewCols.siteColName)} in ${ids}`)
       }
     } else if (scope.type === 'self' && entry.viewCols.ownerColName && ctx.membership) {
-      conds.push(sql`${sql.raw(`"${entry.viewCols.ownerColName}"`)} = ${ctx.membership.id}`)
+      conds.push(sql`${viewColumn(entry.viewCols.ownerColName)} = ${ctx.membership.id}`)
+    } else if (scope.type === 'self' && entry.viewCols.personColName && ctx.personId) {
+      conds.push(sql`${viewColumn(entry.viewCols.personColName)} = ${ctx.personId}`)
     }
   }
   if (conds.length === 0) return sql`false`
@@ -129,7 +152,12 @@ export async function assertEntityInScope(
   const entry = API_ENTITY_SCOPE[entityKey]
   if (!entry) throw ApiError.notFound(`No ${entityKey} with id ${id}`)
   const visible = await ctx.db(async (tx) => {
-    const scope = await recordVisibilityWhere(ctx, tx, entry.cols)
+    // Use the SAME predicate as the read path. Calling recordVisibilityWhere
+    // directly here would let a `sites` scope mutate an entity with no site
+    // column (documents / training_records) via the "own records" leg, even
+    // though GET list/detail of that same entity fails closed.
+    const scope = await entityScopeWhere(ctx, tx, entityKey)
+    if (scope === undefined) return null // defensive: only tenant scope returns undefined
     const where = and(eq(entry.id, id), eq(entry.tenantId, ctx.tenantId), scope)
     const [row] = await tx.select({ id: entry.id }).from(entry.table).where(where).limit(1)
     return row ?? null
@@ -163,7 +191,7 @@ export async function assertScopedEntityAllowed(
  * carry no site), which is safe because their reads are still scope-filtered.
  */
 export function assertCreateInScope(
-  ctx: { scopes: Array<{ type: string }> },
+  ctx: Parameters<typeof recordVisibilityWhere>[0],
   entityKey: string,
   body: unknown,
 ): void {
@@ -174,16 +202,46 @@ export function assertCreateInScope(
   if (!entry) {
     throw ApiError.forbidden(`Scoped API keys cannot create ${entityKey}`)
   }
-  if (!entry.bodySiteKey) return
-  const allowed = new Set<string>()
-  for (const scope of ctx.scopes as Array<{ type: string; siteIds?: string[] }>) {
-    if (scope.type === 'sites') for (const id of scope.siteIds ?? []) allowed.add(id)
+  const scopes = ctx.scopes as Array<{ type: string; siteIds?: string[] }>
+  // A `sites` scope has no expressible predicate on an entity without a site
+  // column. Reads fail closed, so creation must fail closed too — otherwise a
+  // scoped credential could write a row it can never read back.
+  if (
+    scopes.some((scope) => scope.type === 'sites') &&
+    !entry.cols.siteCol &&
+    !entry.viewCols?.siteColName
+  ) {
+    throw ApiError.forbidden(`This API key cannot create ${entityKey} without a site scope`)
   }
-  const siteId =
-    body && typeof body === 'object'
-      ? (body as Record<string, unknown>)[entry.bodySiteKey]
-      : undefined
-  if (typeof siteId !== 'string' || !allowed.has(siteId)) {
-    throw ApiError.forbidden(`This API key cannot create ${entityKey} outside its site scope`)
+  if (entry.bodySiteKey) {
+    const allowed = new Set<string>()
+    for (const scope of scopes) {
+      if (scope.type === 'sites') for (const id of scope.siteIds ?? []) allowed.add(id)
+    }
+    const siteId =
+      body && typeof body === 'object'
+        ? (body as Record<string, unknown>)[entry.bodySiteKey]
+        : undefined
+    if (typeof siteId !== 'string' || !allowed.has(siteId)) {
+      throw ApiError.forbidden(`This API key cannot create ${entityKey} outside its site scope`)
+    }
+  }
+  // A `self` scope may only create records owned by / attributed to the
+  // principal. Without this a self-scoped key could create a record for another
+  // owner (or with no owner at all) that its own reads fail closed on.
+  if (scopes.some((scope) => scope.type === 'self')) {
+    const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+    if (entry.bodyOwnerKey) {
+      const owner = record[entry.bodyOwnerKey]
+      if (typeof owner !== 'string' || !ctx.membership || owner !== ctx.membership.id) {
+        throw ApiError.forbidden(`This API key cannot create ${entityKey} for another owner`)
+      }
+    }
+    if (entry.bodyPersonKey) {
+      const person = record[entry.bodyPersonKey]
+      if (typeof person !== 'string' || !ctx.personId || person !== ctx.personId) {
+        throw ApiError.forbidden(`This API key cannot create ${entityKey} for another person`)
+      }
+    }
   }
 }
