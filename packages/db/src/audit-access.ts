@@ -253,6 +253,20 @@ export async function createAuditAccessRequest(
  * enforced here and by the `audit_access_grants_approver_ck` CHECK. Atomic:
  * concurrent approvals race on `approved_by_user_id IS NULL` and exactly one
  * wins. */
+/** Read one grant by id (null when absent). Web-layer approval-boundary
+ * checks use this before deciding, so the boundary can trail its denials. */
+export async function getAuditAccessGrant(
+  conn: GrantExecutor,
+  grantId: string,
+): Promise<AuditAccessGrant | null> {
+  const rows = await conn.sql<GrantRow[]>`
+    select id, grantee_user_id, grantee_tenant_id, scope, purpose,
+      approved_by_user_id, extra_approval, starts_at, expires_at, revoked_at, revoked_by_user_id, created_at
+    from audit_access_grants where id = ${grantId}
+  `
+  return rows[0] ? toGrant(rows[0]) : null
+}
+
 export async function approveAuditAccessRequest(
   conn: GrantExecutor,
   req: {

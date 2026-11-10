@@ -28,6 +28,7 @@ import {
   rejectAuditAccessRequest,
   resolveActiveAuditGrant,
   revokeAuditAccess,
+  getAuditAccessGrant,
   type AuditAccessGrant,
   type AuditAccessScope,
 } from '@beaconhs/db/audit-access'
@@ -46,6 +47,7 @@ import {
   type AuditConnection,
 } from '@beaconhs/db/audit-client'
 import type { RequestContext } from '@beaconhs/tenant'
+import { assertNotImpersonating } from '@beaconhs/tenant'
 
 export { AUDIT_MAX_PAGE_SIZE } from '@beaconhs/db/audit-query'
 
@@ -85,6 +87,13 @@ function mapAuditError(err: unknown): never {
   }
   if (err instanceof AuditQueryLimitError) throw ApiError.invalid(err.message)
   throw err
+}
+
+/** An impersonated session must never touch the cross-tenant audit surface —
+ * trail entries would otherwise attribute actions to the impersonated
+ * identity (F5, independent security audit). */
+function assertAuditSubject(ctx: RequestContext): void {
+  assertNotImpersonating(ctx, 'cross-tenant audit')
 }
 
 async function activeGrantFor(
@@ -139,6 +148,7 @@ export async function runCrossTenantAuditQuery(
   ctx: RequestContext,
   params: CrossTenantAuditQueryParams,
 ): Promise<CrossTenantAuditQueryResult> {
+  assertAuditSubject(ctx)
   const scope = crossTenantAuditScopeFor(ctx)
   if (!scope) {
     throw ApiError.forbidden('This account has no cross-tenant audit permission.')
@@ -251,6 +261,7 @@ export async function runCrossTenantAuditExport(
   params: CrossTenantAuditQueryParams,
   render: (rows: AuditLogRow[], meta: { scope: CrossTenantAuditScope }) => Response,
 ): Promise<Response> {
+  assertAuditSubject(ctx)
   const scope = crossTenantAuditScopeFor(ctx)
   if (!scope) {
     throw ApiError.forbidden('This account has no cross-tenant audit permission.')
@@ -351,6 +362,7 @@ export async function requestCrossTenantAuditAccess(
   // Any authenticated member may apply; the approver (a different subject)
   // and the permission keys gate actual access. Scope validity is enforced
   // by createAuditAccessRequest.
+  assertAuditSubject(ctx)
   const conn = auditConnectionOr503()
   try {
     return await createAuditAccessRequest(conn, {
@@ -379,7 +391,39 @@ export async function decideCrossTenantAuditGrant(
   ctx: RequestContext,
   input: AuditGrantDecisionInput,
 ): Promise<AuditAccessGrant> {
+  assertAuditSubject(ctx)
   const conn = auditConnectionOr503()
+  // Approval boundary (independent security audit F4): holding
+  // admin.audit.approve alone does not authorize cross-tenant approval.
+  // platform-scope grants require audit.read.platform; tenant-scope grants
+  // require the approver to belong to the grantee tenant (or hold
+  // audit.read.platform). Revocation stays open to any approver — it only
+  // removes access, so it is fail-safe, and revocation must never be
+  // blocked by tenant boundaries in an emergency.
+  if (input.action === 'approve' || input.action === 'reject') {
+    const grant = await getAuditAccessGrant(conn, input.grantId)
+    if (grant) {
+      const platformReviewer = hasAuditPermission(ctx, 'audit.read.platform')
+      const withinBoundary =
+        grant.scope === 'platform'
+          ? platformReviewer
+          : grant.granteeTenantId === ctx.tenantId || platformReviewer
+      if (!withinBoundary) {
+        await recordAuditAccessEvent(conn, {
+          actorUserId: ctx.userId,
+          actorTenantId: ctx.tenantId,
+          scope: grant.scope,
+          grantId: grant.id,
+          action: 'audit_access_denied',
+          purpose: grant.purpose,
+          filter: { decision: input.action, reason: 'approver outside grant boundary' },
+        })
+        throw ApiError.forbidden(
+          'Approvers may only decide grants inside their own tenant unless they hold platform audit review.',
+        )
+      }
+    }
+  }
   try {
     if (input.action === 'approve') {
       return await approveAuditAccessRequest(conn, {

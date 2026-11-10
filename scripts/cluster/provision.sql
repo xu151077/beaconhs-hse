@@ -147,6 +147,21 @@ GRANT USAGE ON SCHEMA etl TO beaconhs_backup;
 
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM beaconhs_app, beaconhs_super;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO beaconhs_app, beaconhs_super;
+-- PD-02: the two platform audit tables are owner + audit_service only. The
+-- blanket grants above must never reach them, and beaconhs_super must not read
+-- the cross-tenant audit trail (audit_log) on the business pool — audit_reader
+-- is the only cross-tenant audit identity. super keeps INSERT on audit_log
+-- (platform actions append trail entries); it loses SELECT. converge_audit
+-- privileges in the migrator re-enforce this on every run.
+SELECT 'REVOKE ALL PRIVILEGES ON audit_access_grants FROM beaconhs_app, beaconhs_super'
+WHERE to_regclass('public.audit_access_grants') IS NOT NULL
+\gexec
+SELECT 'REVOKE ALL PRIVILEGES ON platform_audit_access_log FROM beaconhs_app, beaconhs_super'
+WHERE to_regclass('public.platform_audit_access_log') IS NOT NULL
+\gexec
+SELECT 'REVOKE SELECT ON audit_log FROM beaconhs_super'
+WHERE to_regclass('public.audit_log') IS NOT NULL
+\gexec
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM beaconhs_app, beaconhs_super;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO beaconhs_app, beaconhs_super;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO beaconhs_backup;

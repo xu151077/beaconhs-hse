@@ -22,7 +22,7 @@ import {
   resolveActiveAuditGrant,
   revokeAuditAccess,
 } from './audit-access'
-import { convergeAuditPrivileges } from './audit-roles'
+import { assertAuditTablePrivileges, convergeAuditPrivileges } from './audit-roles'
 import { TENANT_SCOPED_TABLES } from './rls'
 
 const NAME = `beaconhs-audit-access-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -673,5 +673,69 @@ describe('P-6 row budget & extra approval (real PostgreSQL)', () => {
       now: NOW,
     })
     expect(active).toBeNull()
+  })
+})
+
+// Independent security audit F1/F2: the provision-time blanket
+// "GRANT ... ON ALL TABLES" (plus owner default privileges) must never leave
+// business-pool roles holding privileges on the platform audit tables, and
+// beaconhs_super must not read the cross-tenant audit trail — audit_reader is
+// the only cross-tenant audit identity.
+describe('F1 remediation: business-pool roles are platform-audit-blind (real PostgreSQL)', () => {
+  beforeAll(async () => {
+    // Production-shaped business roles (absent in this probe cluster).
+    await admin.unsafe(`
+      do $$ begin
+        if to_regrole('beaconhs_app') is null then
+          create role beaconhs_app nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+        end if;
+        if to_regrole('beaconhs_super') is null then
+          create role beaconhs_super login nosuperuser nocreatedb nocreaterole noreplication bypassrls;
+        end if;
+      end $$;
+    `)
+    // Simulate the blanket provision/default-privilege grant the audit found.
+    await admin.unsafe(`
+      grant select, insert, update, delete on audit_access_grants, platform_audit_access_log
+        to beaconhs_app, beaconhs_super;
+      grant select, insert on audit_log to beaconhs_super;
+    `)
+  })
+
+  it('convergeAuditPrivileges revokes every business-role privilege on the platform tables and super audit_log read', async () => {
+    const before = await admin`
+      select grantee, table_name, privilege_type
+      from information_schema.role_table_grants
+      where grantee in ('beaconhs_app', 'beaconhs_super')
+        and (table_name in ('audit_access_grants', 'platform_audit_access_log')
+          or (table_name = 'audit_log' and privilege_type = 'SELECT'))`
+    expect(before.length).toBeGreaterThan(0) // the drift is real before converge
+    await convergeAuditPrivileges(appDb)
+    const after = await admin`
+      select grantee, table_name, privilege_type
+      from information_schema.role_table_grants
+      where grantee in ('beaconhs_app', 'beaconhs_super')
+        and (table_name in ('audit_access_grants', 'platform_audit_access_log')
+          or (table_name = 'audit_log' and privilege_type = 'SELECT'))`
+    expect(after).toHaveLength(0)
+  })
+
+  it('assertAuditTablePrivileges fails closed when a business role regains platform-audit privileges', async () => {
+    await admin.unsafe(`grant select on platform_audit_access_log to beaconhs_app`)
+    await expect(assertAuditTablePrivileges(appDb)).rejects.toThrow(
+      /business-pool roles hold platform-audit privileges/,
+    )
+    // Convergence heals the drift; the gate passes again afterwards.
+    await convergeAuditPrivileges(appDb)
+    await expect(assertAuditTablePrivileges(appDb)).resolves.toContain('verified')
+  })
+
+  it('beaconhs_super keeps INSERT on audit_log (platform trail appends) but lost SELECT', async () => {
+    const rows = await admin`
+      select
+        has_table_privilege('beaconhs_super', 'public.audit_log', 'INSERT') as can_insert,
+        has_table_privilege('beaconhs_super', 'public.audit_log', 'SELECT') as can_select`
+    expect(rows[0]?.can_insert).toBe(true)
+    expect(rows[0]?.can_select).toBe(false)
   })
 })

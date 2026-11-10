@@ -151,6 +151,36 @@ export async function convergeAuditPrivileges(db: MinimalDatabase) {
   await db.execute(
     sql`grant select, insert on public.platform_audit_access_log to ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
   )
+  // Business-pool roles must never hold privileges on the platform audit
+  // tables (a blanket "GRANT ON ALL TABLES" elsewhere otherwise survives), and
+  // beaconhs_super must not read the cross-tenant audit trail (audit_reader is
+  // the only cross-tenant audit identity; super keeps INSERT on audit_log for
+  // platform trail appends). Guarded with to_regrole/to_regclass so probe
+  // clusters without those roles or tables stay green.
+  await db.execute(sql`
+    do $$
+    begin
+      if to_regclass('public.audit_access_grants') is not null then
+        if to_regrole('beaconhs_app') is not null then
+          execute 'revoke all privileges on public.audit_access_grants from beaconhs_app';
+        end if;
+        if to_regrole('beaconhs_super') is not null then
+          execute 'revoke all privileges on public.audit_access_grants from beaconhs_super';
+        end if;
+      end if;
+      if to_regclass('public.platform_audit_access_log') is not null then
+        if to_regrole('beaconhs_app') is not null then
+          execute 'revoke all privileges on public.platform_audit_access_log from beaconhs_app';
+        end if;
+        if to_regrole('beaconhs_super') is not null then
+          execute 'revoke all privileges on public.platform_audit_access_log from beaconhs_super';
+        end if;
+      end if;
+      if to_regclass('public.audit_log') is not null and to_regrole('beaconhs_super') is not null then
+        execute 'revoke select on public.audit_log from beaconhs_super';
+      end if;
+    end
+    $$`)
 }
 
 /**
@@ -244,6 +274,32 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
   ) {
     throw new Error(
       `Audit privilege preflight failed: ${AUDIT_SERVICE_ROLE} must hold SELECT/INSERT/UPDATE on audit_access_grants and SELECT/INSERT on platform_audit_access_log — nothing else. ${REMEDIATION}`,
+    )
+  }
+
+  // Business-pool roles are platform-audit-blind: no privilege at all on the
+  // two platform audit tables, and beaconhs_super must not read audit_log
+  // (it keeps INSERT for platform trail appends). Blanket GRANT ON ALL TABLES
+  // blocks elsewhere must never leak here — this gate runs after convergence
+  // so any leak is a fail-closed migration error.
+  const businessOffenders = allRows<{ role: string; table_name: string; privilege_type: string }>(
+    await db.execute(sql`
+      select grantee as role, table_name, privilege_type
+      from information_schema.role_table_grants
+      where table_schema = 'public'
+        and (
+          table_name in ('audit_access_grants', 'platform_audit_access_log')
+          or (table_name = 'audit_log' and privilege_type = 'SELECT' and grantee = 'beaconhs_super')
+        )
+        and grantee in ('beaconhs_app', 'beaconhs_super')
+    `),
+  )
+  if (businessOffenders.length > 0) {
+    const detail = businessOffenders
+      .map((row) => `${row.role}×${row.table_name}:${row.privilege_type}`)
+      .join(', ')
+    throw new Error(
+      `Audit privilege preflight failed: business-pool roles hold platform-audit privileges (${detail}). ${REMEDIATION}`,
     )
   }
 

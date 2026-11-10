@@ -110,3 +110,24 @@ CREATE TRIGGER platform_audit_access_log_immutable_trigger
 -- and access-log writes go through the dedicated audit connection.
 REVOKE ALL ON audit_access_grants FROM PUBLIC;
 REVOKE ALL ON platform_audit_access_log FROM PUBLIC;
+--> statement-breakpoint
+-- Business-pool roles must hold NOTHING on the platform audit tables (a
+-- blanket provision-time "GRANT ... ON ALL TABLES" plus owner default
+-- privileges would otherwise re-reach them), and beaconhs_super must not read
+-- the cross-tenant audit trail — audit_reader is the only cross-tenant audit
+-- identity (super keeps INSERT on audit_log for platform trail appends).
+-- Guarded with to_regrole so CI scratch clusters without those roles apply
+-- cleanly. The migrator re-enforces this on every run via
+-- convergeAuditPrivileges/assertAuditTablePrivileges.
+DO $$
+BEGIN
+  IF to_regrole('beaconhs_app') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON audit_access_grants FROM beaconhs_app;
+    REVOKE ALL PRIVILEGES ON platform_audit_access_log FROM beaconhs_app;
+  END IF;
+  IF to_regrole('beaconhs_super') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON audit_access_grants FROM beaconhs_super;
+    REVOKE ALL PRIVILEGES ON platform_audit_access_log FROM beaconhs_super;
+    REVOKE SELECT ON audit_log FROM beaconhs_super;
+  END IF;
+END $$;
