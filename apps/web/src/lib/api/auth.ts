@@ -9,10 +9,11 @@
 import { createHash } from 'node:crypto'
 import { and, eq, isNull, lt, or } from 'drizzle-orm'
 import { db, withSuperAdmin } from '@beaconhs/db'
-import { apiKeys, tenants } from '@beaconhs/db/schema'
+import { apiKeys, people, tenantUsers, tenants } from '@beaconhs/db/schema'
 import { resolveLocalePreferences } from '@beaconhs/i18n'
 import { consumeRateLimit } from '@beaconhs/jobs/rate-limit'
-import { makeTenantContext, type RequestContext } from '@beaconhs/tenant'
+import { makeTenantContext, resolveMembershipAccess, type RequestContext } from '@beaconhs/tenant'
+import { authorizeApiCredential, type ApiPrincipalAccess, type ApiPrincipalRow } from './principal'
 import { ApiError } from './errors'
 import { sanitizeApiPermissions } from './permissions'
 import { isActiveTenantStatus } from '../active-tenant'
@@ -63,10 +64,59 @@ export async function authenticateApiKey(req: Request): Promise<ApiAuth> {
       return { error: 'tenant_unavailable' } as const
     }
 
+    // PD-01 phase 2: resolve the authorization principal (if the credential is
+    // bound). Everything is read in the same bypass-RLS transaction as the key
+    // lookup, and the tenant must agree in the predicate itself — a principal
+    // row from another tenant must never even be loaded.
+    let principal: ApiPrincipalRow | null = null
+    let access: ApiPrincipalAccess | null = null
+    let personId: string | null = null
+
+    if (match.key.principalTenantUserId) {
+      const [member] = await tx
+        .select({
+          id: tenantUsers.id,
+          tenantId: tenantUsers.tenantId,
+          userId: tenantUsers.userId,
+          status: tenantUsers.status,
+          displayName: tenantUsers.displayName,
+        })
+        .from(tenantUsers)
+        .where(
+          and(
+            eq(tenantUsers.id, match.key.principalTenantUserId),
+            eq(tenantUsers.tenantId, match.key.tenantId),
+          ),
+        )
+        .limit(1)
+      if (member) {
+        principal = member
+        if (member.status === 'active') {
+          const resolved = await resolveMembershipAccess(tx, member.id)
+          access = { permissions: resolved.permissions, scopes: resolved.scopes }
+          const [person] = await tx
+            .select({ id: people.id })
+            .from(people)
+            .where(
+              and(
+                eq(people.tenantId, match.key.tenantId),
+                eq(people.userId, member.userId),
+                isNull(people.deletedAt),
+              ),
+            )
+            .limit(1)
+          personId = person?.id ?? null
+        }
+      }
+    }
+
     return {
       key: match.key,
       defaultLanguage: match.defaultLanguage,
       enabledLanguages: match.enabledLanguages,
+      principal,
+      access,
+      personId,
     } as const
   })
 
@@ -118,23 +168,42 @@ export async function authenticateApiKey(req: Request): Promise<ApiAuth> {
       ),
   ).catch((error) => console.error('[api/v1] last-used telemetry update failed', error))
 
-  const permissions = sanitizeApiPermissions(row.permissions ?? [])
+  const authorization = authorizeApiCredential({
+    credential: {
+      id: row.id,
+      tenantId: row.tenantId,
+      principalTenantUserId: row.principalTenantUserId,
+      permissions: sanitizeApiPermissions(row.permissions ?? []),
+      scopes: row.scopes ?? null,
+    },
+    principal: result.principal,
+    access: result.access,
+    personId: result.personId,
+    fallbackUserId: row.createdBy ?? `api_key:${row.id}`,
+  })
+  if (!authorization.ok) {
+    // Fail closed on a broken binding rather than silently degrading to a
+    // tenant-wide credential or an empty one.
+    throw ApiError.forbidden(`API key authorization failed: ${authorization.reason}`)
+  }
+
   const ctx = makeTenantContext(db, {
-    userId: row.createdBy ?? `api_key:${row.id}`,
+    userId: authorization.userId,
     tenantId: row.tenantId,
     isSuperAdmin: false,
     // No human user behind an API key — default to the platform timezone. It only
     // affects server-rendered local-time display, which JSON API responses don't use.
     timezone: 'America/Toronto',
     ...localePolicy,
-    membership: null,
-    // No human employee behind an API key — record visibility is full-tenant.
-    personId: null,
+    membership: authorization.membership,
+    // An unbound key has no employee record (personId null) and stays
+    // tenant-wide; a bound key inherits the principal's person + scopes.
+    personId: authorization.personId,
     apiKey: { id: row.id, name: row.name },
-    // API keys use the same permission vocabulary as tenant roles. They are
-    // tenant-level credentials, so record visibility is full-tenant.
-    permissions: new Set(permissions),
-    scopes: [{ type: 'tenant' }],
+    // Same permission vocabulary as tenant roles; a bound key is the
+    // intersection of the credential's grant and the principal's permissions.
+    permissions: authorization.permissions,
+    scopes: authorization.scopes,
   })
 
   return {
@@ -143,7 +212,7 @@ export async function authenticateApiKey(req: Request): Promise<ApiAuth> {
       id: row.id,
       name: row.name,
       tenantId: row.tenantId,
-      permissions,
+      permissions: [...authorization.permissions],
       builderTemplateIds: row.builderTemplateIds ?? [],
       rateLimitHeaders,
     },

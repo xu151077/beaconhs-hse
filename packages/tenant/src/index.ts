@@ -308,3 +308,69 @@ export function selfOnlyFilter(ctx: RequestContext): RoleScope {
   }
   return widest ?? { type: 'self' }
 }
+
+/**
+ * True when `principal` grants at least the access `requested` asks for.
+ *
+ * A machine credential must never widen what its principal may see, so the
+ * comparison is subset-on-every-axis: a `sites` request is covered only by a
+ * `sites` grant containing all of those sites, `team` covers only when both the
+ * department and group lists are subsets, and a `tenant` principal covers
+ * everything.
+ */
+export function roleScopeCovers(principal: RoleScope, requested: RoleScope): boolean {
+  if (principal.type === 'tenant') return true
+  if (principal.type === 'sites') {
+    return (
+      requested.type === 'sites' && requested.siteIds.every((id) => principal.siteIds.includes(id))
+    )
+  }
+  if (principal.type === 'people') {
+    return (
+      requested.type === 'people' &&
+      requested.personIds.every((id) => principal.personIds.includes(id))
+    )
+  }
+  if (principal.type === 'crews') {
+    return (
+      requested.type === 'crews' && requested.crewIds.every((id) => principal.crewIds.includes(id))
+    )
+  }
+  if (principal.type === 'team') {
+    return (
+      requested.type === 'team' &&
+      requested.departmentIds.every((id) => principal.departmentIds.includes(id)) &&
+      requested.groupIds.every((id) => principal.groupIds.includes(id))
+    )
+  }
+  return requested.type === 'self'
+}
+
+export type ScopeNarrowing =
+  { ok: true; scopes: RoleScope[] } | { ok: false; reason: 'exceeds_principal' }
+
+/**
+ * Resolve a credential's requested scopes against its principal's scopes.
+ *
+ * Semantics are deliberately three-valued:
+ *   - `null` / `undefined` → inherit the principal verbatim;
+ *   - `[]`                  → an explicit "no scope" (the credential sees nothing),
+ *                             which is NOT the same as inheriting;
+ *   - non-empty             → every entry must be covered by the principal,
+ *                             otherwise the credential is invalid.
+ *
+ * An uncovered entry fails closed instead of being silently dropped: a silent
+ * drop produces a credential that authenticates but returns empty lists, which
+ * reads as a data bug rather than a misconfiguration.
+ */
+export function narrowRoleScopes(
+  principalScopes: RoleScope[],
+  requested: RoleScope[] | null | undefined,
+): ScopeNarrowing {
+  if (requested === null || requested === undefined) return { ok: true, scopes: principalScopes }
+  if (requested.length === 0) return { ok: true, scopes: [] }
+  const covered = requested.every((scope) =>
+    principalScopes.some((principal) => roleScopeCovers(principal, scope)),
+  )
+  return covered ? { ok: true, scopes: requested } : { ok: false, reason: 'exceeds_principal' }
+}
