@@ -4,17 +4,19 @@
 
 **规则：** 未确认字段不得投入使用（授权书 §二）。`recordVisibilityWhere` 只接受 Drizzle 列对象，因此实现映射时必须引用 schema 列，不能传字符串列名。
 
-## 1. 映射表
+## 1. 映射表（已按实际 Schema 与 `scope.ts` 校准）
 
-| 实体                 | `siteCol`          | `personCol`                | `createdByCol`                           | 状态                               |
-| -------------------- | ------------------ | -------------------------- | ---------------------------------------- | ---------------------------------- |
-| `corrective_actions` | `site_org_unit_id` | —                          | **`owner_tenant_user_id`**               | ✅ **已冻结、可实施**              |
-| `inspections`        | `site_org_unit_id` | —                          | `inspector_tenant_user_id`（责任检查人） | ✅ 字段存在；需确认非创建人        |
-| `documents`          | `site_org_unit_id` | `person_id`                | `owner_tenant_user_id`                   | ✅ 三重交集                        |
-| `incidents`          | `site_org_unit_id` | `person_id`（事故主体）    | —                                        | ⚠ self 语义待定（主体 vs 报告人）  |
-| `ppe_items`          | `site_org_unit_id` | `current_holder_person_id` | —                                        | ✅ 字段存在                        |
-| `training_records`   | —                  | `person_id`                | `created_by_tenant_user_id`              | ✅ 字段存在                        |
-| `equipment_items`    | 待核实             | 待核实                     | 待核实                                   | ❌ **需 Schema 扩展方案**（见 §4） |
+| 实体                 | `siteCol`                              | `personCol`                | `ownerTenantUserCol`                     | 状态                                          |
+| -------------------- | -------------------------------------- | -------------------------- | ---------------------------------------- | --------------------------------------------- |
+| `corrective_actions` | `site_org_unit_id`                     | —                          | **`owner_tenant_user_id`**               | ✅ 已实施（视图 `report_corrective_actions`） |
+| `documents`          | **无**（`document_ack_sessions` 才有） | **无**                     | `owner_tenant_user_id`                   | ✅ 已实施；site scope fail-closed             |
+| `training_records`   | **无**                                 | `person_id`（受训人）      | —                                        | ✅ 已实施（视图 `report_training_records`）   |
+| `inspections`        | `site_org_unit_id`                     | —                          | `inspector_tenant_user_id`（责任检查人） | ❌ 未实施；需确认非创建人                     |
+| `incidents`          | `site_org_unit_id`                     | `person_id`（事故主体）    | —                                        | ❌ 未实施；self 语义待定（主体 vs 报告人）    |
+| `ppe_items`          | `site_org_unit_id`                     | `current_holder_person_id` | —                                        | ❌ 未实施；需确认是否等同责任使用人           |
+| `equipment_items`    | 待核实                                 | 待核实                     | 待核实                                   | ❌ 未实施；**需 Schema 扩展方案**（见 §4）    |
+
+**字段命名约定：** `scope.ts` 统一使用 `ownerTenantUserCol`（责任归属列），不再使用易混淆的 `createdByCol`。`recordVisibilityWhere` 的 Self 语义**绝不**回退到 `created_by` / `reported_by` / 代填人。
 
 ## 2. corrective_actions（本轮实施）
 
@@ -59,37 +61,41 @@ ALTER TABLE equipment_items
 
 该扩展需要产品确认与迁移评审，本轮不实施。
 
-## 5. documents（三交集）
+## 5. documents（三交集，已实施）
 
 产品冻结：`documentReadFilter AND recordVisibilityWhere AND tenantIsolation`。
 
-现状：
+现状（已实现）：
 
-- `apps/web/src/lib/api/query.ts:141-145 entityVisibilitySql` 只对 documents 返回 `documentReadFilter(ctx)`；
+- `apps/web/src/lib/api/query.ts` `entityVisibilitySql` 对 documents 返回 `AND(documentReadFilter(ctx), entityScopeWhere(...))`；
 - `tenantIsolation` 由 RLS 强制（第二层）；
-- `recordVisibilityWhere` 目前**未**叠加。
+- `documentReadFilter` 为 `undefined`（含 `documents.manage`）时**不得**放宽 RoleScope。
 
 **核验结果：** `documents` 表**没有** `site_org_unit_id`（该列属于 `document_ack_sessions`），也没有 `person_id`。因此 Self 只能取 `owner_tenant_user_id`，Site scope 无字段可映射 → **fail-closed**。
-
-实施要求：在 `entityVisibilitySql` 中对 documents 返回 `AND(documentReadFilter, recordVisibilityWhere(...))`，且 `undefined`（tenant scope）时不得**放宽**阶梯结果。即：
 
 ```
 finalWhere = tenantIsolation(RLS) AND documentReadFilter AND (recordVisibilityWhere ?? TRUE)
 ```
 
-任一为 `sql\`false\`` → 结果为空；不得用 OR 合并。
+任一为 `sql\`false\`` → 结果为空；不得用 OR 合并。HTTP 实证：`self_ro`（仅 `documents.read`）只见 `published` + 本人文档；`self`（含 `documents.manage`）可见本人 draft —— 阶梯与 scope 互不放宽。
 
 ## 6. 其余实体
 
+- `training_records`：`person_id` = 受训人，语义明确，已实施 Self 映射（视图 `report_training_records`，故读谓词用无表前缀常量列名）。
 - `incidents`：self 语义需产品明确"事故主体（person_id）"还是"报告人"；未定前不启用 self，只用 site scope。
 - `ppe_items`：`current_holder_person_id` 是当前持有人，与"责任使用人"接近；需产品确认是否等同。
-- `training_records`：`person_id` = 受训人，语义明确。
+- `inspections`：`inspector_tenant_user_id` 可能被代填，未确认前不启用。
 
-## 7. 本轮实施结论
+## 7. 实施结论（七实体）
 
-| 实体                 | 本轮                                                |
-| -------------------- | --------------------------------------------------- |
-| `corrective_actions` | ✅ 实施（读 + 写 + 真 PG 测试）                     |
-| 其余 6 个            | ❌ 未实施（字段确认中 / 需 Schema 扩展 / 语义待定） |
+| 实体                 | 状态                                                    |
+| -------------------- | ------------------------------------------------------- |
+| `corrective_actions` | ✅ 实施（读 + 写 + 真 PG 测试）                         |
+| `documents`          | ✅ 实施（读 + 写 + 真 PG 测试；site scope fail-closed） |
+| `training_records`   | ✅ 实施（读 + 创建；视图 list-only，无 PATCH/DELETE）   |
+| `inspections`        | ❌ 未实施（字段语义待确认）                             |
+| `incidents`          | ❌ 未实施（self 语义待产品定）                          |
+| `ppe_items`          | ❌ 未实施（字段语义待确认）                             |
+| `equipment_items`    | ❌ 未实施（需 Schema 扩展）                             |
 
 未实施的实体在 `scope.ts` 映射中**不出现**；`entityScopeWhere` 对未映射实体在非 tenant scope 下 **fail-closed**（返回 `sql\`false\``），绝不静默放行。
