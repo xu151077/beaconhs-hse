@@ -234,3 +234,40 @@ _Review method: read-only. Verified by direct code read (`migrate.ts`, `audit-ro
 `0059_audit_access_platform.sql`, `provision.sql`, `iam.ts`, `rls.ts`, `migration-state.ts`),
 tsx execution of the permission catalogue, and diff-level inspection of the old image at
 `62b92b94`. Not verified: live CI run (§6), HTTP timeout trail branch (db-level coverage only)._
+
+## Addendum — CI round 1 (run 42887413373, dfcb70d1): RED → fixed
+
+**Outcome:** Security workflow success; CI job `ci` failed at the step
+"Live database suites — tenant and RLS isolation" (`--project db-runtime`).
+
+**Root cause (reproduced locally against an isolated scratch database, not on CI):**
+the live first-tenant-provisioning suite reads the day-one `audit_log` rows through
+the `SEED_TEST_SCRATCH_SUPERADMIN_URL` credential. PD-02 remediation (independent
+audit finding **F2**) deliberately revoked `audit_log` SELECT from `beaconhs_super` —
+the BYPASSRLS business-pool credential must not read the cross-tenant trail. The
+pre-existing suite predates PD-02 and still relied on that bypass, so every
+audit-trail assertion failed with `permission denied for table audit_log`. This is a
+**stale test pin, not a product defect**: the provisioner itself already writes the
+correct (F2-conforming) state.
+
+**Fix (commit `d3b63688`, test-only):**
+
+- `readAuditViaOwner()` helper: audit rows are now read through the owner identity
+  (`MIGRATION_DATABASE_URL` → migrator login → `SET ROLE beaconhs_owner`) with the
+  per-tenant GUC — the same credential pattern the suite's teardown already uses for
+  audit-row deletes. `audit_log` is FORCE RLS, so the GUC is mandatory for the owner.
+- `counts()` and the storage-freeze state assertion count audit rows through the
+  owner; the day-one actor email is resolved via the superadmin on `"user"` (a
+  platform administrator is not visible under a tenant GUC).
+- One stale pin corrected: "tenant_admin carries the whole catalogue" now expects the
+  catalogue minus `AUDIT_DEFAULT_UNGRANTED` (V3 P-4 default-not-granted), with
+  explicit negative assertions for the three audit keys.
+
+**Local verification (isolated scratch DB mirroring the CI provisioning SQL exactly):**
+`--project db-runtime` 36/36 passed (previously 19 failed → 9 failed → 0).
+Full six-gate set re-run on `d3b63688`: format 0, typecheck 0, lint 0, deadcode 0,
+test 0, build 0.
+
+**Blocking condition ① (CI green) remains open until the fix commit is pushed and the
+CI run completes successfully.** Blocking condition ② (six gates on final HEAD) is
+satisfied as of `d3b63688`.
