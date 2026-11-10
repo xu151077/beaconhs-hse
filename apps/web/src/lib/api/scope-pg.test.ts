@@ -75,6 +75,19 @@ beforeAll(async () => {
       owner_tenant_user_id uuid,
       deleted_at timestamptz
     );
+    CREATE TABLE documents (
+      id uuid PRIMARY KEY,
+      tenant_id uuid NOT NULL,
+      owner_tenant_user_id uuid,
+      status text NOT NULL DEFAULT 'published',
+      deleted_at timestamptz
+    );
+    CREATE TABLE training_records (
+      id uuid PRIMARY KEY,
+      tenant_id uuid NOT NULL,
+      person_id uuid,
+      deleted_at timestamptz
+    );
   `)
 }, 120_000)
 
@@ -149,6 +162,21 @@ function ctxFor(
   } as unknown as RequestContext
 }
 
+async function visibleIdsIn(
+  table: string,
+  ctx: RequestContext,
+  entityKey: string,
+): Promise<string[]> {
+  const rows = await db!.transaction(async (tx) => {
+    const predicate = await entityScopeWhere(ctx, tx as never, entityKey)
+    const base = sql.raw(`select id from ${table} where tenant_id = '${ctx.tenantId}'::uuid`)
+    const q = predicate ? sql`${base} and ${predicate}` : base
+    const res = (await tx.execute(q)) as unknown as Array<{ id: string }>
+    return Array.isArray(res) ? res : ((res as { rows?: Array<{ id: string }> }).rows ?? [])
+  })
+  return rows.map((r) => r.id).sort()
+}
+
 async function visibleIds(
   ctx: RequestContext,
   entityKey = 'corrective_actions',
@@ -206,5 +234,75 @@ describe('API record scope (real PostgreSQL)', () => {
       return Array.isArray(res) ? res : []
     })
     expect(rows).toEqual([])
+  })
+
+  it('documents: self scope is the document owner; site scope fails closed', async () => {
+    const f = await seed()
+    const s = client!
+    const docMine = randomUUID()
+    const docOther = randomUUID()
+    const docNoOwner = randomUUID()
+    await s`insert into documents (id, tenant_id, owner_tenant_user_id, status) values
+      (${docMine}::uuid, ${f.tenantA}::uuid, ${f.owner1}::uuid, 'published'),
+      (${docOther}::uuid, ${f.tenantA}::uuid, ${f.owner2}::uuid, 'published'),
+      (${docNoOwner}::uuid, ${f.tenantA}::uuid, null, 'published')`
+
+    const selfCtx = ctxFor(f.tenantA, [{ type: 'self' }], f.owner1)
+    expect(await visibleIdsIn('documents', selfCtx, 'documents')).toEqual([docMine])
+
+    // No site column exists on documents, so a sites scope must yield nothing
+    // rather than silently degrading to "own documents".
+    const siteCtx = ctxFor(f.tenantA, [{ type: 'sites', siteIds: [f.siteA] }], null)
+    expect(await visibleIdsIn('documents', siteCtx, 'documents')).toEqual([])
+
+    const tenantCtx = ctxFor(f.tenantA, [{ type: 'tenant' }], null)
+    expect(await visibleIdsIn('documents', tenantCtx, 'documents')).toEqual(
+      [docMine, docOther, docNoOwner].sort(),
+    )
+  })
+
+  it('training_records: self scope is the trainee; site scope fails closed', async () => {
+    const f = await seed()
+    const s = client!
+    const mine = randomUUID()
+    const other = randomUUID()
+    const orphan = randomUUID()
+    await s`insert into training_records (id, tenant_id, person_id) values
+      (${mine}::uuid, ${f.tenantA}::uuid, ${f.owner1}::uuid),
+      (${other}::uuid, ${f.tenantA}::uuid, ${f.owner2}::uuid),
+      (${orphan}::uuid, ${f.tenantA}::uuid, null)`
+
+    // personId on the context is the trainee identity for a bound credential.
+    const selfCtx = {
+      ...ctxFor(f.tenantA, [{ type: 'self' }], f.owner1),
+      personId: f.owner1,
+    } as RequestContext
+    expect(await visibleIdsIn('training_records', selfCtx, 'training_records')).toEqual([mine])
+
+    const siteCtx = ctxFor(f.tenantA, [{ type: 'sites', siteIds: [f.siteA] }], null)
+    expect(await visibleIdsIn('training_records', siteCtx, 'training_records')).toEqual([])
+
+    const tenantCtx = ctxFor(f.tenantA, [{ type: 'tenant' }], null)
+    expect(await visibleIdsIn('training_records', tenantCtx, 'training_records')).toEqual(
+      [mine, other, orphan].sort(),
+    )
+  })
+
+  it('list and count share one predicate (documents)', async () => {
+    const f = await seed()
+    const s = client!
+    await s`insert into documents (id, tenant_id, owner_tenant_user_id, status) values
+      (${randomUUID()}::uuid, ${f.tenantA}::uuid, ${f.owner1}::uuid, 'published'),
+      (${randomUUID()}::uuid, ${f.tenantA}::uuid, ${f.owner2}::uuid, 'published')`
+    const selfCtx = ctxFor(f.tenantA, [{ type: 'self' }], f.owner1)
+    const counted = await db!.transaction(async (tx) => {
+      const predicate = await entityScopeWhere(selfCtx, tx as never, 'documents')
+      const q = sql`select count(*)::int as n from documents where tenant_id = ${f.tenantA}::uuid and ${predicate}`
+      const res = (await tx.execute(q)) as unknown as Array<{ n: number }>
+      const rows = Array.isArray(res) ? res : ((res as { rows?: Array<{ n: number }> }).rows ?? [])
+      return Number(rows[0]?.n ?? 0)
+    })
+    const listed = await visibleIdsIn('documents', selfCtx, 'documents')
+    expect(counted).toBe(listed.length)
   })
 })

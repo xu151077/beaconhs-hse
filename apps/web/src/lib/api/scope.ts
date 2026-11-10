@@ -15,7 +15,7 @@
 import { and, eq, sql, type SQL } from 'drizzle-orm'
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core'
 import type { Database } from '@beaconhs/db'
-import { correctiveActions } from '@beaconhs/db/schema'
+import { correctiveActions, documents, trainingRecords } from '@beaconhs/db/schema'
 import { ApiError } from './errors'
 import { recordVisibilityWhere, type RecordOwnerColumns } from '@/lib/visibility'
 
@@ -40,6 +40,26 @@ const API_ENTITY_SCOPE: Record<string, ScopeEntry> = {
     },
     bodySiteKey: 'siteOrgUnitId',
   },
+  // Documents have NO site column (the site on `document_ack_sessions` is a
+  // different table). Self = the document owner. A `sites` scope therefore has
+  // no expressible predicate and fails closed below.
+  documents: {
+    table: documents,
+    id: documents.id,
+    tenantId: documents.tenantId,
+    cols: {
+      createdByCol: documents.ownerTenantUserId,
+    },
+  },
+  // Training records have no site column either. Self = the trainee.
+  training_records: {
+    table: trainingRecords,
+    id: trainingRecords.id,
+    tenantId: trainingRecords.tenantId,
+    cols: {
+      personCol: trainingRecords.personId,
+    },
+  },
 }
 
 function isTenantScope(ctx: { scopes: Array<{ type: string }> }): boolean {
@@ -60,6 +80,12 @@ export async function entityScopeWhere(
   // Not mapped: fail closed. A scoped credential must never fall back to the
   // whole tenant just because an entity has no mapping yet.
   if (!entry) return sql`false`
+  // A `sites` scope on an entity with no site column cannot be expressed.
+  // Degrading to "own records only" would silently answer a different question
+  // than the caller asked, so refuse instead.
+  if (ctx.scopes.some((scope) => scope.type === 'sites') && !entry.cols.siteCol) {
+    return sql`false`
+  }
   return recordVisibilityWhere(ctx, tx, entry.cols)
 }
 
