@@ -130,4 +130,12 @@ BEGIN
     REVOKE ALL PRIVILEGES ON platform_audit_access_log FROM beaconhs_super;
     REVOKE SELECT ON audit_log FROM beaconhs_super;
   END IF;
+  -- beaconhs_backup keeps SELECT on the platform audit tables BY DESIGN (PD-02
+  -- review N1, documented deviation): complete backups need whole-database
+  -- read (0056 pins its audit_log SELECT) and the drizzle ledger must stay
+  -- consistent with the restored schema. It must never WRITE them.
+  IF to_regrole('beaconhs_backup') IS NOT NULL THEN
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON audit_access_grants FROM beaconhs_backup;
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON platform_audit_access_log FROM beaconhs_backup;
+  END IF;
 END $$;

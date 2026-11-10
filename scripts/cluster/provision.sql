@@ -166,6 +166,17 @@ REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM beaconhs_app, beaco
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO beaconhs_app, beaconhs_super;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO beaconhs_backup;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO beaconhs_backup;
+-- PD-02 review N1: beaconhs_backup keeps SELECT on the platform audit tables
+-- (and the whole database) BY DESIGN — a complete backup needs whole-database
+-- read and the drizzle ledger must stay consistent with the restored schema.
+-- It must never WRITE them: pin SELECT-only so stray write grants cannot
+-- survive. converge_audit_privileges in the migrator re-enforces this.
+SELECT 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON audit_access_grants FROM beaconhs_backup'
+WHERE to_regclass('public.audit_access_grants') IS NOT NULL
+\gexec
+SELECT 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON platform_audit_access_log FROM beaconhs_backup'
+WHERE to_regclass('public.platform_audit_access_log') IS NOT NULL
+\gexec
 
 -- audit_reader reads exactly one table: audit_log. The grant is guarded because
 -- audit_log only exists after the first migration run; re-running provision.sql

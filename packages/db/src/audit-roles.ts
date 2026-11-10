@@ -179,6 +179,16 @@ export async function convergeAuditPrivileges(db: MinimalDatabase) {
       if to_regclass('public.audit_log') is not null and to_regrole('beaconhs_super') is not null then
         execute 'revoke select on public.audit_log from beaconhs_super';
       end if;
+      -- beaconhs_backup keeps whole-database read access BY DESIGN (0056 pins
+      -- its SELECT on audit_log; a complete backup needs it and the drizzle
+      -- ledger must stay consistent with restored schema). It must however
+      -- never WRITE the platform audit tables — pin them SELECT-only.
+      if to_regclass('public.audit_access_grants') is not null and to_regrole('beaconhs_backup') is not null then
+        execute 'revoke insert, update, delete, truncate on public.audit_access_grants from beaconhs_backup';
+      end if;
+      if to_regclass('public.platform_audit_access_log') is not null and to_regrole('beaconhs_backup') is not null then
+        execute 'revoke insert, update, delete, truncate on public.platform_audit_access_log from beaconhs_backup';
+      end if;
     end
     $$`)
 }
@@ -279,9 +289,12 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
 
   // Business-pool roles are platform-audit-blind: no privilege at all on the
   // two platform audit tables, and beaconhs_super must not read audit_log
-  // (it keeps INSERT for platform trail appends). Blanket GRANT ON ALL TABLES
-  // blocks elsewhere must never leak here — this gate runs after convergence
-  // so any leak is a fail-closed migration error.
+  // (it keeps INSERT for platform trail appends). beaconhs_backup is the one
+  // documented deviation: it keeps SELECT on the platform audit tables (and
+  // the whole database, 0056) for complete backups — but any WRITE privilege
+  // on them is an offender. Blanket GRANT ON ALL TABLES blocks elsewhere must
+  // never leak here — this gate runs after convergence so any leak is a
+  // fail-closed migration error.
   const businessOffenders = allRows<{ role: string; table_name: string; privilege_type: string }>(
     await db.execute(sql`
       select grantee as role, table_name, privilege_type
@@ -291,7 +304,10 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
           table_name in ('audit_access_grants', 'platform_audit_access_log')
           or (table_name = 'audit_log' and privilege_type = 'SELECT' and grantee = 'beaconhs_super')
         )
-        and grantee in ('beaconhs_app', 'beaconhs_super')
+        and (
+          grantee in ('beaconhs_app', 'beaconhs_super')
+          or (grantee = 'beaconhs_backup' and privilege_type <> 'SELECT')
+        )
     `),
   )
   if (businessOffenders.length > 0) {

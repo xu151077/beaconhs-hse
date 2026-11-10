@@ -676,11 +676,13 @@ describe('P-6 row budget & extra approval (real PostgreSQL)', () => {
   })
 })
 
-// Independent security audit F1/F2: the provision-time blanket
+// Independent security audit F1/F2 + review N1: the provision-time blanket
 // "GRANT ... ON ALL TABLES" (plus owner default privileges) must never leave
 // business-pool roles holding privileges on the platform audit tables, and
 // beaconhs_super must not read the cross-tenant audit trail — audit_reader is
-// the only cross-tenant audit identity.
+// the only cross-tenant audit identity. beaconhs_backup is the documented
+// deviation: SELECT-only on the platform audit tables (complete backups need
+// whole-database read, 0056), but any WRITE privilege is a fail-closed error.
 describe('F1 remediation: business-pool roles are platform-audit-blind (real PostgreSQL)', () => {
   beforeAll(async () => {
     // Production-shaped business roles (absent in this probe cluster).
@@ -692,12 +694,15 @@ describe('F1 remediation: business-pool roles are platform-audit-blind (real Pos
         if to_regrole('beaconhs_super') is null then
           create role beaconhs_super login nosuperuser nocreatedb nocreaterole noreplication bypassrls;
         end if;
+        if to_regrole('beaconhs_backup') is null then
+          create role beaconhs_backup login nosuperuser nocreatedb nocreaterole noreplication bypassrls;
+        end if;
       end $$;
     `)
     // Simulate the blanket provision/default-privilege grant the audit found.
     await admin.unsafe(`
       grant select, insert, update, delete on audit_access_grants, platform_audit_access_log
-        to beaconhs_app, beaconhs_super;
+        to beaconhs_app, beaconhs_super, beaconhs_backup;
       grant select, insert on audit_log to beaconhs_super;
     `)
   })
@@ -737,5 +742,33 @@ describe('F1 remediation: business-pool roles are platform-audit-blind (real Pos
         has_table_privilege('beaconhs_super', 'public.audit_log', 'SELECT') as can_select`
     expect(rows[0]?.can_insert).toBe(true)
     expect(rows[0]?.can_select).toBe(false)
+  })
+
+  it('N1: beaconhs_backup is pinned SELECT-only on the platform audit tables', async () => {
+    const rows = await admin`
+      select
+        has_table_privilege('beaconhs_backup', 'public.audit_access_grants', 'SELECT') as g_select,
+        has_table_privilege('beaconhs_backup', 'public.audit_access_grants', 'INSERT') as g_insert,
+        has_table_privilege('beaconhs_backup', 'public.audit_access_grants', 'UPDATE') as g_update,
+        has_table_privilege('beaconhs_backup', 'public.audit_access_grants', 'DELETE') as g_delete,
+        has_table_privilege('beaconhs_backup', 'public.platform_audit_access_log', 'SELECT') as l_select,
+        has_table_privilege('beaconhs_backup', 'public.platform_audit_access_log', 'INSERT') as l_insert,
+        has_table_privilege('beaconhs_backup', 'public.platform_audit_access_log', 'UPDATE') as l_update,
+        has_table_privilege('beaconhs_backup', 'public.platform_audit_access_log', 'DELETE') as l_delete`
+    expect(rows[0]?.g_select).toBe(true) // documented deviation: backup completeness
+    expect(rows[0]?.l_select).toBe(true)
+    expect(rows[0]?.g_insert).toBe(false)
+    expect(rows[0]?.g_update).toBe(false)
+    expect(rows[0]?.g_delete).toBe(false)
+    expect(rows[0]?.l_insert).toBe(false)
+    expect(rows[0]?.l_update).toBe(false)
+    expect(rows[0]?.l_delete).toBe(false)
+    // The gate itself must fail closed if backup ever regains a write path.
+    await admin.unsafe(`grant update on audit_access_grants to beaconhs_backup`)
+    await expect(assertAuditTablePrivileges(appDb)).rejects.toThrow(
+      /business-pool roles hold platform-audit privileges.*beaconhs_backup/,
+    )
+    await convergeAuditPrivileges(appDb)
+    await expect(assertAuditTablePrivileges(appDb)).resolves.toContain('verified')
   })
 })
