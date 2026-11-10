@@ -137,3 +137,29 @@ used=9999 + requested=1 → 10000 放行（恰好达帽）；used=10000 + 1 → 
 - `packages/db/src/audit-access.test.ts` — F1 describe（3 例）
 - `BEACONHS_PD02_INDEPENDENT_SECURITY_AUDIT.md` — prettier 格式化（内容未改）
 - 本报告
+
+## N1（复审 round 2 遗留）—— 文档化偏差 + SELECT-only 钉定
+
+**N1 内容：** `beaconhs_backup`（LOGIN / BYPASSRLS / 只读）仍持有两个平台审计表的 SELECT，违反 P-5"owner + audit_service 独占"的字面表述，且当时的 offender 门禁不覆盖 backup。
+
+**处置：显式允许清单 + 文档化（审查者 round 2 给出的两个选项之一），不做剥夺。** 理由：
+
+1. **备份完整性是硬约束。** `beaconhs_backup` 的全库 BYPASSRLS 读是既有设计（0056 迁移已钉定其 audit_log SELECT，仅剥夺 UPDATE/DELETE/TRUNCATE）。`pg_dump` 无法在不持有 SELECT 的情况下转储表数据；若把两表排除出备份，drizzle ledger 会记录 0059 已应用而恢复后的 schema 缺失这两张表（ledger 一致性破坏，`convergeAuditPrivileges`/`assertAuditTablePrivileges` 将在恢复后的集群上失败）。
+2. **增量敏感度≈0。** 备份凭据本就合法读取全库——包括**完整的跨租户 audit_log**（0056 起即如此）。剥夺 grants/trail 两张小表不减少任何实际可泄露信息。
+3. **无应用路径。** 没有任何 Web/worker 代码以 `beaconhs_backup` 身份认证或连接；它只出现在备份脚本中。
+
+**实施（三个执行点 + 门禁 + 测试）：**
+
+| 执行点                                               | 内容                                                                                                                                                                                |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/cluster/provision.sql`                      | 注释文档化 + `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON 两表 FROM beaconhs_backup`（to_regclass 守卫，\gexec 幂等）                                                                |
+| `packages/db/drizzle/0059_audit_access_platform.sql` | DO 块追加 backup write-pin（to_regrole 守卫，CI scratch 可干净应用；本地已重放验证 ledger 59 applied + pin 生效）                                                                   |
+| `packages/db/src/audit-roles.ts` converge            | DO 块追加 backup write-pin（每次迁移自愈漂移）                                                                                                                                      |
+| `packages/db/src/audit-roles.ts` assert              | businessOffenders 扩展：`(grantee='beaconhs_backup' AND privilege_type<>'SELECT')` 即 fail-closed                                                                                   |
+| `packages/db/src/audit-access.test.ts`               | 新增 N1 用例：backup SELECT-only 断言（8 项 has_table_privilege）+ 写权限回归时 assert 拒绝（`business-pool roles hold platform-audit privileges.*beaconhs_backup`）+ converge 自愈 |
+
+**实测（本地 5433 真 PG）：** converge 后 `beaconhs_backup` 对两表仅 SELECT（information_schema 核验）；assert 通过；0059 重放后 trail/grants 为空属预期（测试集群）。
+
+**风险声明：** 持有备份凭据的主体可读取 grants/trail 元数据（与可读取全库 audit_log 的既有事实一致）。生产 `~/.beaconhs/scripts/backup-daily.sh` 副本与 `scripts/cluster/backup.sh` 需在 PD-02 生产变更（经用户批准）时同步——本变更不改变其行为，仅 provision/迁移收敛权限。
+
+**门禁（本轮）：** format 0 / typecheck 0 / lint 0 / deadcode 0（test/build 见全仓复跑）；审计两文件（audit-access + preflight）49/49 真 PG。

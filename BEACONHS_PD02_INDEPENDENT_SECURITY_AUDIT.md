@@ -131,3 +131,82 @@ Reason: hard constraint 5 is violated in the live cluster (F1, Critical) — the
 2. (F2, High) Resolve the `beaconhs_super` BYPASSRLS audit_log read exposure (revoke, or amend and document the design exemption).
 3. (F3–F5, Medium) Fix the 0059-in-place amendment, enforce the approval tenant boundary, and add the impersonation guard.
 4. (F6–F11, Low/Info) Address or explicitly accept with documented rationale.
+
+---
+
+# Re-verification (round 2)
+
+- **Date:** 2026-11-11
+- **Scope:** commits `41ff6ea4` (fix) + `4c1c530e` (docs); claims re-verified independently from code and live probes, not from BEACONHS_PD02_STAGE9_REMEDIATION.md.
+- **Method:** full read of `git show 41ff6ea4` (provision.sql, 0059, audit-roles.ts, audit-access.ts, cross-tenant.ts, audit-access.test.ts); live read-only probes against `beaconhs-postgres`; re-ran `pnpm --filter @beaconhs/db exec vitest run src/audit-access.test.ts src/audit-role-preflight.test.ts` (**2 files, 48/48 passed**, including the new production-shaped F1 drift tests). Working tree clean; no files modified except this report.
+
+## Per-finding status
+
+### F1 (Critical) — CLOSED, residual nuance → N1
+
+- **Live:** `set role beaconhs_app; select count(*) from audit_access_grants` → `permission denied`; same for `beaconhs_super` on both platform tables. `information_schema.role_table_grants` shows only `audit_service` (SELECT/INSERT/UPDATE grants; SELECT/INSERT log), `beaconhs_owner`, and — residual — `beaconhs_backup` SELECT (see N1).
+- **Code:** 0059 appends a `to_regrole`-guarded DO block revoking app/super on both platform tables and super's SELECT on audit_log; `convergeAuditPrivileges` re-enforces on every migrate run; `provision.sql` places the `\gexec` revokes **after** the blanket GRANT (order verified); `assertAuditTablePrivileges` gains a `businessOffenders` gate that fails the migration closed on any app/super privilege — pinned by a new test that **simulates the exact provision-time blanket grant** (the round-1 false-assurance gap) and asserts converge heals it and the gate fails closed when drift is re-injected.
+- **Accepted nuance verified:** `beaconhs_app` keeps SELECT on `audit_log` — RLS is `FORCE`d (`relforcerowsecurity=t`) and tenant-scoped, and the per-tenant admin audit page requires it; the gate deliberately exempts app SELECT on audit_log while rejecting super SELECT. Consistent.
+
+### F2 (High) — CLOSED
+
+- **Live:** `set role beaconhs_super; select count(*) from audit_log` → `permission denied`; `has_table_privilege(beaconhs_super, audit_log, INSERT)=t / SELECT=f` (INSERT preserved for platform trail appends).
+- Revoked consistently in 0059, converge, and provision.
+- **No runtime code path reads audit_log via the super pool:** grep over apps/packages shows only `packages/db/src/audit-query.ts` (dedicated AUDIT_DATABASE_URL connection) and `apps/web/scripts/backfill-tenant-storage-keys.ts` — an offline pre-cutover maintenance script pinned to a fingerprint-checked dev target, not a runtime path. Acceptable.
+
+### F3 (Medium) — CLOSED
+
+- 0059 is now the single final file. The round-2 append is privilege-only raw SQL (DO block), so no snapshot/journal regeneration is required (drizzle snapshots track schema objects, not privileges) — meta consistency holds. PD-02 is undeployed, so every environment will apply this identical file. Local DB matches the final file (live revokes verified; ledger = 59 migrations; `extra_approval` present).
+
+### F4 (Medium) — CLOSED (revoke exception ACCEPTED)
+
+- `decideCrossTenantAuditGrant` now: platform-scope grants require `audit.read.platform`; tenant-scope grants require `granteeTenantId === ctx.tenantId` or `audit.read.platform`; boundary denials are trailed as `audit_access_denied` with the decision reason.
+- **No bypass via unknown grant id:** a null grant skips the boundary check but falls through to `approveAuditAccessRequest`/reject, which fail `not_found` (404) — nothing activates.
+- **No exploitable TOCTOU:** grant `scope`/`granteeTenantId` are immutable after creation (no code path updates them); the guarded UPDATE still atomically enforces pending-state and grantee≠approver.
+- **Unbounded revoke — ACCEPTED with note:** revocation only removes access (fail-safe direction), is trailed (`grant_revoked`), and must not be tenant-blocked in an emergency. Residual: an `admin.audit.approve` holder can revoke other tenants' grants (cross-tenant capability-disruption, bounded and fully trailed). Acceptable; keep under review.
+
+### F5 (Medium) — CLOSED
+
+- `assertAuditSubject(ctx)` → `assertNotImpersonating(ctx, 'cross-tenant audit')` added to all four orchestration entry points (`runCrossTenantAuditQuery`, `runCrossTenantAuditExport`, `requestCrossTenantAuditAccess`, `decideCrossTenantAuditGrant`); the 4 routes invoke only these orchestrators, so coverage is complete. Signature matches `packages/tenant/src/index.ts:285`.
+
+### F6 (Low) — ACCEPTED (documented)
+
+- Remediation doc records the rationale: bounded by in-flight concurrency × ≤500 rows, all consumption trailed, the budget is a runaway guard-rail (not a security boundary — bulk reads need `extra_approval`). Reasonable; atomicity would require coupling the read with the append-only trail in one transaction, disproportionate.
+
+### F7 (Low) — budget semantics verified NOT a bug; second facet is real → N2
+
+- Their claim is correct for the budget boundary itself: `used + requestedRows > MAX` rejects, `=` passes — exact-cap semantics are right; the ≤1-row probe delta is noise.
+- However the round-1 off-by-one note also covers a genuine composition edge: the session layer fetches `pageSize + 1` rows, so at the far end of a full window (pageSize=500 → page 20: offset 9500 + limit 501 = 10001 > `AUDIT_QUERY_MAX_ROWS`) `queryAuditLogAcrossTenants` throws `row_cap` and the **last page returns 400 instead of rows**. Fail-closed, functional-only → N2 (Low).
+
+### F8 (Low) — CLOSED (fail-closed by construction, verified in code)
+
+- The success-trail `recordAuditAccessEvent('audit_query')` executes before `return`, with no try/catch swallowing: if the trail insert fails, the caller receives an error and **no rows are returned**. Residual nuance: the server-side read has already occurred at that point (narrow window, dedicated connection, failure observable). Accept.
+
+## New findings from the remediation diff
+
+### N1 — MEDIUM — `beaconhs_backup` (LOGIN, BYPASSRLS) still holds SELECT on both platform audit tables
+
+- **Location:** `scripts/cluster/provision.sql` — `GRANT SELECT ON ALL TABLES IN SCHEMA public TO beaconhs_backup;` runs **after** the PD-02 `\gexec` revoke block, so a provision (re-)run re-grants backup SELECT on `audit_access_grants` and `platform_audit_access_log`; neither the 0059 DO block, `convergeAuditPrivileges`, nor the `businessOffenders` gate (which checks only `beaconhs_app`/`beaconhs_super`) strips or detects it.
+- **Live:** `information_schema.role_table_grants` shows `beaconhs_backup | audit_access_grants | SELECT` and `beaconhs_backup | platform_audit_access_log | SELECT` (plus audit_log SELECT); role attributes `LOGIN ... BYPASSRLS`.
+- **Impact:** constraint 5's "only owner + audit_service" is still violated for this role. A holder of the backup credential can read the platform-wide grant registry and the access trail, and — via BYPASSRLS — the cross-tenant audit_log. Not reachable from the application runtime pool (the round-1 F1 escalation path), but it is a standing login-capable privilege outside the intended matrix and invisible to the fail-closed gate.
+- **Fix direction:** extend the same three remediation points (0059 DO block, converge, provision revoke block, `businessOffenders` query) to `beaconhs_backup` for the two platform tables — or, if backup genuinely must dump them, document that as an explicit design exception and extend the gate to assert backup holds SELECT **only**. audit_log SELECT for logical backup is arguably the role's function but should be stated in the architecture doc alongside the BYPASSRLS caveat.
+- **Status:** new (residual of F1's remediation scope).
+
+### N2 — LOW — last page of a full window returns 400 (`row_cap`) due to the +1 probe
+
+- **Location:** `apps/web/src/lib/audit/cross-tenant.ts` (`limit: pageSize + 1`, `offset = (page-1)*pageSize`) vs `packages/db/src/audit-query.ts` (`offset + limit > AUDIT_QUERY_MAX_ROWS` → `row_cap`).
+- **Impact:** with pageSize=500, page 20 of a ≥9,501-row window computes 9500+501=10001 > 10000 → AuditQueryLimitError → 400 to the user; the final page of a fully-consumed window is unreachable. Fail-closed (no over-read), functional bug only. Pagination UX defect, not a security issue.
+- **Fix direction:** cap the probe at the window boundary (e.g. `limit = min(pageSize + 1, AUDIT_QUERY_MAX_ROWS - offset)`) or exempt the empty tail position in the row-cap check.
+- **Status:** new (edge surfaced by round-2 scrutiny of F7).
+
+## Constraint-5 letter check after remediation
+
+Grantee matrix on the three audit tables (live): `audit_owner`-level privileges only for `beaconhs_owner`; SELECT/INSERT/UPDATE for `audit_service` on grants, SELECT/INSERT on log; SELECT for `audit_reader` on audit_log; SELECT for `beaconhs_app` on audit_log (RLS-forced, tenant-scoped); INSERT/UPDATE (no SELECT) for `beaconhs_super` on audit_log; **SELECT for `beaconhs_backup` on all three (N1)**. One residual violation of the "owner + audit_service only" letter, on a maintenance role, undetected by the gate.
+
+## FINAL VERDICT (round 2)
+
+# CONDITIONAL PASS
+
+Round-1 blocking findings are genuinely closed at the application-facing level: the business pool can no longer read or forge platform audit state (F1), super can no longer read cross-tenant audit_log (F2), the approval boundary is enforced and trailed (F4), impersonation is blocked on the whole audit surface (F5), the migration is single-final-file (F3), and F6/F7/F8 dispositions hold as claimed (with N2 carved out). The remediation tests are production-shaped and all 48 pass.
+
+**Condition to reach full PASS:** close N1 — strip (or explicitly allowlist-and-document) `beaconhs_backup`'s SELECT on `audit_access_grants`/`platform_audit_access_log` in the same three enforcement points, and extend `assertAuditTablePrivileges` so the fail-closed gate covers every grantee, not only app/super. N2 is a functional pagination bug; fix at leisure, no security impact.
