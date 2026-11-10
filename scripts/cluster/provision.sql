@@ -132,9 +132,10 @@ REASSIGN OWNED BY beaconhs_app TO beaconhs_owner;
 ALTER SCHEMA public OWNER TO beaconhs_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC, beaconhs_app, beaconhs_super;
 GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super, beaconhs_backup;
--- audit_reader needs schema USAGE to reach audit_log after SET ROLE; it is
--- deliberately absent from every other schema grant and default privilege.
-GRANT USAGE ON SCHEMA public TO audit_reader;
+-- audit_reader needs schema USAGE to reach audit_log after SET ROLE, and
+-- audit_service needs it for grant/trail reads as its base login (before the
+-- SET LOCAL ROLE switch). Neither gains object privileges from USAGE.
+GRANT USAGE ON SCHEMA public TO audit_reader, audit_service;
 
 -- Private ETL bookkeeping is intentionally isolated from runtime traffic. The
 -- BYPASSRLS maintenance login may create and maintain only this schema.

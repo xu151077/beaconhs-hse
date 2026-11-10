@@ -116,7 +116,7 @@ beforeAll(async () => {
       USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
     GRANT USAGE ON SCHEMA public TO beaconhs_app, beaconhs_super;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO beaconhs_app, beaconhs_super;
-    GRANT USAGE ON SCHEMA public TO audit_reader;
+    GRANT USAGE ON SCHEMA public TO audit_reader, audit_service;
     GRANT SELECT ON audit_log TO audit_reader;
     INSERT INTO tenants (id) VALUES ('${TENANT_A}'::uuid), ('${TENANT_B}'::uuid);
   `)

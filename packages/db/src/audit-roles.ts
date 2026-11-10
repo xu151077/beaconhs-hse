@@ -130,10 +130,17 @@ export async function assertAuditRoleAttributes(db: MinimalDatabase, ownerRole: 
  *                   platform_audit_access_log (append-only trail); everything
  *                   else stays with beaconhs_owner only.
  *
+ * Both roles also get USAGE on schema public: grant resolution, budget checks
+ * and trail writes run as audit_service BEFORE the SET LOCAL ROLE switch, so
+ * the base login must resolve unqualified names in public. USAGE grants no
+ * object privileges — table grants below stay minimal.
+ *
  * Runs as the database owner.
  */
 export async function convergeAuditPrivileges(db: MinimalDatabase) {
-  await db.execute(sql`grant usage on schema public to ${sql.raw(`"${AUDIT_READER_ROLE}"`)}`)
+  await db.execute(
+    sql`grant usage on schema public to ${sql.raw(`"${AUDIT_READER_ROLE}"`)}, ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
+  )
   await db.execute(
     sql`revoke all privileges on all tables in schema public from ${sql.raw(`"${AUDIT_READER_ROLE}"`)}, ${sql.raw(`"${AUDIT_SERVICE_ROLE}"`)}`,
   )
@@ -160,14 +167,17 @@ export async function assertAuditTablePrivileges(db: MinimalDatabase) {
     throw new Error('Audit privilege preflight failed: public.audit_log does not exist')
   }
 
-  const schemaUsage = allRows<{ can_use: boolean }>(
+  const schemaUsage = allRows<{ reader: boolean; service: boolean }>(
     await db.execute(sql`
-      select has_schema_privilege(${AUDIT_READER_ROLE}, 'public', 'USAGE') as can_use
+      select
+        has_schema_privilege(${AUDIT_READER_ROLE}, 'public', 'USAGE') as reader,
+        has_schema_privilege(${AUDIT_SERVICE_ROLE}, 'public', 'USAGE') as service
     `),
-  )[0]?.can_use
-  if (!schemaUsage) {
+  )[0]
+  if (!schemaUsage?.reader || !schemaUsage?.service) {
+    const who = !schemaUsage?.reader ? AUDIT_READER_ROLE : AUDIT_SERVICE_ROLE
     throw new Error(
-      `Audit privilege preflight failed: ${AUDIT_READER_ROLE} lacks USAGE on schema public. ${REMEDIATION}`,
+      `Audit privilege preflight failed: ${who} lacks USAGE on schema public. ${REMEDIATION}`,
     )
   }
 

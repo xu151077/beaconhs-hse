@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { id, timestamps } from './_helpers'
 import { users } from './core'
 
@@ -34,6 +34,11 @@ export const auditAccessGrants = pgTable(
     approvedByUserId: text('approved_by_user_id').references(() => users.id, {
       onDelete: 'restrict',
     }),
+    /**
+     * Approver-granted extension permission: oversized queries (beyond the
+     * default row cap) and exports require a grant with this flag (V3 §P-6).
+     */
+    extraApproval: boolean('extra_approval').notNull().default(false),
     /** Mandatory validity window; ≤ 90 days (CHECK in 0059). */
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

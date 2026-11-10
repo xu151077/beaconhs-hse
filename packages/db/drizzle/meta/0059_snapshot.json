@@ -1,5 +1,5 @@
 {
-  "id": "59bd6e65-3fe3-4e26-99a1-5fd5c4ee09fb",
+  "id": "5b24d904-8638-4356-a4fc-065adcefb250",
   "prevId": "3390bd55-8772-40f2-8617-1b19851fdc8a",
   "version": "7",
   "dialect": "postgresql",
@@ -3192,6 +3192,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "extra_approval": {
+          "name": "extra_approval",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "starts_at": {
           "name": "starts_at",

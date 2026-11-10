@@ -14,7 +14,7 @@ import {
 } from './audit-roles'
 import { REPORT_VIEWS_SQL } from './views'
 import { STATS_SQL, STATS_HIGH_VOLUME_TABLES } from './stats'
-import { BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema'
+import { AUDIT_DEFAULT_UNGRANTED, BUILTIN_ROLES, PERMISSION_CATALOGUE } from './schema'
 import {
   readMigrationFiles,
   validateMigrationState,
@@ -183,6 +183,14 @@ async function assertKioskPinHashes(db: MigrationDatabase) {
 
 async function convergeRolePermissions(db: MigrationDatabase) {
   const fullCatalogueJson = JSON.stringify(PERMISSION_CATALOGUE)
+  // tenant_admin converges to the catalogue MINUS the PD-02 audit keys —
+  // admin.audit.approve / audit.read.tenant / audit.read.platform are never
+  // granted by default (V3 P-4), and a stale pre-PD-02 row must lose them.
+  const tenantAdminJson = JSON.stringify(
+    PERMISSION_CATALOGUE.filter(
+      (permission) => !(AUDIT_DEFAULT_UNGRANTED as readonly string[]).includes(permission),
+    ),
+  )
 
   await db.transaction(async (transaction) => {
     const tx = transaction as unknown as MigrationDatabase
@@ -206,11 +214,11 @@ async function convergeRolePermissions(db: MigrationDatabase) {
 
     await tx.execute(sql`
       update "roles"
-      set "permissions" = ${fullCatalogueJson}::jsonb,
+      set "permissions" = ${tenantAdminJson}::jsonb,
           "updated_at" = now()
       where "key" = 'tenant_admin'
         and "is_built_in" = true
-        and "permissions" <> ${fullCatalogueJson}::jsonb
+        and "permissions" <> ${tenantAdminJson}::jsonb
     `)
 
     for (const [key, def] of Object.entries(BUILTIN_ROLES)) {

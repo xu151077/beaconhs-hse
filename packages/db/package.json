@@ -7,6 +7,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./audit-access": "./src/audit-access.ts",
+    "./audit-client": "./src/audit-client.ts",
+    "./audit-query": "./src/audit-query.ts",
     "./canonical-templates": "./src/canonical-templates.ts",
     "./client": "./src/client.ts",
     "./journal-class": "./src/journal-class.ts",

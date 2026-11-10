@@ -15,8 +15,11 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { closeAuditConnection, createAuditConnection, type AuditConnection } from './audit-client'
 import {
   AUDIT_MAX_PAGE_SIZE,
+  AUDIT_QUERY_MAX_ROWS,
   AUDIT_QUERY_STATEMENT_TIMEOUT,
+  AuditQueryLimitError,
   queryAuditLogAcrossTenants,
+  validateAuditQueryWindow,
 } from './audit-query'
 
 const NAME = `beaconhs-audit-query-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -268,5 +271,85 @@ describe('P-3 role-switch isolation (real PostgreSQL, max:1 pool)', () => {
   it('max page size matches the V3 constant', () => {
     expect(AUDIT_MAX_PAGE_SIZE).toBe(500)
     expect(AUDIT_QUERY_STATEMENT_TIMEOUT).toBe('10s')
+  })
+})
+
+describe('P-6 query limits (real PostgreSQL)', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  // Captured per test: the seeded rows use occurred_at = now() from beforeAll,
+  // so a window captured at collection time would already be in the past.
+
+  it('accepts a window at exactly the 31-day maximum and runs the query', async () => {
+    const now = Date.now()
+    const to = new Date(now)
+    const from = new Date(now - 31 * DAY)
+    validateAuditQueryWindow(from, to) // must not throw
+    const { rows } = await queryAuditLogAcrossTenants(audit, {
+      from,
+      to,
+      limit: AUDIT_MAX_PAGE_SIZE,
+    })
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('rejects a window wider than 31 days (window_too_wide)', () => {
+    const now = Date.now()
+    const to = new Date(now)
+    const from = new Date(now - 32 * DAY)
+    expect(() => validateAuditQueryWindow(from, to)).toThrow(AuditQueryLimitError)
+    try {
+      validateAuditQueryWindow(from, to)
+      expect.unreachable()
+    } catch (err) {
+      expect((err as AuditQueryLimitError).code).toBe('window_too_wide')
+    }
+  })
+
+  it('rejects an inverted window (to before from)', () => {
+    const now = Date.now()
+    expect(() => validateAuditQueryWindow(new Date(now), new Date(now - DAY))).toThrow(
+      AuditQueryLimitError,
+    )
+  })
+
+  it('rejects offset+limit beyond the 10000-row cap (row_cap)', async () => {
+    await expect(
+      queryAuditLogAcrossTenants(audit, {
+        limit: 500,
+        offset: AUDIT_QUERY_MAX_ROWS - 499, // 500 + 9501 > 10000
+      }),
+    ).rejects.toThrow(AuditQueryLimitError)
+    try {
+      await queryAuditLogAcrossTenants(audit, { limit: 500, offset: AUDIT_QUERY_MAX_ROWS - 499 })
+      expect.unreachable()
+    } catch (err) {
+      expect((err as AuditQueryLimitError).code).toBe('row_cap')
+    }
+  })
+
+  it('allows offset+limit exactly at the 10000-row cap boundary', async () => {
+    const { rows } = await queryAuditLogAcrossTenants(audit, {
+      limit: 500,
+      offset: AUDIT_QUERY_MAX_ROWS - 500, // exactly 10000 — allowed
+    })
+    expect(Array.isArray(rows)).toBe(true)
+  })
+
+  it('enforces the caller-supplied maxPageSize floor at 500', async () => {
+    await expect(
+      queryAuditLogAcrossTenants(audit, { limit: 10, maxPageSize: 499 }),
+    ).rejects.toThrow(/maxPageSize must be within/)
+    // A limit above the caller's maxPageSize is clamped-rejected.
+    await expect(
+      queryAuditLogAcrossTenants(audit, { limit: 501, maxPageSize: 500 }),
+    ).rejects.toThrow()
+  })
+
+  it('permits the export path to raise maxPageSize up to the full row cap', async () => {
+    const { rows } = await queryAuditLogAcrossTenants(audit, {
+      limit: AUDIT_QUERY_MAX_ROWS,
+      maxPageSize: AUDIT_QUERY_MAX_ROWS,
+    })
+    expect(rows.length).toBeGreaterThanOrEqual(2)
   })
 })

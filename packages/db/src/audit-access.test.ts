@@ -13,10 +13,12 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import {
   AUDIT_GRANT_MAX_WINDOW_DAYS,
   AUDIT_GRANT_PURPOSE_MAX,
+  assertAuditRowBudget,
   AuditAccessError,
   approveAuditAccessRequest,
   createAuditAccessRequest,
   rejectAuditAccessRequest,
+  recordAuditAccessEvent,
   resolveActiveAuditGrant,
   revokeAuditAccess,
 } from './audit-access'
@@ -541,5 +543,135 @@ describe('P-5 platform-level protection (real PostgreSQL)', () => {
       now: NOW,
     })
     expect(active?.purpose).toBe('End-to-end platform grant')
+  })
+})
+
+describe('P-6 row budget & extra approval (real PostgreSQL)', () => {
+  // Same hygiene as the lifecycle suite.
+  beforeEach(async () => {
+    await admin.unsafe(
+      `set role beaconhs_owner;
+       delete from platform_audit_access_log;
+       delete from audit_access_grants;
+       reset role;`,
+    )
+  })
+
+  async function activeGrant(extraApproval: boolean) {
+    const grant = await createAuditAccessRequest(grantConn, {
+      granteeUserId: USER_REQUESTER,
+      granteeTenantId: TENANT_A,
+      scope: 'tenant',
+      purpose: extraApproval ? 'Oversized reads approved' : 'Standard read',
+      extraApproval,
+      ...window(7),
+      now: NOW,
+    })
+    await approveAuditAccessRequest(grantConn, {
+      grantId: grant.id,
+      approverUserId: USER_APPROVER,
+      extraApproval,
+      now: NOW,
+    })
+    return grant
+  }
+
+  it('a plain grant passes while usage stays inside the 10000-row budget', async () => {
+    const grant = await activeGrant(false)
+    for (const rowCount of [4000, 3000]) {
+      await recordAuditAccessEvent(grantConn, {
+        actorUserId: USER_REQUESTER,
+        actorTenantId: TENANT_A,
+        scope: 'tenant',
+        grantId: grant.id,
+        action: 'audit_query',
+        purpose: 'standard read',
+        rowCount,
+      })
+    }
+    await assertAuditRowBudget(grantConn, {
+      grantId: grant.id,
+      requestedRows: 3000,
+      extraApproval: false,
+    })
+  })
+
+  it('exceeding the 10000-row budget on a plain grant is rejected', async () => {
+    const grant = await activeGrant(false)
+    await recordAuditAccessEvent(grantConn, {
+      actorUserId: USER_REQUESTER,
+      actorTenantId: TENANT_A,
+      scope: 'tenant',
+      grantId: grant.id,
+      action: 'audit_query',
+      purpose: 'big read',
+      rowCount: 9500,
+    })
+    await expect(
+      assertAuditRowBudget(grantConn, {
+        grantId: grant.id,
+        requestedRows: 501,
+        extraApproval: false,
+      }),
+    ).rejects.toThrow(/9500 of the 10000-row budget; request extra approval/)
+    // A small follow-up read is still allowed.
+    await assertAuditRowBudget(grantConn, {
+      grantId: grant.id,
+      requestedRows: 500,
+      extraApproval: false,
+    })
+  })
+
+  it('extra approval bypasses the row budget entirely', async () => {
+    const grant = await activeGrant(true)
+    await recordAuditAccessEvent(grantConn, {
+      actorUserId: USER_REQUESTER,
+      actorTenantId: TENANT_A,
+      scope: 'tenant',
+      grantId: grant.id,
+      action: 'audit_query',
+      purpose: 'oversized read',
+      rowCount: 10000,
+    })
+    await assertAuditRowBudget(grantConn, {
+      grantId: grant.id,
+      requestedRows: 10000,
+      extraApproval: true,
+    })
+  })
+
+  it('the approved extra_approval flag is persisted and readable', async () => {
+    const grant = await activeGrant(true)
+    const rows = await grantConn.sql<Array<{ extra_approval: boolean }>>`
+      select extra_approval from audit_access_grants where id = ${grant.id}`
+    expect(rows[0]?.extra_approval).toBe(true)
+    const plain = await activeGrant(false)
+    const rows2 = await grantConn.sql<Array<{ extra_approval: boolean }>>`
+      select extra_approval from audit_access_grants where id = ${plain.id}`
+    expect(rows2[0]?.extra_approval).toBe(false)
+  })
+
+  it('rejected requests never enter the active-grant resolution even with extra approval', async () => {
+    const grant = await createAuditAccessRequest(grantConn, {
+      granteeUserId: USER_REQUESTER,
+      granteeTenantId: TENANT_A,
+      scope: 'tenant',
+      purpose: 'Should never activate',
+      extraApproval: true,
+      ...window(7),
+      now: NOW,
+    })
+    await rejectAuditAccessRequest(grantConn, {
+      grantId: grant.id,
+      approverUserId: USER_APPROVER,
+      now: NOW,
+    })
+    const active = await resolveActiveAuditGrant(grantConn, {
+      granteeUserId: USER_REQUESTER,
+      scope: 'tenant',
+      granteeTenantId: TENANT_A,
+      now: NOW,
+    })
+    expect(active).toBeNull()
   })
 })

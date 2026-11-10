@@ -5,6 +5,7 @@ CREATE TABLE "audit_access_grants" (
 	"scope" text NOT NULL,
 	"purpose" text NOT NULL,
 	"approved_by_user_id" text,
+	"extra_approval" boolean DEFAULT false NOT NULL,
 	"starts_at" timestamp with time zone NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"revoked_at" timestamp with time zone,
