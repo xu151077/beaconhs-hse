@@ -4,10 +4,10 @@
 // parameters via @beaconhs/reports' canonical rule-tree compiler. The caller's ctx.db is
 // already RLS-bound to the key's tenant.
 
-import { getTableColumns, getTableName, is, sql, type SQL } from 'drizzle-orm'
+import { and, getTableColumns, getTableName, is, sql, type SQL } from 'drizzle-orm'
 import { PgTable } from 'drizzle-orm/pg-core'
 import type { RequestContext } from '@beaconhs/tenant'
-import { extractRows } from '@beaconhs/db'
+import { extractRows, type Database } from '@beaconhs/db'
 import { compileAnalyticsRuleGroup } from '@beaconhs/analytics/server'
 import * as dbSchema from '@beaconhs/db/schema'
 import type { ReportFilterOperator, ReportRule } from '@beaconhs/db/schema'
@@ -17,6 +17,7 @@ import type { ReportEntity } from '@beaconhs/reports/entities'
 import { ApiError } from './errors'
 import { recordIdColumn } from './records'
 import { documentReadFilter } from '../assistant/doc-access'
+import { entityScopeWhere } from './scope'
 
 export const DEFAULT_LIMIT = 50
 export const MAX_LIMIT = 1000
@@ -138,10 +139,20 @@ function notDeletedSql(entity: ReportEntity): SQL | null {
  * entirely from `ctx`. The public API composes raw SQL rather than a Drizzle
  * query, which is why the caller has nothing to pass, and the caller's own reads
  * stay exactly where they were. */
-async function entityVisibilitySql(ctx: RequestContext, entity: ReportEntity): Promise<SQL | null> {
-  if (entity.key !== 'documents') return null
-  const filter = documentReadFilter(ctx)
-  return filter ?? null
+async function entityVisibilitySql(
+  ctx: RequestContext,
+  tx: Database,
+  entity: ReportEntity,
+): Promise<SQL | null> {
+  // PD-01 phase 3: RoleScope applies to every entity (fail-closed when unmapped).
+  const scope = await entityScopeWhere(ctx, tx, entity.key)
+  if (entity.key !== 'documents') return scope ?? null
+  // Documents keep their existing ladder AND the RoleScope predicate: the
+  // intersection may only shrink visibility, never widen it.
+  const ladder = documentReadFilter(ctx)
+  if (!ladder) return scope ?? null
+  if (!scope) return ladder
+  return and(ladder, scope) ?? null
 }
 
 /**
@@ -202,16 +213,6 @@ export async function readEntityRows(
   const dir =
     orderReq === 'asc' || orderReq === 'desc' ? orderReq : (entity.defaultSort?.direction ?? 'desc')
 
-  // Soft-deleted rows are never exposed through the public API; the filters
-  // from compileRuleGroup are AND-joined so composing here is safe.
-  const conditions = [
-    notDeletedSql(entity),
-    await entityVisibilitySql(ctx, entity),
-    filterSql,
-  ].filter((c): c is SQL => c !== null)
-  const whereSql = conditions.length
-    ? sql.join([sql.raw('WHERE'), sql.join(conditions, sql.raw(' AND '))], sql.raw(' '))
-    : sql.raw('')
   const idSelect = idCol ? [`"${entity.table}"."${idCol}" AS "id"`] : []
   const selectList = sql.raw(
     [...idSelect, ...fields.map((c) => `${columnRef(entity, c)} AS "${c}"`)].join(', '),
@@ -220,25 +221,34 @@ export async function readEntityRows(
     ? sql.raw(`ORDER BY ${columnRef(entity, sortKey)} ${dir === 'asc' ? 'ASC' : 'DESC'}`)
     : sql.raw('')
 
-  const dataQuery = sql.join(
-    [
-      sql.raw('SELECT'),
-      selectList,
-      sql.raw(`FROM "${entity.table}"`),
-      whereSql,
-      orderSql,
-      sql.raw(`LIMIT ${limit} OFFSET ${offset}`),
-    ],
-    sql.raw(' '),
-  )
-  const countQuery = sql.join(
-    [sql.raw(`SELECT COUNT(*)::int AS "n" FROM "${entity.table}"`), whereSql],
-    sql.raw(' '),
-  )
-
   let result: { rows: Record<string, unknown>[]; total: number }
   try {
     result = await ctx.db(async (tx) => {
+      // Soft-deleted rows are never exposed through the public API; the filters
+      // from compileRuleGroup are AND-joined so composing here is safe.
+      const conditions = [
+        notDeletedSql(entity),
+        await entityVisibilitySql(ctx, tx, entity),
+        filterSql,
+      ].filter((c): c is SQL => c !== null)
+      const whereSql = conditions.length
+        ? sql.join([sql.raw('WHERE'), sql.join(conditions, sql.raw(' AND '))], sql.raw(' '))
+        : sql.raw('')
+      const dataQuery = sql.join(
+        [
+          sql.raw('SELECT'),
+          selectList,
+          sql.raw(`FROM "${entity.table}"`),
+          whereSql,
+          orderSql,
+          sql.raw(`LIMIT ${limit} OFFSET ${offset}`),
+        ],
+        sql.raw(' '),
+      )
+      const countQuery = sql.join(
+        [sql.raw(`SELECT COUNT(*)::int AS "n" FROM "${entity.table}"`), whereSql],
+        sql.raw(' '),
+      )
       const dataResult = (await tx.execute(dataQuery)) as unknown
       const countResult = (await tx.execute(countQuery)) as unknown
       const totalRow = extractRows(countResult)[0] as { n?: number } | undefined
@@ -293,21 +303,24 @@ export async function getEntityRecord(
       ...fields.map((c) => `${columnRef(entity, c)} AS "${c}"`),
     ].join(', '),
   )
-  const fixedConditions = [notDeletedSql(entity), await entityVisibilitySql(ctx, entity)].filter(
-    (condition): condition is SQL => condition !== null,
-  )
-  const query = sql.join(
-    [
-      sql.raw('SELECT'),
-      selectList,
-      sql.raw(`FROM "${entity.table}" WHERE "${entity.table}"."${idCol}" =`),
-      sql`${id}`,
-      ...fixedConditions.flatMap((condition) => [sql.raw('AND'), condition]),
-      sql.raw('LIMIT 1'),
-    ],
-    sql.raw(' '),
-  )
-  const rows = await ctx.db(async (tx) => extractRows((await tx.execute(query)) as unknown))
+  const rows = await ctx.db(async (tx) => {
+    const fixedConditions = [
+      notDeletedSql(entity),
+      await entityVisibilitySql(ctx, tx, entity),
+    ].filter((condition): condition is SQL => condition !== null)
+    const query = sql.join(
+      [
+        sql.raw('SELECT'),
+        selectList,
+        sql.raw(`FROM "${entity.table}" WHERE "${entity.table}"."${idCol}" =`),
+        sql`${id}`,
+        ...fixedConditions.flatMap((condition) => [sql.raw('AND'), condition]),
+        sql.raw('LIMIT 1'),
+      ],
+      sql.raw(' '),
+    )
+    return extractRows((await tx.execute(query)) as unknown)
+  })
   const row = rows[0]
   if (!row) return null
   const kinds = KIND_BY_KEY(entity)

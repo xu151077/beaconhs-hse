@@ -73,6 +73,7 @@ import {
 } from '@/lib/compliance-type-evidence'
 import { isUuid } from '@/lib/list-params'
 import { ApiError } from './errors'
+import { assertCreateInScope, assertEntityInScope } from './scope'
 
 type Json = Record<string, unknown>
 type WriteResult = { id: string; [k: string]: unknown }
@@ -2551,6 +2552,8 @@ export async function createEntity(
 ): Promise<WriteResult> {
   const entry = WRITES[entityKey]
   if (!entry) throw ApiError.methodNotAllowed(`Writes are not supported for "${entityKey}"`)
+  // PD-01 phase 3: a scoped credential may only create inside its site scope.
+  assertCreateInScope(ctx, entityKey, body)
   return entry.handler(ctx, body)
 }
 
@@ -2562,6 +2565,8 @@ export async function patchEntity(
 ): Promise<WriteResult> {
   const entry = WRITES[entityKey]?.update
   if (!entry) throw ApiError.methodNotAllowed(`Updates are not supported for "${entityKey}"`)
+  // Scope check first: 404 (not 403) so a scoped key cannot probe ids.
+  await assertEntityInScope(ctx, entityKey, id)
   return entry.handler(ctx, id, body)
 }
 
@@ -2572,5 +2577,6 @@ export async function deleteEntity(
 ): Promise<WriteResult> {
   const entry = WRITES[entityKey]?.delete
   if (!entry) throw ApiError.methodNotAllowed(`Deletes are not supported for "${entityKey}"`)
+  await assertEntityInScope(ctx, entityKey, id)
   return entry.handler(ctx, id)
 }

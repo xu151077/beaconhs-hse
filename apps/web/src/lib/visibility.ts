@@ -38,7 +38,7 @@ export function andPredicates(...parts: (SQL | undefined)[]): SQL | undefined {
   return and(...present)!
 }
 
-type RecordOwnerColumns = {
+export type RecordOwnerColumns = {
   /** Person the record is about/assigned to (holder, owner, assignee, author). */
   personCol?: PgColumn
   /** tenant_users id of whoever created the record. */
