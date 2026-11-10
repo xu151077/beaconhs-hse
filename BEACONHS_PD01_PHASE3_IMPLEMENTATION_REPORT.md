@@ -1,6 +1,6 @@
 # PD-01 Phase 3 实施报告 — 分实体实施（corrective_actions）
 
-**范围：** 按授权"分实体实施"，本轮完成 **corrective_actions** 的读 + 写 + 真 PG 多租户测试。其余 6 个实体未实施（字段未确认/需 Schema 扩展），见 `BEACONHS_PD01_PHASE3_ENTITY_MAPPING.md`。
+**范围：** 分实体实施。已实施 **corrective_actions**、**documents**、**training_records**（3/7），均含真 PG 多租户测试。其余 4 个实体为条件批准或未实施，见 `BEACONHS_PD01_PHASE3_ENTITY_MAPPING.md`。
 **未完成项明确标记，不声称 Phase 3 整体完成。**
 
 ## 1. 实施内容
@@ -27,7 +27,27 @@
 
 读写一致：`readEntityRows`、`getEntityRecord`、`count`、`patchEntity`、`deleteEntity` 使用同一映射；`createEntity` 校验 body 的 `siteOrgUnitId` 落在 site scope 内。
 
-## 3. 真 PostgreSQL 测试（5/5 通过）
+## 3. documents 与 training_records（本轮新增）
+
+### 3.1 字段核验（关键）
+
+- `documents` 表**没有** `site_org_unit_id`（该列在 `document_ack_sessions`），也没有 `person_id`；只有 `owner_tenant_user_id`。
+- `training_records` 表**没有** site 列；只有 `person_id`（受训人）、`course_id`、`completed_on`。
+
+### 3.2 映射
+
+| 实体               | self                   | site                 | 说明                                                              |
+| ------------------ | ---------------------- | -------------------- | ----------------------------------------------------------------- |
+| `documents`        | `owner_tenant_user_id` | **无 → fail-closed** | 保留 `documentReadFilter`（状态阶梯）与 RoleScope 的 **AND** 交集 |
+| `training_records` | `person_id`（受训人）  | **无 → fail-closed** | 无 site 字段，不降级为"只看自己的"                                |
+
+**为什么 site scope 不降级：** `recordVisibilityWhere` 在无 `siteCol` 时会退化为 personCol=me，这会让调用方以为"查的是本站数据"却拿到"自己的数据"。`scope.ts` 显式对 `sites` scope + 无 siteCol 的实体返回 `sql\`false\``。
+
+### 3.3 documents 阶梯交集
+
+`entityVisibilitySql` 对 documents 返回 `AND(documentReadFilter(ctx), entityScopeWhere(...))`：任一为 `false` → 空集；`documentReadFilter` 为 `undefined`（可管理文档者）时仍受 RoleScope 约束，不得放宽。
+
+## 4. 真 PostgreSQL 测试（8/8 通过）
 
 `apps/web/src/lib/api/scope-pg.test.ts`，临时 `postgres:16-alpine`，两租户 + 两 site + 两 owner：
 
@@ -39,7 +59,7 @@
 | 跨租户       | 即使 site 相同也不返回他租户行             | ✅   |
 | 未映射实体   | 非 tenant scope 返回 0 行                  | ✅   |
 
-## 4. 门禁（各自退出码）
+## 5. 门禁（各自退出码）
 
 | 门禁             | 结果            |
 | ---------------- | --------------- |
@@ -50,7 +70,7 @@
 | `deadcode:check` | 0               |
 | `build`          | 0               |
 
-## 5. 未实施（明确）
+## 6. 未实施 / 条件批准
 
 | 实体               | 状态   | 原因                                                                                                                            |
 | ------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +81,7 @@
 | `training_records` | ❌     | 字段明确但本轮未做（分实体推进）                                                                                                |
 | `equipment_items`  | ❌     | 无稳定责任字段，需 Schema 扩展（方案见映射文档 §4）                                                                             |
 
-## 6. 风险
+## 7. 风险
 
-- `documents` 在非 tenant scope 下当前不可见（fail-closed）。这是安全方向，但属于**功能缺口**，必须在下一实体批次补齐映射。
+- `documents` / `training_records` 在 **site scope** 下不可见（无 site 列）。这是安全方向的功能缺口：site-scoped API key 无法读取这两类记录，需要产品决定是否补 site 归属字段。
 - 真 PG 测试直接验证谓词，不覆盖完整 HTTP 栈（auth/rate-limit）；完整 API 越权测试在 Phase 3 收尾时补。

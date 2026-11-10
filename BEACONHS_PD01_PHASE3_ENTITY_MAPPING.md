@@ -69,6 +69,8 @@ ALTER TABLE equipment_items
 - `tenantIsolation` 由 RLS 强制（第二层）；
 - `recordVisibilityWhere` 目前**未**叠加。
 
+**核验结果：** `documents` 表**没有** `site_org_unit_id`（该列属于 `document_ack_sessions`），也没有 `person_id`。因此 Self 只能取 `owner_tenant_user_id`，Site scope 无字段可映射 → **fail-closed**。
+
 实施要求：在 `entityVisibilitySql` 中对 documents 返回 `AND(documentReadFilter, recordVisibilityWhere(...))`，且 `undefined`（tenant scope）时不得**放宽**阶梯结果。即：
 
 ```
