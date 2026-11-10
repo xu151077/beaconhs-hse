@@ -998,6 +998,7 @@ On a sync run, use the record-decision search and the **Action** and **Entity** 
 
 - **Audit log** — every change captured, with who did it and what changed.
 - **Email log** and **SMS log** — every message the system sent.
+- **Cross-tenant audit access** — if your account holds an audit-read permission, the Audit page also shows a panel to request time-limited cross-tenant audit access. Another person with approval permission must approve it (you cannot approve your own request), after which you can query or export the audit trail across tenants. Exports and oversized reads need extra approval, and every request, approval, query, and export is recorded.
 
 ## Modules
 

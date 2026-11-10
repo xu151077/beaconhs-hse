@@ -22,6 +22,7 @@ import { SearchInput } from '@/components/search-input'
 import { Pagination } from '@/components/pagination'
 import { FilterChips } from '@/components/filter-bar'
 import { PageContainer } from '@/components/page-layout'
+import { CrossTenantAuditSection } from './cross-tenant-section'
 import { TableToolbar } from '@/components/table-toolbar'
 
 export async function generateMetadata() {
@@ -58,6 +59,14 @@ export default async function AuditLogPage({
   const ctx = await requireRequestContext()
   // The audit log is a sensitive security/forensics surface — restrict reads.
   if (!can(ctx, 'admin.audit.read')) redirect('/admin')
+
+  // PD-02 cross-tenant panel: strict permission keys only (no super-admin
+  // bypass — V3 §3). The section renders only when the account holds one of
+  // the audit capabilities; every server call re-validates.
+  const canApproveAuditGrants = ctx.permissions.has('admin.audit.approve')
+  const canQueryAudit =
+    ctx.permissions.has('audit.read.platform') || ctx.permissions.has('audit.read.tenant')
+  const showCrossTenant = canApproveAuditGrants || canQueryAudit
 
   const { rows, total, entityTypes } = await ctx.db(async (tx) => {
     const filters: SQL<unknown>[] = []
@@ -98,6 +107,9 @@ export default async function AuditLogPage({
           title={tGenerated('m_19635ea35a756a')}
           subtitle={tGenerated('m_1d95d3a826b700')}
         />
+        {showCrossTenant && (
+          <CrossTenantAuditSection canApprove={canApproveAuditGrants} canQuery={canQueryAudit} />
+        )}
         <TableToolbar>
           <SearchInput placeholder={tGenerated('m_0548446a641230')} />
           <FilterChips

@@ -104,6 +104,10 @@ export function withRouteErrors<Args extends unknown[]>(
     try {
       return await handler(...args)
     } catch (err) {
+      // Structured ApiError outcomes (403/400/503/…) render through the same
+      // envelope the /api/v1 routes use, so session-facing handlers can throw
+      // ApiError too without each one repeating a try/catch.
+      if (err instanceof ApiError) return errorResponse(err)
       // Only a refusal is remapped. Anything else keeps Next's own 500 so a real
       // fault is never disguised as an authorization outcome.
       if (err instanceof ForbiddenError || err instanceof ImpersonationBlockedError) {
