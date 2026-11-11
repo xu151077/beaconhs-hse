@@ -304,3 +304,21 @@ deadcode 0, test 0, build 0.
 **Blocking condition ① (CI green) remains open until this fix commit is pushed and the
 CI run completes successfully.** Blocking condition ② (six gates on final HEAD) is
 satisfied.
+
+## Final verdict — CI green (run 42942872233, a9084eef): READY
+
+- **CI run 42942872233** on `a9084eef`: **completed / success** — all 24 steps green,
+  including the two previously failing live-db suites
+  ("Live database suites — tenant and RLS isolation" and
+  "Live database suites — storage freeze persistence") and
+  "Test deployment host safeguards".
+- **Security run 42942872228** (CodeQL + Gitleaks): success.
+- `Deploy tested commit to dev`: correctly skipped (main-only workflow).
+
+**Blocking condition ① (CI green on the release HEAD): CLOSED.**
+**Blocking condition ② (six gates on final HEAD): CLOSED** (format 0, typecheck 0,
+lint 0, deadcode 0, test 0, build 0 at `a9084eef`).
+
+The release-candidate verdict is upgraded from CONDITIONAL READY to **READY**.
+Proceed to stage 11 (deployment preparation) and stage 12 (production deployment)
+only with explicit per-step user approval, per the master directive.
