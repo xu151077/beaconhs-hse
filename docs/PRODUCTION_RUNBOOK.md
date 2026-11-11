@@ -534,7 +534,7 @@ the synthetic path or job.
 1. Back up and verify the schema/data before a destructive migration or private
    ETL refresh.
 2. Run all local gates under the pinned Node/pnpm versions:
-   `format:check`, `typecheck`, `lint`, `test`, and `build`.
+   `format:check`, `typecheck`, `lint`, `test`, `deadcode:check`, and `build`.
 3. Push an atomic commit to protected `main`.
 4. CI tests the real migration path twice, then calls the reusable deploy
    workflow. The build job publishes the commit-tagged image and captures the
@@ -572,6 +572,19 @@ the synthetic path or job.
    change is backward-safe. Database migrations are forward-only; otherwise
    restore to a new database from the pre-change backup and perform an
    explicit cutover.
+
+Rollback note (PD-02, 2026-11-11): the current image's migrator tightens the
+audit-role privilege matrix — business-pool roles (`beaconhs_app`,
+`beaconhs_super`) lose all access to `audit_access_grants` and
+`platform_audit_access_log`, and `beaconhs_super` loses `SELECT` on `audit_log`.
+If a rollback restores the **old** image and its `pnpm db:migrate` or
+`scripts/cluster/provision.sql` are ever re-run, that older migrator re-grants
+the blanket business-pool privileges and strips the three PD-02 audit permission
+keys from custom roles. After any such event, re-run the current
+`scripts/cluster/provision.sql` (with `audit_service_password`) **and** the
+current `pnpm db:migrate` to reconverge the audit roles, grants and permission
+catalogue before serving traffic. Otherwise the deployment runs with the
+pre-PD-02 (weaker) privilege matrix.
 
 A brief dual-version window exists between the migration and Swarm's service
 convergence: the old app containers keep serving against the migrated schema.

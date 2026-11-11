@@ -338,6 +338,16 @@ All six gates pass. No commit, no push; working-tree changes preserved.
 
 ---
 
+> **Historical snapshot (2026-11-09 EA-12 baseline).** Sections 1–8 below are
+> written in the present tense of that date and are **not** the current state.
+> The table values (`HEAD 51a899b7`, 51 migrations, 107 catalogue keys), the §4
+> "nothing has been committed or pushed" claim, and the §8 "next step is a
+> decision about the working tree" instruction are all historical. Current state:
+> HEAD `f463f415` (59 migrations, `origin/hse-platform` in sync, clean tree),
+> PD-01 Phase 3 and PD-02 (13 phases) deployed to production, PD-03 closed as
+> N/A. See the 中文摘要 note at the top and the
+> `## 8c. Execution addendum — PD-01 / PD-02 / PD-03` at the end.
+
 ## 1. Current baseline
 
 | Item                             | State                                                  |
@@ -522,6 +532,9 @@ result is recorded in the EA-12 addendum.
 
 ## 4. In progress
 
+> Superseded — see §8c for the current in-flight state. The paragraph below is
+> the 2026-11-09 snapshot only.
+
 **Nothing.** The local release acceptance series (EA-1 … EA-11) and EA-12 local
 fixes are complete in the working tree; no deployment has been performed. HEAD
 is `51a899b7` on `hse-platform` (45 commits ahead of `origin/main`), with 164
@@ -624,6 +637,9 @@ select count(*) from inspection_records r
 | ADR-14 | **Report projections select real filters, and every payload cast is regex-guarded.** The two Builder-backed views derive columns only from keys that actually occur in the payloads, keep the raw `payload` jsonb, and guard numeric/date casts so one malformed legacy value yields `NULL` instead of failing the whole relation. | Payloads are free text written by a form filler. Verified by injecting `"not-a-number"` into `reading_value`: the view still returned its rows.                                                                                                                                                                                                                          |
 
 ## 8. Next task
+
+> Superseded — see §8c for the current next task. The paragraph below is the
+> 2026-11-09 snapshot only.
 
 **The local release acceptance series (EA-1 … EA-11) and EA-12 local fixes are
 closed out; nothing is in flight.** Nothing has been committed or pushed, so the
