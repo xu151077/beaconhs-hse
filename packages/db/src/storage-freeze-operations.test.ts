@@ -13,6 +13,8 @@
 import { describe, expect, it, beforeAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 import { db } from './client'
 import { tenants } from './schema/core'
 import { auditLog } from './schema/audit'
@@ -53,6 +55,31 @@ const REASON = 'e1 persistence scenario'
 const SHA = 'b'.repeat(64)
 
 let tenantId = ''
+
+/**
+ * PD-02 F2 revoked the superadmin's audit_log SELECT, so audit assertions read
+ * the log through the owner credential (migrator -> SET ROLE beaconhs_owner)
+ * with the tenant's RLS GUC set. Dedicated connection, closed after the read.
+ */
+async function readAuditRowsAsOwner(
+  tenantId: string,
+): Promise<Array<typeof auditLog.$inferSelect>> {
+  const migratorUrl = process.env.MIGRATION_DATABASE_URL
+  if (!migratorUrl) {
+    throw new Error(
+      'MIGRATION_DATABASE_URL is not set — audit_log reads need the owner credential (PD-02 F2 revoked the superadmin audit_log read).',
+    )
+  }
+  const sql = postgres(migratorUrl, { max: 1 })
+  try {
+    await sql.unsafe('SET ROLE beaconhs_owner')
+    await sql.unsafe(`SET app.tenant_id='${tenantId}'`)
+    const ownerDb = drizzle(sql)
+    return await ownerDb.select().from(auditLog).where(eq(auditLog.tenantId, tenantId))
+  } finally {
+    await sql.end({ timeout: 0 }).catch(() => {})
+  }
+}
 
 async function expectFreezeError(promise: Promise<unknown>, code: string): Promise<void> {
   try {
@@ -243,10 +270,7 @@ describeDb('storage_freeze persistence', () => {
   })
 
   it('writes an audit row that carries no secret material', async () => {
-    const before = await db
-      .select({ id: auditLog.id })
-      .from(auditLog)
-      .where(eq(auditLog.tenantId, tenantId))
+    const before = await readAuditRowsAsOwner(tenantId)
     const row = await requireFreezeState(db, tenantId)
     const requested = await applyTransition(db, {
       tenantId,
@@ -264,7 +288,7 @@ describeDb('storage_freeze persistence', () => {
       reason: REASON,
       expectedVersion: requested.version,
     })
-    const after = await db.select().from(auditLog).where(eq(auditLog.tenantId, tenantId))
+    const after = await readAuditRowsAsOwner(tenantId)
     expect(after.length).toBeGreaterThan(before.length)
     const written = JSON.stringify(after[after.length - 1]?.metadata ?? {})
     expect(written).not.toMatch(/secret|password|token|BEGIN AGE|hmac/i)
@@ -317,7 +341,7 @@ describeDb('storage_freeze persistence', () => {
     const row = await requireFreezeState(db, tenantId)
     expect(row.state).toBe('FAILED') // reached via the failure path, as E1 allows
     // The audit rows written by earlier scenarios must name the actor, never a secret.
-    const rows = await db.select().from(auditLog).where(eq(auditLog.tenantId, tenantId))
+    const rows = await readAuditRowsAsOwner(tenantId)
     const json = JSON.stringify(rows.map((r) => r.metadata))
     expect(json).not.toMatch(/secret|password|hmac|BEGIN AGE/i)
   })

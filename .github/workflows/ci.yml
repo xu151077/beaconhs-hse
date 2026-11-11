@@ -173,6 +173,7 @@ jobs:
           SEED_TEST_SCRATCH_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
           DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
           SUPERADMIN_DATABASE_URL: postgresql://beaconhs_super:beaconhs_super@localhost:5432/beaconhs_ci_runtime
+          MIGRATION_DATABASE_URL: postgresql://beaconhs_migrator:beaconhs_migrator@localhost:5432/beaconhs_ci_runtime
         run: pnpm --filter @beaconhs/db exec vitest run --project db-freeze
       - run: pnpm build
 
