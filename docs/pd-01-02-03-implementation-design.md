@@ -110,7 +110,17 @@ api_keys ──(principal_tenant_user_id)──> tenant_users ──> role_assig
 
 ## PD-03 — A3 目标在库回填（历史数据治理）
 
-### 现状
+> **状态裁决（2026-11-11）：PD-03 = N/A，不实施。**
+> P3-1 判定 FAIL-CLOSED：目标在库在全部已记载主机名 × 全端口 × 常见库名的
+> 19,660,500 组合中零指纹命中；A3 从未执行；dev 库五个 rewrite surface 持久化
+> 附件引用为 0；生产为 clean-cutover 全新镜像、无 legacy 数据；且 capability
+> secret 指纹在历史卡片与代码常量间存在冲突。用户已采纳 N/A。证据与结论见
+> `BEACONHS_PD03_P3_1_AUDIT_JUDGMENT.md` 与
+> `BEACONHS_PD03_AUTHORIZATION_BOUNDARY.md`（均 2026-11-11）。
+> **以下分期、硬性前置、回滚与"本轮实际交付"表为 2026-11-09 设计基线快照，
+> 不再作为待执行计划**；全程未连接任何数据库、未改任何数据。
+
+### 现状（设计基线快照）
 
 - 代码侧已具备附件删除一致性（同事务 + 锁 + outbox + worker 幂等，已真 PG 端到端验证）。
 - `BEACONHS_CUTOVER_TARGET=beaconhs-dev` 目标在库**未定位**（`TEST_HOST_A3_FORENSIC_AUDIT.md`）。

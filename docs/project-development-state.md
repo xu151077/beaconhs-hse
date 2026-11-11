@@ -7,7 +7,16 @@
 
 ## 中文摘要
 
-**当前阶段：EA-12 本地缺陷修复已完成。**
+> **最新状态（2026-11-11）：以下 EA-12 中文摘要是 2026-11-09 的历史快照。**
+> 当前实际状态：PD-01 Phase 3（统一权限模型）与 PD-02（跨租户审计，13 阶段）
+> 已完成、CI 绿、并部署生产（`e35af979…`，最终验收 `e7234526`）；
+> PD-03（A3 目标在库回填）经独立审计裁决为 **N/A**（P3-1 FAIL-CLOSED，
+> 目标不可定位、A3 从未执行、无待回填数据）。详见文末
+> `## 8c. … (2026-11-11)` addendum 与 `BEACONHS_PD03_*` 系列文档。
+> 下文"未 commit / 未 push / 未部署 / 新功能开发尚未开始"仅描述当时快照，
+> 不代表当前状态。
+
+**当前阶段（历史快照：2026-11-09）：EA-12 本地缺陷修复已完成。**
 
 本轮完成：`/api/v1/monitored_sessions` 的 500（`apps` category 复用
 `forms.response.read.all`：monitored sessions 就是 `form_responses` 数据，
@@ -1758,6 +1767,89 @@ e-mails. Decision: one convergence key, not two — the seven were folded into
 built-ins already hold the key, so the picker UX is unchanged and no catalogue
 or migration delta was needed. Org-unit lookups (locations/sites) and
 module-record filters still run on purpose alone: they return no member rows.
+
+## 8c. Execution addendum — PD-01 / PD-02 / PD-03 (2026-11-10 … 2026-11-11)
+
+按 §9 更新协议补记三个 PD 工作流的最终状态。PD-01 与 PD-02 **已完成、经独立
+安全审查、CI 绿并部署生产**；PD-03 经独立审计裁决为 **N/A**。以下均为已完成
+事实（证据见各 `BEACONHS_PD0x_*.md` 报告），不是计划。
+
+### §2 当前阶段 / §3 已完成
+
+**PD-01 Phase 3（统一权限模型）— 关闭。** 验证 11 项：API Key 认证与主体解析、
+Principal×Credential 权限交集、Credential Scope 收窄、Tenant/Site/Self 三
+Scope、Builder Apps 五响应入口 guard、documents 阶梯权限与 RoleScope 交集、
+列表/详情/count/CREATE/PATCH/DELETE 一致性、跨租户阻断、未映射实体 fail-closed、
+HTTP 错误码与速率限制、PostgreSQL 连接池复用与事务隔离。专项 A 连接池 7/7 真 PG
+（`pg_backend_pid()` 证明物理连接复用、`set_config(..., true)` 无残留）；专项 B
+写路径 HTTP E2E 50 请求矩阵；修 3 个真实缺陷（D-A/D-B/D-C，均在 `scope.ts`）。
+独立审查 CONDITIONAL PASS → M1/L1 阻断项关闭（`assertPatchInScope` /
+`assertResultInScope`）后复核 5/5 CLOSED → RC CONDITIONAL READY → CI 绿升级
+READY → 生产部署（镜像 `beaconhs@sha256:7ed40e7e…`，`APP_VERSION=62b92b94…`，
+58 migrations，Gate 5 PASS）。
+
+**PD-02（跨租户审计，方案 A / V3 权威链）— 关闭，DEPLOYED & ACCEPTED。** 13
+阶段全部完成：阶段 0 基线 → P-1 角色预检（`audit_reader` NOLOGIN/BYPASSRLS 仅
+SELECT audit_log、`audit_service` 唯一成员、迁移 fail-closed）→ P-2 独立
+`AUDIT_DATABASE_URL` 池（缺失/空/失败→HTTP 503，禁止降级）→ P-3 `SET LOCAL ROLE`
+事务级身份切换（11/11 真 PG 含提交/回滚/异常三路径无残留）→ P-4
+`admin.audit.approve` 独立审批（默认不授予、申请人≠审批人）→ P-5 平台级
+`audit_access_grants` / `platform_audit_access_log`（迁移 0059、append-only
+触发器、不入 TENANT_SCOPED_TABLES）→ P-6 限额（31 天/10,000 行/每页≤500 行/
+10s/导出需 extra approval）→ 阶段 7 留痕 → 阶段 8 全量测试 → 阶段 9 独立安全
+审查（round 1 FAIL：F1 业务池全 CRUD 平台表、F2 super 池直读跨租户审计日志等
+→ 整改 → round 2 CONDITIONAL PASS → N1 backup write-pin → round 3 **PASS**）
+→ 阶段 10 RC（CONDITIONAL READY，CI 绿后升级 READY）→ 阶段 11 部署准备 →
+阶段 12 生产部署 → 阶段 13 观察验收。
+生产部署：备份 `daily-20261111T035915Z` → `provision.sql`（254 行，新增
+audit 角色）→ 仅起 postgres → 迁移 0059（`ledger 58→59`，`audit privilege
+matrix verified`）→ 新镜像（`APP_VERSION=e35af979…`，
+`beaconhs@sha256:2a3df5f8…`，Gate 5 PASS）→ 生产核验 F1/F2/N1 全 CLOSED。
+最终验收 `BEACONHS_PD02_FINAL_ACCEPTANCE_REPORT.md` 提交 `e7234526`，已 push，
+`origin/hse-platform` 同步（divergence 0/0）。CI #31 `42942872233` success、
+Security #32 `42942872228` success；期间修 3 个过期测试 pin（CI round 1
+db-runtime、round 3 db-freeze 的 audit_log super 读改走 owner+租户 GUC）。
+
+**PD-03（A3 目标在库回填）— N/A，不实施。** 用户先签核
+`BEACONHS_PD03_AUTHORIZATION_BOUNDARY.md` v2（逐阶段审批、生产库例外单独批准、
+Secret 不进聊天），再指示"你自己审计判断"。纯离线只读审查
+（`BEACONHS_PD03_P3_1_AUDIT_JUDGMENT.md`）判定 **P3-1 FAIL-CLOSED**：
+目标 pool/direct 指纹在全部已记载主机名 × 全端口 1–65535 × 10 库名 =
+19,660,500 组合中零命中；A3 从未执行；原始审计环境不可运行恢复；dev 库五个
+rewrite surface 持久化附件引用为 0（见 §8b）；生产为 clean-cutover 全新镜像无
+legacy；且 capability secret 指纹在 `cutover-target.ts` 常量与历史卡片间存在
+冲突（§4.5(7) 证据冲突）。用户采纳建议、裁决 PD-03 = N/A。**全程未连接任何
+数据库、未扫描主机、未读取/输出 Secret、未改数据/对象、未 push。**
+
+### §4 在飞 / §5 阻塞
+
+无。三个 PD 工作流均关闭；无在飞阶段、无阻断交付。PD-03 不是"阻塞待办"，
+而是经裁决关闭（N/A）——不因缺输入而挂起，是证据表明治理对象不存在。
+
+### §6 已知缺陷
+
+本轮无新增未修复缺陷。PD-01 独立审查的两个条件项（M1 patch 写后复查、L1
+principal 死分支）已关闭；PD-02 独立审查 F1-F8 与 N1 已 CLOSED，残留为非阻断
+N2（分页末页 row_cap 400 仅 UX）、备份凭据保管（运维事项）、F4 无边界 revoke
+（待审批量增长再评估）。**PD-03 审计新发现一处既有文档不一致并保留记录**：
+capability secret 指纹代码常量（`cutover-target.ts:10-11`）与
+`A3_EXECUTION_CARD.md` / V2 / `TEST_HOST_A3_FORENSIC_AUDIT.md` 记载值不符；
+因 PD-03 已 N/A、不修改代码/数据，仅登记为"若未来重开须先修正"的事实。
+
+### §7 架构决策
+
+- PD-02 采用独立 DB 角色 + 独立连接池 + `SET LOCAL ROLE` + 平台级授权表，
+  不新增平行权限系统（复用 Permission / RoleScope / RLS）；超管不自动获得审计
+  权限（`ctx.permissions.has` 严格判定，绕过 `can()` 的 isSuperAdmin 短路）。
+- PD-03 不实施 = 遵循 clean-cutover 原则：不为一个已消失、且无待回填数据的
+  dev 实例重建 legacy 治理路径。若未来出现经授权的全新证据，须先修正指纹
+  文档冲突、重新签核边界，按 P3-1 重新定位。
+
+### §8 下一任务
+
+无已授权的在飞任务。后续任何生产变更（含新 PD 阶段、push、部署、Migration、
+数据修改、RLS 变更）均需用户单独授权。本地工作区（本 addendum 及两份
+`BEACONHS_PD03_*.md`）仅文档、本地提交、**未 push**。
 
 ## 9. Update protocol
 
