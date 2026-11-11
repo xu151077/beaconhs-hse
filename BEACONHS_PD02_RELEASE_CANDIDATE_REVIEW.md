@@ -271,3 +271,36 @@ test 0, build 0.
 **Blocking condition ① (CI green) remains open until the fix commit is pushed and the
 CI run completes successfully.** Blocking condition ② (six gates on final HEAD) is
 satisfied as of `d3b63688`.
+
+## Addendum — CI rounds 2 and 3 (runs 42909324250 → re-run, 62658e6d): host-safeguards flake, then db-freeze fix
+
+**Round 2** failed in "Test deployment host safeguards" (before the live-db steps) on
+`tldts-core` version resolution inside the docker image build (`pnpm deploy` in
+Dockerfile line 62). Round 1 had passed the identical step with identical inputs, and
+the script passed twice locally — an environment/registry flake, not a code defect.
+A re-run passed the step, confirming the diagnosis.
+
+**Round 3 (re-run)** passed host-safeguards and then failed in
+"Live database suites — storage freeze persistence" (`--project db-freeze`):
+`storage-freeze-operations.test.ts` read `audit_log` through the shared superadmin
+client — the same stale pin class fixed for `db-runtime` above (PD-02 F2 revoked the
+superadmin's `audit_log` SELECT). 3 of 16 tests failed (one real failure + two state
+cascades from the crashed scenario).
+
+**Fix (test-only + one CI env line):**
+
+- `packages/db/src/storage-freeze-operations.test.ts`: audit assertions now read
+  through a dedicated `readAuditRowsAsOwner(tenantId)` helper (migrator login →
+  `SET ROLE beaconhs_owner` → tenant GUC → drizzle select), mirroring the
+  `readAuditViaOwner` pattern from the db-runtime fix.
+- `.github/workflows/ci.yml`: the db-freeze step now also exports
+  `MIGRATION_DATABASE_URL` (the owner credential the helper needs).
+
+**Local verification (isolated scratch DB mirroring the CI provisioning SQL exactly):**
+`--project db-freeze` 16/16 passed (previously 3 failed → 0) and `--project db-runtime`
+36/36 passed. Full six-gate set re-run on this HEAD: format 0, typecheck 0, lint 0,
+deadcode 0, test 0, build 0.
+
+**Blocking condition ① (CI green) remains open until this fix commit is pushed and the
+CI run completes successfully.** Blocking condition ② (six gates on final HEAD) is
+satisfied.
