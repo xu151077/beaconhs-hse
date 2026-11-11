@@ -85,6 +85,10 @@ x-app-env: &app-env
   # that resolves to the container itself, which is a silent readiness 503.
   DATABASE_URL: ${DATABASE_URL:?set the in-network database URL}
   SUPERADMIN_DATABASE_URL: ${SUPERADMIN_DATABASE_URL:?set the in-network superadmin URL}
+  # PD-02 cross-tenant audit reads use a dedicated pool authenticating as
+  # audit_service. Optional at boot: when missing or empty the audit endpoints
+  # fail closed with 503, never falling back to the business database pool.
+  AUDIT_DATABASE_URL: ${AUDIT_DATABASE_URL:-}
   REDIS_URL: ${REDIS_URL:?set the in-network redis URL}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?required}
   ATTACHMENT_CAPABILITY_SECRET: ${ATTACHMENT_CAPABILITY_SECRET:?required}
@@ -104,8 +108,8 @@ services:
   web:
     image: ${BEACONHS_IMAGE:?point at the local CI-equivalent production image}
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
-      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
+      com.beaconhs.image-digest: '${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}'
       com.beaconhs.role: 'web'
     environment:
       <<: *app-env
@@ -149,8 +153,8 @@ services:
   worker:
     image: ${BEACONHS_IMAGE:?same image as web}
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
-      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
+      com.beaconhs.image-digest: '${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}'
       com.beaconhs.role: 'worker'
     environment:
       <<: *app-env
@@ -195,8 +199,8 @@ services:
   scheduler:
     image: ${BEACONHS_IMAGE:?same image as web}
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
-      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
+      com.beaconhs.image-digest: '${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}'
       com.beaconhs.role: 'scheduler'
     environment:
       <<: *app-env
@@ -218,8 +222,8 @@ services:
   storage-init:
     image: ${BEACONHS_IMAGE:?same image as web}
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
-      com.beaconhs.image-digest: "${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
+      com.beaconhs.image-digest: '${BEACONHS_IMAGE_DIGEST:?EA-65.1 gated image digest is required}'
       com.beaconhs.role: 'storage-init'
     environment:
       NODE_ENV: production
@@ -237,7 +241,7 @@ services:
   postgres:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
       com.beaconhs.image-digest: 'sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'
       com.beaconhs.role: 'postgres'
     environment:
@@ -269,7 +273,7 @@ services:
   redis:
     image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
       com.beaconhs.image-digest: 'sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499'
       com.beaconhs.role: 'redis'
     ports:
@@ -291,7 +295,7 @@ services:
   minio:
     image: minio/minio@sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
       com.beaconhs.image-digest: 'sha256:b187417eee0a495ed45ff0e2d5f0c9810ae35705319c0d2fb46dd93e4ac1501c'
       com.beaconhs.role: 'minio'
     command: server /data --console-address ":9001"
@@ -323,7 +327,7 @@ services:
     # upgrade changes both this reference and the manifest expectation.
     image: collabora/code@sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c
     labels:
-      com.beaconhs.deployment: "${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}"
+      com.beaconhs.deployment: '${BEACONHS_DEPLOYMENT_ID:?EA-65.1 deployment id is required}'
       com.beaconhs.image-digest: 'sha256:4e983196eb9878f339cc506c38c21f1cc3473bca3d6de883c5de08f9c0cc3a6c'
       com.beaconhs.role: 'collabora'
     environment:

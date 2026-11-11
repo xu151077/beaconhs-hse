@@ -191,6 +191,7 @@ psql "$CLUSTER_ADMIN_DATABASE_URL" \
   -v super_password="$SUPERADMIN_PASSWORD" \
   -v migrator_password="$MIGRATOR_PASSWORD" \
   -v backup_password="$BACKUP_PASSWORD" \
+  -v audit_service_password="$AUDIT_SERVICE_PASSWORD" \
   -f scripts/cluster/provision.sql
 ```
 
@@ -203,6 +204,21 @@ The resulting roles are deliberately non-interchangeable:
 | `beaconhs_app`      | Tenant-scoped web/worker traffic        | No               | No         | DML only                       |
 | `beaconhs_super`    | Intentional cross-tenant maintenance    | No               | Yes        | DML only                       |
 | `beaconhs_backup`   | Logical backups                         | No               | Yes        | None; defaults read-only       |
+| `audit_reader`      | Cross-tenant audit reads (NOLOGIN)      | No               | Yes        | None; SELECT on `audit_log`    |
+| `audit_service`     | Dedicated audit pool login              | No               | No         | Audit grants/trail only        |
+
+`audit_service` is the sole member of `audit_reader` and the only role allowed
+to authenticate on `AUDIT_DATABASE_URL`. The migration preflight fails closed
+if either role is missing, has the wrong attributes, or has stray memberships,
+so for a PD-02 deployment the production order is:
+
+1. Re-run `scripts/cluster/provision.sql` (with `audit_service_password`) as a
+   superuser. The script is idempotent and reconverges the audit roles/grants.
+2. Run the migrations (creates the platform audit tables and runs both audit
+   preflight gates).
+3. Deploy the new image with `AUDIT_DATABASE_URL` in the runtime environment.
+   Without it the app still boots and every cross-tenant audit endpoint
+   returns 503.
 
 Use direct PostgreSQL port 5432 for `MIGRATION_DATABASE_URL`. Runtime URLs may
 use a transaction-mode pooler. Never place `MIGRATION_DATABASE_URL` or
